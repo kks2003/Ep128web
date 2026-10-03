@@ -14,16 +14,28 @@ került egy kis webes frontend (canvas + Web Audio).
    csomagot ([enterpriseforever.com](https://enterpriseforever.com/letoltesek-downloads/egyeb-misc/msg61025/)
    vagy [ep128.hu](http://ep128.hu/Emu/ep128emu_roms-2.0.11.bin)), és húzd rá az
    oldalra. A böngésző eltárolja (IndexedDB), legközelebb már nem kell.
-3. Programot betölteni a „Fájl betöltése…” gombbal vagy a képre húzással lehet:
+3. Programot betölteni a „Fájl betöltése…” gombbal vagy a képre húzással lehet,
+   egyszerre több fájlt vagy egy `.zip` archívumot is:
 
 | Fájl | Mi történik |
 | --- | --- |
 | `.cas` (TVC) | TVC módban: FILE eszköz, automatikus `LOAD` + `RUN` |
 | `.com`, `.bas`, egyéb | a `FILE:` eszközre kerül, a gép újraindul és automatikusan kiadja a `LOAD "FILE:név"` (BASIC-nél `RUN`) parancsot |
 | `.tap`, `.wav` | magnóba kerül, automatikus `LOAD "TAPE:"` + lejátszás, betöltés közben turbó |
-| `.img`, `.dsk` | A: lemezmeghajtó (EXDOS-os Enterprise vagy VT-DOS-os TVC kell hozzá) |
+| `.img`, `.dsk` | A: lemezmeghajtó; szükség esetén EXDOS-os Enterprise-ra / VT-DOS-os TVC-re vált, és kilistázza a lemezt (`:DIR`, ill. `EXT 2` + `DIR`) |
+| `.zip`, több fájl | minden fájl a `FILE:` eszközre kerül; ha több indítható program van, választani lehet |
 | `.ep128s` / `.ep128d` | ep128emu pillanatkép / demó |
 | `.bin` (ROM-csomag), `.rom` | ROM-ok telepítése |
+
+### Utántöltős programok
+
+Az összes fájlt egyszerre kell feltenni (vagy egy ZIP-ben): ezek az eredeti
+nevükön a `FILE:` eszközre kerülnek, így a program futás közben is betöltheti a
+többit. Enterprise-on az automatikus indítás az alapértelmezett eszközt is a
+betöltés módjához állítja (`:DEF_DEV_FILE`, `:DEF_DEV_TAPE`, `:DEF_DEV_DISK` –
+az ep128emu `epfileio.rom` parancsai), így a többi rész FILE:-ról, szalagról
+vagy lemezről jön. TVC-n a `tvcfileio.rom` maga a FILE eszköz alapértelmezetté
+tétele, kazettánál és lemeznél pedig a natív eszköz marad.
 
 Gépkonfigurációk:
 
@@ -33,8 +45,8 @@ Gépkonfigurációk:
 - **Videoton TVC**: TVC 64k+ BASIC 2.2 (VT-DOS-szal is), TVC 64k és 32k
   BASIC 1.2. A `.cas` programok a `tvcfileio.rom` FILE eszközére kerülnek és
   automatikusan elindulnak (`LOAD "név"` + `RUN`). Mivel a TVC-n ez a bővítés
-  helyettesíti a magnót, kazetta (`.tap`/`.wav`) betöltésekor kikapcsol,
-  `.cas` betöltésekor visszakapcsol. A billentyűzet a magyar PC-kiosztást
+  helyettesíti a magnót (és ütközik a VT-DOS-szal), kazetta vagy lemezkép
+  betöltésekor kikapcsol, `.cas` betöltésekor visszakapcsol. A billentyűzet a magyar PC-kiosztást
   követi (QWERTZ, `0` az `1` bal oldalán, `ö ü ó` a 9 után).
 
 A pillanatképek (`.ep128s`) betöltésekor az oldal automatikusan a mentéskori

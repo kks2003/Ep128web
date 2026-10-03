@@ -50,6 +50,15 @@
         Egyenként is feltölthetők <code>.rom</code> fájlok (pl. <code>exos21.rom</code>, <code>basic21.rom</code>).</p>
       </div>
     </div>
+    <div id="chooser" hidden>
+      <div class="box">
+        <h2>Melyik programot indítsam?</h2>
+        <p class="small">Az összes fájl a FILE: eszközre került, így a program
+        futás közben is betöltheti a többit.</p>
+        <div id="chooser-list"></div>
+        <button id="chooser-cancel">Egyiket sem</button>
+      </div>
+    </div>
     <div id="click-hint" hidden>Kattints a képre a hanghoz és a billentyűzethez</div>
   </div>
 
@@ -92,13 +101,16 @@
   <details id="help">
     <summary>Súgó</summary>
     <ul>
-      <li><b>Fájl betöltése</b> (vagy húzd a képre):
+      <li><b>Fájl betöltése</b> (vagy húzd a képre, akár több fájlt vagy egy <code>.zip</code>-et):
         <code>.tap</code>/<code>.wav</code> → magnó,
-        <code>.img</code>/<code>.dsk</code> → A: lemez (EXDOS kell hozzá),
+        <code>.img</code>/<code>.dsk</code> → A: lemez (szükség esetén EXDOS-os / VT-DOS-os gépre vált, és kilistázza),
         <code>.ep128s</code> → pillanatkép, <code>.ep128d</code> → demó,
-        <code>.bin</code> → ROM-csomag, minden más (pl. <code>.com</code>, <code>.bas</code>)
-        → a <code>FILE:</code> eszközre kerül és automatikusan elindul
-        (<code>LOAD "FILE:név"</code>).</li>
+        <code>.bin</code> → ROM-csomag. Minden más fájl a <code>FILE:</code> eszközre kerül,
+        és a program automatikusan elindul; ha több indítható program van, választhatsz.</li>
+      <li><b>Utántöltős programok</b>: tedd fel az összes fájlt egyszerre (vagy egy ZIP-ben).
+        Az alapértelmezett eszköz a betöltés módjához igazodik (Enterprise-on
+        <code>:DEF_DEV_FILE</code> / <code>:DEF_DEV_TAPE</code> / <code>:DEF_DEV_DISK</code>),
+        így a további részek ugyanonnan töltődnek. Kazettán a többi rész magától jön a szalagról.</li>
       <li>Kazetta betöltésekor a gép újraindul, és automatikusan kiadja a
         <code>LOAD</code> parancsot. Mentés kazettára: „Üres kazetta” → „● Felvétel”
         → BASIC-ben <code>SAVE "név"</code>, végül „Letöltés”.</li>
@@ -109,8 +121,9 @@
       <li><b>Videoton TVC</b>: a <code>.cas</code> programok a FILE: eszközre kerülnek, és
         automatikusan elindulnak (<code>LOAD "név"</code> + <code>RUN</code>). A billentyűzet
         a magyar PC-kiosztást követi (QWERTZ, a <code>0</code> az <code>1</code> bal oldalán,
-        <code>ö ü ó</code> a 9 után). Magnó használatakor a FILE: bővítés kikapcsol
-        (a TVC-n ez helyettesíti a magnót), <code>.cas</code> betöltésekor visszakapcsol.</li>
+        <code>ö ü ó</code> a 9 után). Magnó vagy lemez használatakor a FILE: bővítés kikapcsol
+        (a TVC-n ez helyettesíti a magnót, és ütközik a VT-DOS-szal), <code>.cas</code> betöltésekor
+        visszakapcsol. Lemezkép betöltésekor automatikusan <code>EXT 2</code> + <code>DIR</code>.</li>
       <li>Joystick 1: numerikus 8/4/6/2 + 0 (tűz), gamepad, vagy a fenti kapcsoló.</li>
       <li>F11 = reset, Shift+F11 = hideg reset, F12 = turbó.</li>
     </ul>

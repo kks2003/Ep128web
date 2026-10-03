@@ -134,7 +134,14 @@
     delete m[';'];
     return m;
   })();
+  CHARMAP_EP._ = [0x2C, true];
+  CHARMAP_TVC._ = [0x43, true];
   const CHARMAP = [CHARMAP_EP, CHARMAP_TVC];
+  const PAUSE = '\u0001';      // in autotyped text: wait 2.5 seconds
+
+  function isTypable(text, type) {
+    return Array.from(text).every((ch) => CHARMAP[type][ch]);
+  }
 
   // --------------------------------------------------------------------------
 
@@ -531,6 +538,10 @@ registerProcessor('ep-output', EPOutput);
   function buildKeyEvents(text) {
     const ev = [];
     for (const ch of text) {
+      if (ch === PAUSE) {
+        ev.push([-1, 0, 2500000]);
+        continue;
+      }
       const k = CHARMAP[machine.type][ch];
       if (!k) continue;
       if (k[1]) ev.push([KEY_SHIFT, 1, 30000]);
@@ -548,7 +559,7 @@ registerProcessor('ep-output', EPOutput);
     autoTask = {
       // the TVC starts BASIC directly, the Enterprise shows a logo first
       phase: machine.type === 1 ? 'basic' : 'boot',
-      t: 0, phaseT: 0, dark: false, stable: 0,
+      t: 0, phaseT: 0, dark: false, logo: 0, stable: 0,
       command, onTyped, events: null, wait: 0
     };
     setMessage('Indítás…');
@@ -562,9 +573,13 @@ registerProcessor('ep-output', EPOutput);
     if (a.phase === 'boot') {
       // wait for the end of the memory test: the ENTERPRISE logo appears in
       // the middle of the (previously black) screen
+      // (power-on RAM garbage can look similar for a frame, so the top of
+      // the screen must also be black, for at least 10 frames in a row)
       const v = screenActivity(120, 200);
       if (v < 100) a.dark = true;
-      if ((a.dark && v > 300 && v < 4000) || phaseTime > 40e6) {
+      if (a.dark && v > 300 && v < 4000 && screenActivity(0, 100) < 50) a.logo++;
+      else a.logo = 0;
+      if (a.logo >= 10 || phaseTime > 40e6) {
         a.phase = 'logo';
         a.phaseT = a.t;
         a.events = [[-1, 0, 300000], [KEY_SPACE, 1, 80000], [KEY_SPACE, 0, 20000]];
@@ -650,130 +665,258 @@ registerProcessor('ep-output', EPOutput);
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
 
-  async function loadFile(file) {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const name = file.name;
-    const ext = (name.match(/\.([^.]+)$/) || ['', ''])[1].toLowerCase();
+  // --- ZIP archives (stored and deflated entries) ---
 
-    // ROM package or individual ROM image
-    if ((ext === 'bin' && bytes.length > 100000 && /rom/i.test(name)) || ext === 'rom') {
-      if (ext === 'rom') {
-        const romName = name.toLowerCase();
-        M.FS.writeFile('/roms/' + romName, bytes);
-        db.put('rom:' + romName, bytes);
-        setMessage('ROM betöltve: ' + romName);
+  async function unzip(bytes) {
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    // find the end of central directory record
+    let eocd = -1;
+    for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
+      if (dv.getUint32(i, true) === 0x06054B50) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error('hibás ZIP fájl');
+    const n = dv.getUint16(eocd + 10, true);
+    let p = dv.getUint32(eocd + 16, true);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      if (dv.getUint32(p, true) !== 0x02014B50) throw new Error('hibás ZIP fájl');
+      const method = dv.getUint16(p + 10, true);
+      const csize = dv.getUint32(p + 20, true);
+      const nameLen = dv.getUint16(p + 28, true);
+      const extraLen = dv.getUint16(p + 30, true);
+      const commentLen = dv.getUint16(p + 32, true);
+      const local = dv.getUint32(p + 42, true);
+      const name = new TextDecoder().decode(bytes.subarray(p + 46, p + 46 + nameLen));
+      p += 46 + nameLen + extraLen + commentLen;
+      if (name.endsWith('/')) continue;
+      const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
+      const data = bytes.subarray(start, start + csize);
+      let content;
+      if (method === 0) {
+        content = data.slice();
+      } else if (method === 8 && window.DecompressionStream) {
+        const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+        content = new Uint8Array(await new Response(stream).arrayBuffer());
       } else {
-        const n = check(installROMPackage(bytes), 'ROM-csomag');
-        db.put('pkg', bytes);
-        setMessage(n + ' ROM kicsomagolva');
+        throw new Error('nem támogatott ZIP tömörítés: ' + name);
       }
-      if (!ready || machine && missingROMs(machine).length === 0)
-        applyMachine(machine);
-      return;
+      out.push({ name: name.split('/').pop(), bytes: content });
     }
-    if (!ready) {
-      setMessage('Először a ROM-okat kell betölteni', true);
-      return;
-    }
+    return out;
+  }
 
-    switch (ext) {
-    case 'ep128s':
-    case 'ep128d':
-    case 'ep128s2':
-      M.FS.writeFile('/tmp/snapshot', bytes);
-      {
-        // switch to the machine type the snapshot was saved from
-        const type = api.fileMachineType('/tmp/snapshot');
-        if (type >= 0 && type !== machineType) {
-          const m = MACHINES.find((x) => x.type === type);
-          if (missingROMs(m).length === 0) {
-            applyMachine(m);
-            $('machine').value = m.id;
-          } else {
-            check(api.setMachineType(type), 'gép');
-            machineType = type;
-            machine = m;
-            $('machine').value = m.id;
-            applyVolume();
-          }
-        }
-        check(api.loadSnapshot('/tmp/snapshot'), 'pillanatkép');
-      }
-      setMessage((ext === 'ep128d' ? 'Demó: ' : 'Pillanatkép: ') + name);
-      return;
-    case 'tap':
-    case 'wav':
-    case 'tzx':
-    case 'cdt':
-      ensureDir('/tape');
-      tapeName = sanitizeName(name);
-      M.FS.writeFile('/tape/' + tapeName, bytes);
-      check(api.setTape('/tape/' + tapeName), 'kazetta');
-      $('tape-name').textContent = name;
-      setMessage('Kazetta betöltve – indítás…');
-      if (machine.type === 1) {
-        // tvcfileio.rom replaces the cassette device: remove it
-        if (tvcFileIO) {
-          tvcFileIO = false;
-          applyMachine(machine);
-        }
-        startAutostart('load\n', () => api.tapeCommand(1));
-      } else {
-        startAutostart('load "tape:"\n', () => api.tapeCommand(1));
-      }
-      return;
-    case 'img':
-    case 'dsk':
-      ensureDir('/disk');
-      diskName = sanitizeName(name);
-      M.FS.writeFile('/disk/' + diskName, bytes);
-      check(api.setDisk(0, '/disk/' + diskName), 'lemez');
-      $('disk-name').textContent = name;
-      if (machine.type === 1) {
-        if (!machine.roms.some((r) => r[0].startsWith('tvc_dos')))
-          setMessage('A lemezhez VT-DOS-os TVC-t válassz!', true);
-        else
-          setMessage('Lemez az A: meghajtóban');
-      } else if (!machine.roms.some((r) => r[0].startsWith('exdos'))) {
-        setMessage('A lemezhez EXDOS-os gépet válassz!', true);
-      } else {
-        setMessage('Lemez az A: meghajtóban (pl. :dir, load "a:név")');
-      }
-      return;
-    default: {
-      if (machine.type === 1) {
-        // TVC: programs are .cas files, loaded through tvcfileio.rom
-        const base = sanitizeName(name.replace(/\.[^.]*$/, '')).replace(/\./g, '-') || 'program';
-        M.FS.writeFile('/files/' + base + '.cas', bytes);
-        listFiles();
-        if (!tvcFileIO) {
-          tvcFileIO = true;
-          applyMachine(machine);
-        }
-        startAutostart('load "' + base + '"\nrun\n', null);
-        return;
-      }
-      const fname = sanitizeName(name);
-      M.FS.writeFile('/files/' + fname, bytes);
-      listFiles();
-      const cmd = (ext === 'bas' ? 'run "file:' : 'load "file:') + fname + '"\n';
-      startAutostart(cmd, null);
+  // --- classification of loaded files ---
+
+  function extOf(name) {
+    return (name.match(/\.([^.]+)$/) || ['', ''])[1].toLowerCase();
+  }
+
+  function fileKind(f) {
+    const ext = extOf(f.name);
+    if (ext === 'rom' || (ext === 'bin' && f.bytes.length > 100000 && /rom/i.test(f.name)))
+      return 'rom';
+    if (ext === 'ep128s' || ext === 'ep128d' || ext === 'ep128s2') return 'snapshot';
+    if (['tap', 'wav', 'tzx', 'cdt'].includes(ext)) return 'tape';
+    if (['img', 'dsk'].includes(ext)) return 'disk';
+    return 'program';
+  }
+
+  // file name as stored in the FILE: directory: the original name without
+  // directories (the FILE: devices look up names case-insensitively)
+  function hostName(name) {
+    const n = name.replace(/[\/\\:*?"<>|]/g, '_').slice(-60);
+    return n || 'file';
+  }
+
+  function isStartable(name) {
+    const ext = extOf(name);
+    if (machine.type === 1) return ext === 'cas';
+    return ['com', 'bas', 'prg', 'ep', 'exe', 'app', ''].includes(ext);
+  }
+
+  function loadROMFile(f) {
+    if (extOf(f.name) === 'rom') {
+      const romName = f.name.toLowerCase();
+      M.FS.writeFile('/roms/' + romName, f.bytes);
+      db.put('rom:' + romName, f.bytes);
+      setMessage('ROM betöltve: ' + romName);
+    } else {
+      const n = check(installROMPackage(f.bytes), 'ROM-csomag');
+      db.put('pkg', f.bytes);
+      setMessage(n + ' ROM kicsomagolva');
     }
+    if (!ready || machine && missingROMs(machine).length === 0)
+      applyMachine(machine);
+  }
+
+  function loadSnapshotFile(f) {
+    const ext = extOf(f.name);
+    M.FS.writeFile('/tmp/snapshot', f.bytes);
+    // switch to the machine type the snapshot was saved from
+    const type = api.fileMachineType('/tmp/snapshot');
+    if (type >= 0 && type !== machineType) {
+      const m = MACHINES.find((x) => x.type === type);
+      if (missingROMs(m).length === 0) {
+        applyMachine(m);
+      } else {
+        check(api.setMachineType(type), 'gép');
+        machineType = type;
+        machine = m;
+        applyVolume();
+      }
+      $('machine').value = m.id;
+    }
+    check(api.loadSnapshot('/tmp/snapshot'), 'pillanatkép');
+    setMessage((ext === 'ep128d' ? 'Demó: ' : 'Pillanatkép: ') + f.name);
+  }
+
+  // switch the TVC FILE: extension on or off (it replaces the cassette
+  // device and conflicts with VT-DOS)
+  function setTVCFileIO(enabled, m) {
+    if (tvcFileIO !== enabled || m !== machine) {
+      tvcFileIO = enabled;
+      applyMachine(m || machine);
+      $('machine').value = machine.id;
     }
   }
 
-  async function loadFiles(files) {
-    resumeAudio();
-    // ROMs first, so that a ROM package and a program can be dropped together
-    const list = Array.from(files).sort((a, b) =>
-      (/\.(rom|bin)$/i.test(b.name) ? 1 : 0) - (/\.(rom|bin)$/i.test(a.name) ? 1 : 0));
-    for (const f of list) {
-      try {
-        await loadFile(f);
-      } catch (e) {
-        console.error(e);
-        if (!statusMsg.textContent) setMessage(String(e.message || e), true);
+  function loadTapeFile(f) {
+    ensureDir('/tape');
+    tapeName = sanitizeName(f.name);
+    M.FS.writeFile('/tape/' + tapeName, f.bytes);
+    if (machine.type === 1) setTVCFileIO(false);
+    check(api.setTape('/tape/' + tapeName), 'kazetta');
+    $('tape-name').textContent = f.name;
+    setMessage('Kazetta betöltve – indítás…');
+    // the default device is set to TAPE: so that multi-part programs load
+    // their further parts from the tape as well
+    startAutostart(machine.type === 1 ? 'load\n' : ':def_dev_tape\nload\n',
+                   () => api.tapeCommand(1));
+  }
+
+  function loadDiskFile(f) {
+    ensureDir('/disk');
+    diskName = sanitizeName(f.name);
+    M.FS.writeFile('/disk/' + diskName, f.bytes);
+    $('disk-name').textContent = f.name;
+    if (machine.type === 1) {
+      // VT-DOS is needed, and tvcfileio.rom must be removed
+      const m = machine.roms.some((r) => r[0].startsWith('tvc_dos'))
+        ? machine : MACHINES.find((x) => x.id === 'tvc64p-22-vtdos');
+      setTVCFileIO(false, m);
+      check(api.setDisk(0, '/disk/' + diskName), 'lemez');
+      setMessage('Lemez az A: meghajtóban – VT-DOS indítása…');
+      startAutostart('ext 2\n' + PAUSE + 'dir\n', null);
+    } else {
+      if (!machine.roms.some((r) => r[0].startsWith('exdos'))) {
+        applyMachine(MACHINES.find((x) => x.id === 'ep128uk-exdos'));
+        $('machine').value = machine.id;
       }
+      check(api.setDisk(0, '/disk/' + diskName), 'lemez');
+      setMessage('Lemez az A: meghajtóban');
+      startAutostart(':def_dev_disk\n:dir\n', null);
+    }
+  }
+
+  // writes program files to the FILE: directory; returns the names of the
+  // files that can be started
+  function storeProgramFiles(files) {
+    const startable = [];
+    const stored = [];
+    for (const f of files) {
+      let name = hostName(f.name);
+      if (machine.type === 1 && !extOf(name)) name += '.cas';
+      M.FS.writeFile('/files/' + name, f.bytes);
+      stored.push(name);
+      if (isStartable(name)) startable.push(name);
+    }
+    listFiles();
+    // a single file is started even if its extension is not a known one
+    return (startable.length === 0 && stored.length === 1) ? stored : startable;
+  }
+
+  function startProgram(name) {
+    let cmd;
+    if (machine.type === 1) {
+      if (!tvcFileIO) setTVCFileIO(true);
+      let base = name.replace(/\.cas$/i, '');
+      if (!isTypable(base, 1)) {
+        // the name cannot be typed: start it through a copy with a simple name
+        base = sanitizeName(base).replace(/\./g, '-') || 'program';
+        M.FS.writeFile('/files/' + base + '.cas', M.FS.readFile('/files/' + name));
+        listFiles();
+      }
+      cmd = 'load "' + base + '"\nrun\n';
+    } else {
+      let fname = name;
+      if (!isTypable(fname, 0)) {
+        fname = sanitizeName(fname);
+        M.FS.writeFile('/files/' + fname, M.FS.readFile('/files/' + name));
+        listFiles();
+      }
+      // EXOS file header: 00h, type (04h = BASIC program, 05h = machine code)
+      const head = M.FS.readFile('/files/' + fname).subarray(0, 2);
+      const isBasic = extOf(fname) === 'bas' || (head[0] === 0 && head[1] === 4);
+      // FILE: as default device, so that further files are loaded from there
+      cmd = ':def_dev_file\n' + (isBasic ? 'run' : 'load') + ' "file:' + fname + '"\n';
+    }
+    startAutostart(cmd, null);
+  }
+
+  // lets the user choose which program to start when several were loaded
+  function choosePrograms(names) {
+    const box = $('chooser');
+    const list = $('chooser-list');
+    list.textContent = '';
+    for (const n of names) {
+      const b = document.createElement('button');
+      b.textContent = n;
+      b.onclick = () => { box.hidden = true; startProgram(n); canvas.focus(); };
+      list.appendChild(b);
+    }
+    box.hidden = false;
+  }
+
+  async function loadFiles(fileList) {
+    resumeAudio();
+    try {
+      // read everything, expanding ZIP archives
+      const files = [];
+      for (const file of Array.from(fileList)) {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        if (extOf(file.name) === 'zip') files.push(...await unzip(bytes));
+        else files.push({ name: file.name, bytes });
+      }
+      const of = (kind) => files.filter((f) => fileKind(f) === kind);
+      // ROMs first, so that a ROM package and a program can be dropped together
+      for (const f of of('rom')) loadROMFile(f);
+      if (!files.some((f) => fileKind(f) !== 'rom')) return;
+      if (!ready) {
+        setMessage('Először a ROM-okat kell betölteni', true);
+        return;
+      }
+      const snapshots = of('snapshot');
+      const tapes = of('tape');
+      const disks = of('disk');
+      // all other files go to the FILE: directory, so that programs which
+      // load further files at run time find them there
+      const startable = storeProgramFiles(of('program'));
+      if (snapshots.length) {
+        loadSnapshotFile(snapshots[0]);
+      } else if (disks.length) {
+        loadDiskFile(disks[0]);
+      } else if (tapes.length) {
+        loadTapeFile(tapes[0]);
+      } else if (startable.length === 1) {
+        startProgram(startable[0]);
+      } else if (startable.length > 1) {
+        choosePrograms(startable.sort());
+      } else if (of('program').length) {
+        setMessage('Fájlok a FILE: eszközre másolva: ' + of('program').map((f) => f.name).join(', '));
+      }
+    } catch (e) {
+      console.error(e);
+      setMessage(String(e.message || e), true);
     }
     canvas.focus();
   }
@@ -852,6 +995,7 @@ registerProcessor('ep-output', EPOutput);
     } catch (e) { }
     $('volume').oninput({ target: $('volume') });
 
+    $('chooser-cancel').onclick = () => { $('chooser').hidden = true; canvas.focus(); };
     $('file-any').onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
     $('file-roms').onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
 

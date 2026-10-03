@@ -94,7 +94,16 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
   background: rgba(0, 0, 0, 0.82); color: #f0f0ea; padding: 16px;
   overflow: auto;
 }
-#overlay[hidden] { display: none; }
+#overlay[hidden], #chooser[hidden] { display: none; }
+#chooser {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.82); color: #f0f0ea; padding: 16px; overflow: auto;
+}
+#chooser .box { max-width: 520px; }
+#chooser h2 { margin-top: 0; font-size: 18px; }
+#chooser-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+#chooser .small { color: #c4c4bc; }
 #overlay .box { max-width: 520px; }
 #overlay h2 { margin-top: 0; }
 #overlay a { color: #ff8a9c; }

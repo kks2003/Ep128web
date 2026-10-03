@@ -64,12 +64,14 @@ function fail(msg) {
   };
 
   // wait for the ENTERPRISE logo after the memory test
-  let t = 0, dark = false;
+  let t = 0, dark = false, logo = 0;
   for (;;) {
     run(20); t += 20;
     const v = activity(120, 200);
     if (v < 100) dark = true;
-    else if (dark && v > 300 && v < 4000) break;
+    if (dark && v > 300 && v < 4000 && activity(0, 100) < 50) logo++;
+    else logo = 0;
+    if (logo >= 10) break;
     if (t > 30000) fail('no startup logo');
   }
   console.log('logo after ' + (t / 1000).toFixed(2) + ' s');
