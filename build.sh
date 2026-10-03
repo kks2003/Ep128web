@@ -13,7 +13,7 @@ E=ep128emu
 OBJDIR=build/obj
 mkdir -p "$OBJDIR" dist
 
-CFLAGS="-O3 -fexceptions -DHAVE_STDINT_H -DZ80_ENABLE_CMOS -DCPC_LSB_FIRST=1 -Iweb/stubs -I$E/src -I$E/z80 -I$E"
+CFLAGS="-O3 -fexceptions -DHAVE_STDINT_H -DZ80_ENABLE_CMOS -DCPC_LSB_FIRST=1 -DENABLE_SDEXT -Iweb/stubs -I$E/src -I$E/z80 -I$E"
 CFLAGS="$CFLAGS -Wno-deprecated-declarations -Wno-unused-parameter"
 
 SOURCES="
@@ -39,6 +39,12 @@ SOURCES="
   $E/src/epmemcfg.cpp
   $E/src/ide.cpp
   $E/src/snapshot.cpp
+  $E/src/tvc64vm.cpp
+  $E/src/tvcmem.cpp
+  $E/src/tvcvideo.cpp
+  $E/src/tvc_snap.cpp
+  $E/src/crtc6845.cpp
+  $E/src/sdext.cpp
   $E/z80/z80.cpp
   $E/z80/z80funcs2.cpp
   web/src/soundio_web.cpp
@@ -66,5 +72,5 @@ em++ -O3 $OBJS -o dist/ep128emu.js \
   -lidbfs.js
 
 cp web/shell/* dist/
-cp "$E/roms/epfileio.rom" dist/epfileio.rom
+cp "$E/roms/epfileio.rom" "$E/roms/tvcfileio.rom" dist/
 echo "Done: dist/"

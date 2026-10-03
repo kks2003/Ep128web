@@ -1,4 +1,5 @@
-// ep128web -- WebAssembly front end for the ep128emu Enterprise 128 emulator
+// ep128web -- WebAssembly front end for the ep128emu Enterprise 128 and
+// Videoton TVC emulator
 // https://github.com/istvan-v/ep128emu/
 //
 // The emulated machine (Z80, NICK, DAVE, WD177x, ...) is the unmodified
@@ -17,6 +18,7 @@
 #include "vm.hpp"
 #include "ep128vm.hpp"
 #include "nick.hpp"
+#include "tvc64vm.hpp"
 #include "decompm2.hpp"
 
 #include <emscripten/emscripten.h>
@@ -245,7 +247,8 @@ namespace {
 
   WebDisplay      *display = (WebDisplay *) 0;
   WebAudioOutput  *audioOutput = (WebAudioOutput *) 0;
-  Ep128::Ep128VM  *vm = (Ep128::Ep128VM *) 0;
+  Ep128Emu::VirtualMachine  *vm = (Ep128Emu::VirtualMachine *) 0;
+  int             machineType = -1;
   std::string     lastError;
 
   int handleException()
@@ -275,16 +278,31 @@ EMSCRIPTEN_KEEPALIVE const char *ep_last_error()
   return lastError.c_str();
 }
 
-EMSCRIPTEN_KEEPALIVE int ep_init(int sampleRate)
+// machine type 0: Enterprise 128, 1: Videoton TVC
+EMSCRIPTEN_KEEPALIVE int ep_set_machine_type(int type)
 {
   try {
-    display = new WebDisplay();
-    audioOutput = new WebAudioOutput();
-    audioOutput->setParameters(0, float(sampleRate));
-    vm = new Ep128::Ep128VM(*display, *audioOutput);
-    vm->setCPUFrequency(4000000);
-    vm->setVideoFrequency(889846);
-    vm->setSoundClockFrequency(500000);
+    if (type == machineType && vm)
+      return 0;
+    if (vm) {
+      delete vm;
+      vm = (Ep128Emu::VirtualMachine *) 0;
+    }
+    machineType = -1;
+    if (type == 1) {
+      // clock frequencies as set by ep128emu's EmulatorConfiguration for TVC
+      vm = new TVC64::TVC64VM(*display, *audioOutput);
+      vm->setCPUFrequency(3125000);
+      vm->setVideoFrequency(1562500);
+      vm->setSoundClockFrequency(390625);
+    }
+    else {
+      vm = new Ep128::Ep128VM(*display, *audioOutput);
+      vm->setCPUFrequency(4000000);
+      vm->setVideoFrequency(889846);
+      vm->setSoundClockFrequency(500000);
+    }
+    machineType = (type == 1 ? 1 : 0);
     vm->setEnableMemoryTimingEmulation(true);
     vm->setAudioOutputHighQuality(true);
     vm->setEnableDisplay(true);
@@ -297,6 +315,19 @@ EMSCRIPTEN_KEEPALIVE int ep_init(int sampleRate)
   catch (...) {
     return handleException();
   }
+}
+
+EMSCRIPTEN_KEEPALIVE int ep_init(int sampleRate)
+{
+  try {
+    display = new WebDisplay();
+    audioOutput = new WebAudioOutput();
+    audioOutput->setParameters(0, float(sampleRate));
+  }
+  catch (...) {
+    return handleException();
+  }
+  return ep_set_machine_type(0);
 }
 
 EMSCRIPTEN_KEEPALIVE void ep_set_sample_rate(int sampleRate)
@@ -411,6 +442,58 @@ EMSCRIPTEN_KEEPALIVE int ep_load_snapshot(const char *fileName)
     vm->registerChunkTypes(f);
     f.processAllChunks();
     return 0;
+  }
+  catch (...) {
+    return handleException();
+  }
+}
+
+namespace {
+
+  // records which machine specific chunk types are present in a file
+  class ChunkTypeProbe : public Ep128Emu::File::ChunkTypeHandler {
+   private:
+    Ep128Emu::File::ChunkType type;
+    int&    result;
+    int     machine;
+   public:
+    ChunkTypeProbe(Ep128Emu::File::ChunkType type_, int& result_, int machine_)
+      : ChunkTypeHandler(), type(type_), result(result_), machine(machine_)
+    {
+    }
+    virtual ~ChunkTypeProbe()
+    {
+    }
+    virtual Ep128Emu::File::ChunkType getChunkType() const
+    {
+      return type;
+    }
+    virtual void processChunk(Ep128Emu::File::Buffer& buf)
+    {
+      (void) buf;
+      result = machine;
+    }
+  };
+
+}       // namespace
+
+// Returns the machine type (0: Enterprise, 1: TVC) of an ep128emu snapshot
+// or demo file, or -1 if it cannot be determined.
+EMSCRIPTEN_KEEPALIVE int ep_file_machine_type(const char *fileName)
+{
+  try {
+    int   result = -1;
+    Ep128Emu::File  f(fileName);
+    f.registerChunkType(new ChunkTypeProbe(
+        Ep128Emu::File::EP128EMU_CHUNKTYPE_NICK_STATE, result, 0));
+    f.registerChunkType(new ChunkTypeProbe(
+        Ep128Emu::File::EP128EMU_CHUNKTYPE_DAVE_STATE, result, 0));
+    f.registerChunkType(new ChunkTypeProbe(
+        Ep128Emu::File::EP128EMU_CHUNKTYPE_TVCVM_STATE, result, 1));
+    f.registerChunkType(new ChunkTypeProbe(
+        Ep128Emu::File::EP128EMU_CHUNKTYPE_TVC_DEMO, result, 1));
+    f.processAllChunks();
+    return result;
   }
   catch (...) {
     return handleException();

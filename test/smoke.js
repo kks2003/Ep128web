@@ -1,7 +1,8 @@
 // Smoke test for the WebAssembly build (run after ./build.sh):
 //   node test/smoke.js path/to/ep128emu_roms-2.0.11.bin
 // Boots an EP128 with EXOS 2.1 + IS-BASIC + EXDOS + FILE:, enters BASIC,
-// saves a program through the FILE: device and loads it back.
+// saves a program through the FILE: device and loads it back; then does the
+// same on a Videoton TVC 64k+ with BASIC 2.2 and tvcfileio.rom.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -81,5 +82,27 @@ function fail(msg) {
   type('new\nload "file:smoke"\n');
   run(1000);
   if (M._ep_audio_frames() !== 0) fail('audio buffer not cleared');
-  console.log('OK (' + M.FS.stat('/files/smoke').size + ' byte BASIC program saved via FILE:)');
+  console.log('EP OK (' + M.FS.stat('/files/smoke').size + ' byte BASIC program saved via FILE:)');
+
+  // Videoton TVC (Hungarian layout as mapped by ep128emu: '0' is EP '@')
+  if (M._ep_set_machine_type(1) !== 0) fail('TVC machine type');
+  M._ep_reset_memory(128);
+  for (const [seg, f] of [[0, 'tvc22_sys.rom'], [2, 'tvc22_ext.rom'], [4, 'tvcfileio.rom']])
+    if (loadRom(seg, '/roms/' + f, 0) !== 0) fail('loading ' + f);
+  M._ep_reset(1);
+  let stable = 0, last = -1;
+  for (t = 0; stable < 25; t += 20) {
+    run(20);
+    const v = activity(20, 60);
+    stable = (v > 300 && v === last) ? stable + 1 : 0;
+    last = v;
+    if (t > 30000) fail('no TVC BASIC banner');
+  }
+  console.log('TVC BASIC after ' + (t / 1000).toFixed(2) + ' s');
+  run(2000);
+  KEYS['0'] = 0x4B;
+  type('\n1 print 1\nsave "tvcsmoke"\n');
+  run(1000);
+  if (!M.FS.readdir('/files').includes('tvcsmoke.cas')) fail('TVC FILE: save');
+  console.log('TVC OK (' + M.FS.stat('/files/tvcsmoke.cas').size + ' byte .cas file saved via FILE:)');
 })();

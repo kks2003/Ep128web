@@ -7,6 +7,8 @@
   // Machine configurations (subset of the ones created by ep128emu's
   // epmakecfg); ROM file names are those in ep128emu_roms-2.0.11.bin
 
+  // type 0: Enterprise, 1: Videoton TVC. For the TVC, tvcfileio.rom is added
+  // automatically when FILE: is in use (it replaces the cassette device).
   const MACHINES = [
     {
       id: 'ep128uk-exdos', name: 'EP128 (UK) · EXDOS · 128K', ram: 128,
@@ -39,8 +41,26 @@
       id: 'ep2048uk', name: 'EP 2048K · EXOS 2.4 (UK) · EXDOS', ram: 2048,
       roms: [['exos24uk.rom', [0x00, 0x01, 0x02, 0x03]],
              ['epfileio.rom', [0x10]], ['exdos14isdos10uk.rom', [0x20, 0x21]]]
+    },
+    {
+      id: 'tvc64p-22', type: 1, name: 'TVC 64k+ · BASIC 2.2', ram: 128,
+      roms: [['tvc22_sys.rom', [0x00]], ['tvc22_ext.rom', [0x02]]]
+    },
+    {
+      id: 'tvc64p-22-vtdos', type: 1, name: 'TVC 64k+ · BASIC 2.2 · VT-DOS', ram: 128,
+      roms: [['tvc22_sys.rom', [0x00]], ['tvc22_ext.rom', [0x02]],
+             ['tvc_dos12d.rom', [0x03]]]
+    },
+    {
+      id: 'tvc64-12', type: 1, name: 'TVC 64k · BASIC 1.2', ram: 80,
+      roms: [['tvc12_sys.rom', [0x00]], ['tvc12_ext.rom', [0x02]]]
+    },
+    {
+      id: 'tvc32-12', type: 1, name: 'TVC 32k · BASIC 1.2', ram: 48,
+      roms: [['tvc12_sys.rom', [0x00]], ['tvc12_ext.rom', [0x02]]]
     }
   ];
+  for (const m of MACHINES) m.type = m.type || 0;
 
   // KeyboardEvent.code -> Enterprise keyboard matrix position (row * 8 + col),
   // following ep128emu's default config/ep_keys.cfg
@@ -78,7 +98,9 @@
   const KEY_SPACE = 0x46;
 
   // characters that can be typed automatically: [matrix code, shift]
-  const CHARMAP = (() => {
+  // (CHARMAP[0]: Enterprise UK layout, CHARMAP[1]: TVC Hungarian layout as
+  // mapped by ep128emu: QWERTZ, '0' left of '1', ':' = Shift + '.')
+  const CHARMAP_EP = (() => {
     const m = {};
     const letters = { a: 0x0E, b: 0x02, c: 0x03, d: 0x0B, e: 0x15, f: 0x0C,
       g: 0x0A, h: 0x08, i: 0x48, j: 0x30, k: 0x32, l: 0x34, m: 0x40, n: 0x00,
@@ -101,6 +123,18 @@
     m['"'] = [0x1E, true];
     return m;
   })();
+  const CHARMAP_TVC = (() => {
+    const m = Object.assign({}, CHARMAP_EP);
+    m.y = m.Y = [0x06, false];
+    m.z = m.Z = [0x12, false];
+    m['0'] = [0x4B, false];
+    m[':'] = [0x44, true];
+    m['-'] = [0x43, false];
+    delete m['/'];
+    delete m[';'];
+    return m;
+  })();
+  const CHARMAP = [CHARMAP_EP, CHARMAP_TVC];
 
   // --------------------------------------------------------------------------
 
@@ -129,6 +163,7 @@
   let tapeName = '';
   let diskName = '';
   let autoTask = null;          // automatic typing / autostart state
+  let tvcFileIO = true;         // TVC: FILE: device instead of cassette
 
   function setMessage(text, isError) {
     statusMsg.textContent = text || '';
@@ -214,9 +249,17 @@
     return n;
   }
 
-  function missingROMs(m) {
-    return m.roms.map((r) => r[0]).filter((f) => !fileExists('/roms/' + f));
+  function machineROMs(m) {
+    if (m.type === 1 && tvcFileIO)
+      return m.roms.concat([['tvcfileio.rom', [0x04]]]);
+    return m.roms;
   }
+
+  function missingROMs(m) {
+    return machineROMs(m).map((r) => r[0]).filter((f) => !fileExists('/roms/' + f));
+  }
+
+  let machineType = 0;
 
   function applyMachine(m, coldReset) {
     machine = m;
@@ -228,8 +271,16 @@
       return false;
     }
     overlay.hidden = true;
+    if (m.type !== machineType) {
+      // a different emulated machine: the VM object is recreated
+      check(api.setMachineType(m.type), 'gép');
+      machineType = m.type;
+      applyVolume();
+      if (tapeName && fileExists('/tape/' + tapeName))
+        api.setTape('/tape/' + tapeName);
+    }
     check(api.resetMemory(m.ram), 'memória');
-    for (const [file, segments] of m.roms) {
+    for (const [file, segments] of machineROMs(m)) {
       segments.forEach((seg, i) => {
         check(api.loadRom(seg, '/roms/' + file, i * 16384), file);
       });
@@ -480,7 +531,7 @@ registerProcessor('ep-output', EPOutput);
   function buildKeyEvents(text) {
     const ev = [];
     for (const ch of text) {
-      const k = CHARMAP[ch];
+      const k = CHARMAP[machine.type][ch];
       if (!k) continue;
       if (k[1]) ev.push([KEY_SHIFT, 1, 30000]);
       ev.push([k[0], 1, 60000]);
@@ -495,7 +546,9 @@ registerProcessor('ep-output', EPOutput);
     releaseAllKeys();
     api.reset(1);
     autoTask = {
-      phase: 'boot', t: 0, phaseT: 0, dark: false, stable: 0,
+      // the TVC starts BASIC directly, the Enterprise shows a logo first
+      phase: machine.type === 1 ? 'basic' : 'boot',
+      t: 0, phaseT: 0, dark: false, stable: 0,
       command, onTyped, events: null, wait: 0
     };
     setMessage('Indítás…');
@@ -527,7 +580,11 @@ registerProcessor('ep-output', EPOutput);
       a.last = v;
       if (a.stable >= 25 || phaseTime > 15e6) {
         a.phase = 'type';
-        a.events = buildKeyEvents(a.command);
+        // TVC BASIC ignores keys for about a second after the banner appears,
+        // and then the first key: wait, and send an Enter first
+        a.events = machine.type === 1
+          ? [[-1, 0, 2000000]].concat(buildKeyEvents('\n' + a.command))
+          : buildKeyEvents(a.command);
       }
       return 20000;
     }
@@ -624,7 +681,24 @@ registerProcessor('ep-output', EPOutput);
     case 'ep128d':
     case 'ep128s2':
       M.FS.writeFile('/tmp/snapshot', bytes);
-      check(api.loadSnapshot('/tmp/snapshot'), 'pillanatkép');
+      {
+        // switch to the machine type the snapshot was saved from
+        const type = api.fileMachineType('/tmp/snapshot');
+        if (type >= 0 && type !== machineType) {
+          const m = MACHINES.find((x) => x.type === type);
+          if (missingROMs(m).length === 0) {
+            applyMachine(m);
+            $('machine').value = m.id;
+          } else {
+            check(api.setMachineType(type), 'gép');
+            machineType = type;
+            machine = m;
+            $('machine').value = m.id;
+            applyVolume();
+          }
+        }
+        check(api.loadSnapshot('/tmp/snapshot'), 'pillanatkép');
+      }
       setMessage((ext === 'ep128d' ? 'Demó: ' : 'Pillanatkép: ') + name);
       return;
     case 'tap':
@@ -637,7 +711,16 @@ registerProcessor('ep-output', EPOutput);
       check(api.setTape('/tape/' + tapeName), 'kazetta');
       $('tape-name').textContent = name;
       setMessage('Kazetta betöltve – indítás…');
-      startAutostart('load "tape:"\n', () => api.tapeCommand(1));
+      if (machine.type === 1) {
+        // tvcfileio.rom replaces the cassette device: remove it
+        if (tvcFileIO) {
+          tvcFileIO = false;
+          applyMachine(machine);
+        }
+        startAutostart('load\n', () => api.tapeCommand(1));
+      } else {
+        startAutostart('load "tape:"\n', () => api.tapeCommand(1));
+      }
       return;
     case 'img':
     case 'dsk':
@@ -646,12 +729,30 @@ registerProcessor('ep-output', EPOutput);
       M.FS.writeFile('/disk/' + diskName, bytes);
       check(api.setDisk(0, '/disk/' + diskName), 'lemez');
       $('disk-name').textContent = name;
-      if (!machine.roms.some((r) => r[0].startsWith('exdos')))
+      if (machine.type === 1) {
+        if (!machine.roms.some((r) => r[0].startsWith('tvc_dos')))
+          setMessage('A lemezhez VT-DOS-os TVC-t válassz!', true);
+        else
+          setMessage('Lemez az A: meghajtóban');
+      } else if (!machine.roms.some((r) => r[0].startsWith('exdos'))) {
         setMessage('A lemezhez EXDOS-os gépet válassz!', true);
-      else
+      } else {
         setMessage('Lemez az A: meghajtóban (pl. :dir, load "a:név")');
+      }
       return;
     default: {
+      if (machine.type === 1) {
+        // TVC: programs are .cas files, loaded through tvcfileio.rom
+        const base = sanitizeName(name.replace(/\.[^.]*$/, '')).replace(/\./g, '-') || 'program';
+        M.FS.writeFile('/files/' + base + '.cas', bytes);
+        listFiles();
+        if (!tvcFileIO) {
+          tvcFileIO = true;
+          applyMachine(machine);
+        }
+        startAutostart('load "' + base + '"\nrun\n', null);
+        return;
+      }
       const fname = sanitizeName(name);
       M.FS.writeFile('/files/' + fname, bytes);
       listFiles();
@@ -680,6 +781,11 @@ registerProcessor('ep-output', EPOutput);
   // --------------------------------------------------------------------------
   // UI
 
+  function applyVolume() {
+    const v = Number($('volume').value) / 100;
+    api.setVolume(v * v);
+  }
+
   function reset(cold) {
     if (!ready) return;
     autoTask = null;
@@ -696,12 +802,17 @@ registerProcessor('ep-output', EPOutput);
 
   function setupUI() {
     const sel = $('machine');
-    for (const m of MACHINES) {
-      const o = document.createElement('option');
-      o.value = m.id;
-      o.textContent = m.name;
-      sel.appendChild(o);
-    }
+    ['Enterprise', 'Videoton TVC'].forEach((label, type) => {
+      const g = document.createElement('optgroup');
+      g.label = label;
+      for (const m of MACHINES.filter((x) => x.type === type)) {
+        const o = document.createElement('option');
+        o.value = m.id;
+        o.textContent = m.name;
+        g.appendChild(o);
+      }
+      sel.appendChild(g);
+    });
     sel.value = machine.id;
     sel.addEventListener('change', () => {
       const m = MACHINES.find((x) => x.id === sel.value);
@@ -732,8 +843,7 @@ registerProcessor('ep-output', EPOutput);
                new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.ep128s');
     };
     $('volume').oninput = (e) => {
-      const v = Number(e.target.value) / 100;
-      api.setVolume(v * v);
+      applyVolume();
       try { localStorage.setItem('ep128web.volume', e.target.value); } catch (er) { }
     };
     try {
@@ -903,6 +1013,8 @@ registerProcessor('ep-output', EPOutput);
     api = {
       lastError: c('ep_last_error', 'number', []),
       init: c('ep_init', 'number', ['number']),
+      setMachineType: c('ep_set_machine_type', 'number', ['number']),
+      fileMachineType: c('ep_file_machine_type', 'number', ['string']),
       resetMemory: c('ep_reset_memory', 'number', ['number']),
       loadRom: c('ep_load_rom', 'number', ['number', 'string', 'number']),
       reset: c('ep_reset', 'number', ['number']),
@@ -938,10 +1050,12 @@ registerProcessor('ep-output', EPOutput);
 
     // ROMs: epfileio.rom ships with ep128emu (GPL); the rest come from the
     // user's ROM package, stored in IndexedDB, or from roms/ on the server
-    try {
-      const r = await fetch('epfileio.rom');
-      if (r.ok) M.FS.writeFile('/roms/epfileio.rom', new Uint8Array(await r.arrayBuffer()));
-    } catch (e) { }
+    for (const f of ['epfileio.rom', 'tvcfileio.rom']) {
+      try {
+        const r = await fetch(f);
+        if (r.ok) M.FS.writeFile('/roms/' + f, new Uint8Array(await r.arrayBuffer()));
+      } catch (e) { }
+    }
     const stored = await db.getAll();
     for (const [key, value] of stored) {
       try {

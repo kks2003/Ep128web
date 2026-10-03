@@ -1,8 +1,9 @@
-# Ep128web – Enterprise 128 emulátor a böngészőben
+# Ep128web – Enterprise 128 és Videoton TVC emulátor a böngészőben
 
-Az [ep128emu](https://github.com/istvan-v/ep128emu) (Varga István) Enterprise 128
-emulátor WebAssembly-portja. Az emulációs mag (Z80, NICK, DAVE, WD177x/EXDOS,
-magnó, FILE: eszköz) az eredeti, **változatlan** C++ forráskód, Emscriptennel
+Az [ep128emu](https://github.com/istvan-v/ep128emu) (Varga István) emulátor
+WebAssembly-portja, Enterprise 128 és Videoton TVC géppel. Az emulációs mag
+(Z80, NICK, DAVE, a TVC CRTC/videó, WD177x/EXDOS/VT-DOS, magnó, FILE: eszköz)
+az eredeti, **változatlan** C++ forráskód, Emscriptennel
 fordítva; csak a grafikus felület (FLTK) és a hangkimenet (PortAudio) helyére
 került egy kis webes frontend (canvas + Web Audio).
 
@@ -17,15 +18,27 @@ került egy kis webes frontend (canvas + Web Audio).
 
 | Fájl | Mi történik |
 | --- | --- |
+| `.cas` (TVC) | TVC módban: FILE eszköz, automatikus `LOAD` + `RUN` |
 | `.com`, `.bas`, egyéb | a `FILE:` eszközre kerül, a gép újraindul és automatikusan kiadja a `LOAD "FILE:név"` (BASIC-nél `RUN`) parancsot |
 | `.tap`, `.wav` | magnóba kerül, automatikus `LOAD "TAPE:"` + lejátszás, betöltés közben turbó |
-| `.img`, `.dsk` | A: lemezmeghajtó (EXDOS-os gép kell hozzá) |
+| `.img`, `.dsk` | A: lemezmeghajtó (EXDOS-os Enterprise vagy VT-DOS-os TVC kell hozzá) |
 | `.ep128s` / `.ep128d` | ep128emu pillanatkép / demó |
 | `.bin` (ROM-csomag), `.rom` | ROM-ok telepítése |
 
-Gépkonfigurációk: EP128 (UK/magyar) EXDOS-szal vagy csak magnóval, EP 640K
-EXOS 2.32-vel (UK/magyar), EP 2048K EXOS 2.4-gyel. Mindegyikben benne van az
-ep128emu `epfileio.rom` bővítése (`FILE:` eszköz).
+Gépkonfigurációk:
+
+- **Enterprise**: EP128 (UK/magyar) EXDOS-szal vagy csak magnóval, EP 640K
+  EXOS 2.32-vel (UK/magyar), EP 2048K EXOS 2.4-gyel. Mindegyikben benne van az
+  ep128emu `epfileio.rom` bővítése (`FILE:` eszköz).
+- **Videoton TVC**: TVC 64k+ BASIC 2.2 (VT-DOS-szal is), TVC 64k és 32k
+  BASIC 1.2. A `.cas` programok a `tvcfileio.rom` FILE eszközére kerülnek és
+  automatikusan elindulnak (`LOAD "név"` + `RUN`). Mivel a TVC-n ez a bővítés
+  helyettesíti a magnót, kazetta (`.tap`/`.wav`) betöltésekor kikapcsol,
+  `.cas` betöltésekor visszakapcsol. A billentyűzet a magyar PC-kiosztást
+  követi (QWERTZ, `0` az `1` bal oldalán, `ö ü ó` a 9 után).
+
+A pillanatképek (`.ep128s`) betöltésekor az oldal automatikusan a mentéskori
+géptípusra (Enterprise/TVC) vált.
 
 Billentyűzet: Esc = ESC, Backspace = ERASE, Del = DEL, Ins = INS, End/Pause = STOP,
 Home = HOLD, Alt = ALT, F1–F8 = funkciógombok, CapsLock = LOCK; F11 = reset,
@@ -71,7 +84,7 @@ kiteszi az oldalt. Ehhez a repó *Settings → Pages* oldalán a *Source* legyen
 
 Eltérések a natív ep128emu-tól: nincs debugger/monitor, Lua script, videó- és
 hangfelvétel, OpenGL effektek, egér; a kép 768×288-as (a váltottsoros módok
-két félképe egybe van hajtva). A ZX Spectrum / CPC / TVC gépek nincsenek
+két félképe egybe van hajtva). A ZX Spectrum és CPC gépek nincsenek
 lefordítva.
 
 ## Licenc
