@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ep128emu web</title>
+<meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span></h1>
+  <nav id="toolbar">
+    <label class="sel">Gép
+      <select id="machine"></select>
+    </label>
+    <button id="btn-reset" title="Meleg reset (F11)">Reset</button>
+    <button id="btn-cold" title="Hideg reset / bekapcsolás (Shift+F11)">Hideg reset</button>
+    <button id="btn-pause" title="Szünet (Pause)">Szünet</button>
+    <button id="btn-turbo" title="Gyorsítás (F12)">Turbó</button>
+    <label class="file">Fájl betöltése…
+      <input type="file" id="file-any" multiple>
+    </label>
+    <button id="btn-snap" title="Pillanatkép mentése (.ep128s)">Állapot mentése</button>
+    <button id="btn-full" title="Teljes képernyő">⛶</button>
+    <label class="vol" title="Hangerő">🔊
+      <input type="range" id="volume" min="0" max="100" value="70">
+    </label>
+  </nav>
+</header>
+
+<main>
+ <div id="play">
+  <div id="screen-wrap">
+    <canvas id="screen" width="768" height="288" tabindex="0"></canvas>
+    <div id="overlay" hidden>
+      <div class="box">
+        <h2>Hiányzó ROM-ok</h2>
+        <p>Az emulátorhoz szükség van a gépek ROM-jaira (Enterprise: EXOS, BASIC,
+        EXDOS…; TVC: rendszer- és bővítő ROM). Ezek szerzői jogi okokból nincsenek a csomagban.</p>
+        <ol>
+          <li>Töltsd le az <b>ep128emu_roms-2.0.11.bin</b> fájlt:
+            <a href="https://enterpriseforever.com/letoltesek-downloads/egyeb-misc/msg61025/" target="_blank" rel="noopener">enterpriseforever.com</a>
+            vagy <a href="http://ep128.hu/Emu/ep128emu_roms-2.0.11.bin" target="_blank" rel="noopener">ep128.hu</a></li>
+          <li>Húzd ide, vagy válaszd ki:
+            <label class="file big">ROM-csomag kiválasztása…
+              <input type="file" id="file-roms" accept=".bin,.rom,.7z">
+            </label></li>
+        </ol>
+        <p class="small">A böngésző eltárolja (IndexedDB), legközelebb nem kell újra megadni.
+        Egyenként is feltölthetők <code>.rom</code> fájlok (pl. <code>exos21.rom</code>, <code>basic21.rom</code>).</p>
+      </div>
+    </div>
+    <div id="chooser" hidden>
+      <div class="box">
+        <h2>Melyik programot indítsam?</h2>
+        <p class="small">Az összes fájl a FILE: eszközre került, így a program
+        futás közben is betöltheti a többit.</p>
+        <div id="chooser-list"></div>
+        <button id="chooser-cancel">Egyiket sem</button>
+      </div>
+    </div>
+    <div id="click-hint" hidden>Kattints vagy koppints a képre a hang bekapcsolásához</div>
+  </div>
+
+  <div id="touch-bar">
+    <button id="tb-kbd" aria-pressed="false">⌨ Billentyűzet</button>
+    <button id="tb-joy" aria-pressed="false">🕹 Joystick</button>
+    <button id="tb-text" aria-pressed="false">Aa Szöveg beírása</button>
+    <button id="tb-full" title="Teljes képernyő">⛶</button>
+  </div>
+
+  <form id="typer" hidden autocomplete="off">
+    <input id="typer-input" type="text" placeholder='pl. LOAD "FILE:GAME.COM"'
+           autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
+    <button type="submit">Beír + Enter</button>
+  </form>
+
+  <div id="vjoy" hidden>
+    <div id="vjoy-pad" aria-label="Irányok"><span class="knob"></span></div>
+    <div id="vjoy-side">
+      <select id="vjoy-mode" title="Mit küldjön a joystick?">
+        <option value="joy1">Külső joystick 1</option>
+        <option value="cursor">Kurzor + Space</option>
+      </select>
+      <button id="vjoy-fire">TŰZ</button>
+    </div>
+  </div>
+
+  <div id="vkbd" hidden></div>
+ </div>
+
+  <section id="status">
+    <span id="st-speed">–</span>
+    <span id="st-tape"></span>
+    <span id="st-msg"></span>
+  </section>
+
+  <section id="media">
+    <div class="group">
+      <h3>Magnó</h3>
+      <span id="tape-name" class="name">nincs kazetta</span>
+      <button id="tape-play">▶ Lejátszás</button>
+      <button id="tape-stop">■ Stop</button>
+      <button id="tape-rew">⏮ Elejére</button>
+      <button id="tape-rec">● Felvétel</button>
+      <button id="tape-new">Üres kazetta</button>
+      <button id="tape-save">Letöltés</button>
+      <label class="name"><input type="checkbox" id="tape-fast" checked> Gyors betöltés (turbó, amíg forog a szalag)</label>
+    </div>
+    <div class="group">
+      <h3>Lemez (A:)</h3>
+      <span id="disk-name" class="name">nincs lemez</span>
+      <button id="disk-eject">Kiadás</button>
+      <button id="disk-save">Letöltés</button>
+    </div>
+    <div class="group">
+      <h3>FILE: eszköz</h3>
+      <span id="files-list" class="name">üres</span>
+      <button id="files-clear">Törlés</button>
+    </div>
+    <div class="group">
+      <h3>Joystick</h3>
+      <label><input type="checkbox" id="arrows-joy"> Nyilak + Jobb Ctrl = joystick 1</label>
+      <span class="name" id="pad-status"></span>
+    </div>
+  </section>
+
+  <details id="help">
+    <summary>Súgó</summary>
+    <ul>
+      <li><b>Fájl betöltése</b> (vagy húzd a képre, akár több fájlt vagy egy <code>.zip</code>-et):
+        <code>.tap</code>/<code>.wav</code> → magnó,
+        <code>.img</code>/<code>.dsk</code> → A: lemez (szükség esetén EXDOS-os / VT-DOS-os gépre vált, és kilistázza),
+        <code>.ep128s</code> → pillanatkép, <code>.ep128d</code> → demó,
+        <code>.bin</code> → ROM-csomag. Minden más fájl a <code>FILE:</code> eszközre kerül,
+        és a program automatikusan elindul; ha több indítható program van, választhatsz.</li>
+      <li><b>Utántöltős programok</b>: tedd fel az összes fájlt egyszerre (vagy egy ZIP-ben).
+        Az alapértelmezett eszköz a betöltés módjához igazodik (Enterprise-on
+        <code>:DEF_DEV_FILE</code> / <code>:DEF_DEV_TAPE</code> / <code>:DEF_DEV_DISK</code>),
+        így a további részek ugyanonnan töltődnek. Kazettán a többi rész magától jön a szalagról.</li>
+      <li>Kazetta betöltésekor a gép újraindul, és automatikusan kiadja a
+        <code>LOAD</code> parancsot. Mentés kazettára: „Üres kazetta” → „● Felvétel”
+        → BASIC-ben <code>SAVE "név"</code>, végül „Letöltés”.</li>
+      <li>Billentyűk: Esc = ESC, Backspace = ERASE, Del = DEL, Ins = INS,
+        End vagy Pause = STOP, Home = HOLD, Alt = ALT, F1–F8 = funkciógombok,
+        CapsLock = LOCK. A <code>:</code> az <code>'</code> helyén, a
+        <code>@</code> a <code>`</code> helyén, a <code>^</code> az <code>=</code> helyén van.</li>
+      <li><b>Videoton TVC</b>: a <code>.cas</code> programok a FILE: eszközre kerülnek, és
+        automatikusan elindulnak (<code>LOAD "név"</code> + <code>RUN</code>). A billentyűzet
+        a magyar PC-kiosztást követi (QWERTZ, a <code>0</code> az <code>1</code> bal oldalán,
+        <code>ö ü ó</code> a 9 után). Magnó vagy lemez használatakor a FILE: bővítés kikapcsol
+        (a TVC-n ez helyettesíti a magnót, és ütközik a VT-DOS-szal), <code>.cas</code> betöltésekor
+        visszakapcsol. Lemezkép betöltésekor automatikusan <code>EXT 2</code> + <code>DIR</code>.</li>
+      <li>Joystick 1: numerikus 8/4/6/2 + 0 (tűz), gamepad, vagy a fenti kapcsoló.</li>
+      <li><b>Mobilon</b>: a kép alatti gombokkal kapcsolható a képernyő-billentyűzet
+        (a Shift, Ctrl és Alt egy leütésre ragad), az érintős joystick (külső joystick 1
+        vagy kurzorbillentyűk + Space), és a szövegbeírás a telefon saját billentyűzetével.
+        A ⛶ gombbal a kép és a vezérlők együtt kerülnek teljes képernyőre.</li>
+      <li>F11 = reset, Shift+F11 = hideg reset, F12 = turbó.</li>
+    </ul>
+    <p class="small">Az emulációs mag az <a href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu</a>
+    (Varga István, GPL v2) változatlan forráskódja, WebAssemblyre fordítva.</p>
+  </details>
+</main>
+
+<script src="ep128emu.js"></script>
+<script src="ep128.js"></script>
+</body>
+</html>

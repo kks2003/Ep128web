@@ -1,0 +1,3 @@
+[submodule "ep128emu"]
+	path = ep128emu
+	url = https://github.com/istvan-v/ep128emu.git
