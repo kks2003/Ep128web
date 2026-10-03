@@ -108,7 +108,7 @@
       w: 0x16, x: 0x05, y: 0x12, z: 0x06 };
     for (const c in letters) {
       m[c] = [letters[c], false];
-      m[c.toUpperCase()] = [letters[c], false];
+      m[c.toUpperCase()] = [letters[c], true];
     }
     const digits = [0x2C, 0x19, 0x1E, 0x1D, 0x1B, 0x1C, 0x1A, 0x18, 0x28, 0x2A];
     digits.forEach((code, i) => { m[String(i)] = [code, false]; });
@@ -121,6 +121,14 @@
     m[';'] = [0x33, false];
     m['-'] = [0x2B, false];
     m['"'] = [0x1E, true];
+    // shifted symbols of the EP (UK) keyboard
+    const shifted = { '!': 0x19, '£': 0x1D, '$': 0x1B, '%': 0x1C, '&': 0x1A,
+      "'": 0x18, '(': 0x28, ')': 0x2A, '=': 0x2B, '~': 0x2D, '+': 0x33,
+      '*': 0x35, '}': 0x36, '`': 0x4B, '{': 0x4D, '|': 0x01, '<': 0x42,
+      '>': 0x44, '?': 0x43 };
+    for (const c in shifted) m[c] = [shifted[c], true];
+    Object.assign(m, { '^': [0x2D, false], '@': [0x4B, false], '[': [0x4D, false],
+                       ']': [0x36, false], '\\': [0x01, false] });
     return m;
   })();
   const CHARMAP_TVC = (() => {
@@ -130,8 +138,19 @@
     m['0'] = [0x4B, false];
     m[':'] = [0x44, true];
     m['-'] = [0x43, false];
-    delete m['/'];
-    delete m[';'];
+    for (const c of ['£', '~', '*', '}', '{', '|', '<', '>', '^', '[', ']', '\\', '&'])
+      delete m[c];
+    const shifted = { "'": 0x19, '+': 0x1D, '!': 0x1B, '%': 0x1C, '/': 0x1A,
+      '=': 0x18, '(': 0x28, ')': 0x2A, '?': 0x42, '$': 0x17, '`': 0x27 };
+    for (const c in shifted) m[c] = [shifted[c], true];
+    Object.assign(m, { ';': [0x17, false], '@': [0x27, false] });
+    // Hungarian letters
+    const hu = { 'ö': 0x2C, 'ü': 0x2B, 'ó': 0x2D, 'ő': 0x4D, 'ú': 0x36,
+      'é': 0x33, 'á': 0x35, 'ű': 0x01 };
+    for (const c in hu) {
+      m[c] = [hu[c], false];
+      m[c.toUpperCase()] = [hu[c], true];
+    }
     return m;
   })();
   CHARMAP_EP._ = [0x2C, true];
@@ -270,6 +289,7 @@
 
   function applyMachine(m, coldReset) {
     machine = m;
+    if (vkbdType >= 0) renderKeyboard();
     const missing = missingROMs(m);
     if (missing.length) {
       ready = false;
@@ -294,8 +314,10 @@
     }
     if (diskName)
       api.setDisk(0, '/disk/' + diskName);
-    if (coldReset !== false)
+    if (coldReset !== false) {
       api.reset(1);
+      keyedSinceReset = false;
+    }
     ready = true;
     try { localStorage.setItem('ep128web.machine', m.id); } catch (e) { }
     setMessage('');
@@ -395,8 +417,10 @@ registerProcessor('ep-output', EPOutput);
   const keyQueue = [];
   const keyPressTime = new Map();
   let nextKeyEventUs = 0;
+  let keyedSinceReset = false;  // TVC BASIC ignores the first key after reset
 
   function keyDown(code) {
+    keyedSinceReset = true;
     keyQueue.push([code, 1]);
     processKeyQueue();
   }
@@ -556,6 +580,7 @@ registerProcessor('ep-output', EPOutput);
   function startAutostart(command, onTyped) {
     releaseAllKeys();
     api.reset(1);
+    keyedSinceReset = false;
     autoTask = {
       // the TVC starts BASIC directly, the Enterprise shows a logo first
       phase: machine.type === 1 ? 'basic' : 'boot',
@@ -763,6 +788,7 @@ registerProcessor('ep-output', EPOutput);
         machineType = type;
         machine = m;
         applyVolume();
+        renderKeyboard();
       }
       $('machine').value = m.id;
     }
@@ -922,6 +948,280 @@ registerProcessor('ep-output', EPOutput);
   }
 
   // --------------------------------------------------------------------------
+  // Touch controls: on-screen keyboard, joystick, text input
+
+  // keys: [label, matrix code, shifted label, css class, width]
+  const L = (chars, codes) => Array.from(chars).map((c, i) => [c.toUpperCase(), codes[i]]);
+  const VKBD_LAYOUTS = [
+    [   // Enterprise (UK)
+      [['F1', 0x27, '', 'fn'], ['F2', 0x26, '', 'fn'], ['F3', 0x22, '', 'fn'],
+       ['F4', 0x20, '', 'fn'], ['F5', 0x24, '', 'fn'], ['F6', 0x23, '', 'fn'],
+       ['F7', 0x25, '', 'fn'], ['F8', 0x21, '', 'fn'], ['STOP', 0x38, '', 'fn'],
+       ['HOLD', 0x3C, '', 'fn']],
+      [['ESC', 0x1F, '', 'mod'], ['1', 0x19, '!'], ['2', 0x1E, '"'], ['3', 0x1D, '£'],
+       ['4', 0x1B, '$'], ['5', 0x1C, '%'], ['6', 0x1A, '&'], ['7', 0x18, "'"],
+       ['8', 0x28, '('], ['9', 0x2A, ')'], ['0', 0x2C, '_'], ['-', 0x2B, '='],
+       ['^', 0x2D, '~'], ['ERASE', 0x2E, '', 'mod', 1.5]],
+      [['TAB', 0x17, '', 'mod', 1.3]].concat(
+        L('qwertyuiop', [0x11, 0x16, 0x15, 0x13, 0x14, 0x12, 0x10, 0x48, 0x4A, 0x4C]),
+        [['@', 0x4B, '`'], ['[', 0x4D, '{'], ['DEL', 0x41, '', 'mod', 1.2]]),
+      [['CTRL', 0x0F, '', 'mod sticky', 1.6]].concat(
+        L('asdfghjkl', [0x0E, 0x0D, 0x0B, 0x0C, 0x0A, 0x08, 0x30, 0x32, 0x34]),
+        [[';', 0x33, '+'], [':', 0x35, '*'], [']', 0x36, '}'],
+         ['ENTER', 0x3E, '', 'mod', 1.7]]),
+      [['SHIFT', 0x07, '', 'mod sticky', 1.7], ['\\', 0x01, '|']].concat(
+        L('zxcvbnm', [0x06, 0x05, 0x03, 0x04, 0x02, 0x00, 0x40]),
+        [[',', 0x42, '<'], ['.', 0x44, '>'], ['/', 0x43, '?'],
+         ['SHIFT', 0x45, '', 'mod sticky', 1.7]]),
+      [['LOCK', 0x09, '', 'mod', 1.2], ['ALT', 0x3F, '', 'mod sticky', 1.2],
+       ['SPACE', 0x46, '', '', 5], ['INS', 0x47, '', 'mod'],
+       ['←', 0x3D, '', 'mod'], ['↑', 0x3B, '', 'mod'], ['↓', 0x39, '', 'mod'],
+       ['→', 0x3A, '', 'mod']]
+    ],
+    [   // Videoton TVC (Hungarian), as mapped by ep128emu
+      [['0', 0x4B], ['1', 0x19, "'"], ['2', 0x1E, '"'], ['3', 0x1D, '+'],
+       ['4', 0x1B, '!'], ['5', 0x1C, '%'], ['6', 0x1A, '/'], ['7', 0x18, '='],
+       ['8', 0x28, '('], ['9', 0x2A, ')'], ['Ö', 0x2C], ['Ü', 0x2B], ['Ó', 0x2D],
+       ['DEL', 0x2E, '', 'mod', 1.4]],
+      [['ESC', 0x1F, '', 'mod', 1.3]].concat(
+        L('qwertzuiop', [0x11, 0x16, 0x15, 0x13, 0x14, 0x12, 0x10, 0x48, 0x4A, 0x4C]),
+        [['Ő', 0x4D], ['Ú', 0x36]]),
+      [['LOCK', 0x09, '', 'mod', 1.5]].concat(
+        L('asdfghjkl', [0x0E, 0x0D, 0x0B, 0x0C, 0x0A, 0x08, 0x30, 0x32, 0x34]),
+        [['É', 0x33], ['Á', 0x35], ['Ű', 0x01], ['RETURN', 0x3E, '', 'mod', 1.8]]),
+      [['SHIFT', 0x07, '', 'mod sticky', 1.7]].concat(
+        L('yxcvbnm', [0x06, 0x05, 0x03, 0x04, 0x02, 0x00, 0x40]),
+        [[',', 0x42, '?'], ['.', 0x44, ':'], ['-', 0x43, '_'],
+         ['SHIFT', 0x45, '', 'mod sticky', 1.7]]),
+      [['CTRL', 0x0F, '', 'mod sticky', 1.2], ['ALT', 0x3F, '', 'mod sticky', 1.1],
+       ['@', 0x27, '`'], [';', 0x17, '$'], ['SPACE', 0x46, '', '', 4.5],
+       ['INS', 0x47, '', 'mod'], ['←', 0x3D, '', 'mod'], ['↑', 0x3B, '', 'mod'],
+       ['↓', 0x39, '', 'mod'], ['→', 0x3A, '', 'mod']]
+    ]
+  ];
+
+  const stickyMods = new Set();        // latched SHIFT / CTRL / ALT codes
+  let vkbdType = -1;
+
+  function vibrate() {
+    try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { }
+  }
+
+  function renderKeyboard() {
+    const type = machine ? machine.type : 0;
+    if (type === vkbdType) return;
+    vkbdType = type;
+    stickyMods.clear();
+    const box = $('vkbd');
+    box.textContent = '';
+    for (const row of VKBD_LAYOUTS[type]) {
+      const r = document.createElement('div');
+      r.className = 'row';
+      for (const [label, code, shifted, cls, width] of row) {
+        const k = document.createElement('button');
+        k.type = 'button';
+        k.className = 'k' + (cls ? ' ' + cls : '');
+        k.dataset.code = code;
+        if (width) k.style.flexGrow = width;
+        if (shifted) {
+          const sm = document.createElement('small');
+          sm.textContent = shifted;
+          k.appendChild(sm);
+        }
+        k.appendChild(document.createTextNode(label));
+        r.appendChild(k);
+      }
+      box.appendChild(r);
+    }
+  }
+
+  function setupKeyboard() {
+    const box = $('vkbd');
+    const active = new Map();          // pointerId -> [element, code, mods]
+    box.addEventListener('pointerdown', (e) => {
+      const k = e.target.closest('.k');
+      if (!k || !api) return;
+      e.preventDefault();
+      resumeAudio();
+      vibrate();
+      const code = Number(k.dataset.code);
+      if (k.classList.contains('sticky')) {
+        // SHIFT / CTRL / ALT: latch until the next key
+        if (stickyMods.has(code)) stickyMods.delete(code);
+        else stickyMods.add(code);
+        for (const el of box.querySelectorAll('.sticky'))
+          el.classList.toggle('on', stickyMods.has(Number(el.dataset.code)));
+        return;
+      }
+      try { k.setPointerCapture(e.pointerId); } catch (er) { }
+      const mods = Array.from(stickyMods);
+      for (const m of mods) keyDown(m);
+      keyDown(code);
+      k.classList.add('down');
+      active.set(e.pointerId, [k, code, mods]);
+      if (mods.length) {
+        stickyMods.clear();
+        for (const el of box.querySelectorAll('.sticky.on')) el.classList.remove('on');
+      }
+    });
+    const release = (e) => {
+      const a = active.get(e.pointerId);
+      if (!a) return;
+      active.delete(e.pointerId);
+      const [k, code, mods] = a;
+      k.classList.remove('down');
+      keyUp(code);
+      for (const m of mods) keyUp(m);
+    };
+    box.addEventListener('pointerup', release);
+    box.addEventListener('pointercancel', release);
+    box.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  // joystick: bits 0..4 = right, left, down, up, fire
+  const JOY_CODES = {
+    joy1: [0x70, 0x71, 0x72, 0x73, 0x74],
+    cursor: [0x3A, 0x3D, 0x39, 0x3B, 0x46]
+  };
+  let vjoyMode = 'joy1';
+  let vjoyState = 0;
+
+  function setJoyState(state) {
+    const codes = JOY_CODES[vjoyMode];
+    for (let i = 0; i < 5; i++) {
+      const bit = 1 << i;
+      if ((state & bit) && !(vjoyState & bit)) keyDown(codes[i]);
+      else if (!(state & bit) && (vjoyState & bit)) keyUp(codes[i]);
+    }
+    if (state !== vjoyState && (state & ~vjoyState)) vibrate();
+    vjoyState = state;
+  }
+
+  function setupJoystick() {
+    const pad = $('vjoy-pad');
+    const knob = pad.querySelector('.knob');
+    let padPointer = null;
+    const update = (e) => {
+      const r = pad.getBoundingClientRect();
+      const dx = e.clientX - (r.left + r.width / 2);
+      const dy = e.clientY - (r.top + r.height / 2);
+      const radius = r.width / 2;
+      const dist = Math.hypot(dx, dy);
+      let dirs = 0;
+      if (dist > radius * 0.22) {
+        if (dx > dist * 0.38) dirs |= 1;
+        if (dx < -dist * 0.38) dirs |= 2;
+        if (dy > dist * 0.38) dirs |= 4;
+        if (dy < -dist * 0.38) dirs |= 8;
+      }
+      const k = Math.min(1, (radius * 0.6) / Math.max(dist, 1));
+      knob.style.transform = 'translate(' + (dx * k) + 'px,' + (dy * k) + 'px)';
+      setJoyState((vjoyState & 16) | dirs);
+    };
+    const end = (e) => {
+      if (e.pointerId !== padPointer) return;
+      padPointer = null;
+      knob.style.transform = '';
+      setJoyState(vjoyState & 16);
+    };
+    pad.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      resumeAudio();
+      padPointer = e.pointerId;
+      try { pad.setPointerCapture(e.pointerId); } catch (er) { }
+      update(e);
+    });
+    pad.addEventListener('pointermove', (e) => { if (e.pointerId === padPointer) update(e); });
+    pad.addEventListener('pointerup', end);
+    pad.addEventListener('pointercancel', end);
+
+    const fire = $('vjoy-fire');
+    let firePointer = null;
+    fire.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      resumeAudio();
+      firePointer = e.pointerId;
+      try { fire.setPointerCapture(e.pointerId); } catch (er) { }
+      fire.classList.add('down');
+      setJoyState(vjoyState | 16);
+    });
+    const fireEnd = (e) => {
+      if (e.pointerId !== firePointer) return;
+      firePointer = null;
+      fire.classList.remove('down');
+      setJoyState(vjoyState & 15);
+    };
+    fire.addEventListener('pointerup', fireEnd);
+    fire.addEventListener('pointercancel', fireEnd);
+    for (const el of [pad, fire]) el.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    $('vjoy-mode').onchange = (e) => {
+      setJoyState(0);
+      vjoyMode = e.target.value;
+      try { localStorage.setItem('ep128web.vjoyMode', vjoyMode); } catch (er) { }
+    };
+    try {
+      const m = localStorage.getItem('ep128web.vjoyMode');
+      if (m && JOY_CODES[m]) { vjoyMode = m; $('vjoy-mode').value = m; }
+    } catch (e) { }
+  }
+
+  // types text on the emulated keyboard (Enter is added at the end)
+  function typeText(text) {
+    if (!ready || autoTask) return;
+    releaseAllKeys();
+    // the TVC swallows the first key after a reset: send an Enter first
+    if (machine.type === 1 && !keyedSinceReset) text = '\n' + text;
+    keyedSinceReset = true;
+    autoTask = {
+      phase: 'type', t: 0, phaseT: 0, command: '', onTyped: null, wait: 0,
+      events: buildKeyEvents(text)
+    };
+  }
+
+  function setupTouchControls() {
+    renderKeyboard();
+    setupKeyboard();
+    setupJoystick();
+    const panels = { 'tb-kbd': 'vkbd', 'tb-joy': 'vjoy', 'tb-text': 'typer' };
+    const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    for (const [btn, panel] of Object.entries(panels)) {
+      let on = coarse && btn !== 'tb-text';
+      try {
+        const v = localStorage.getItem('ep128web.' + panel);
+        if (v !== null) on = (v === '1');
+      } catch (e) { }
+      const apply = () => {
+        $(panel).hidden = !on;
+        $(btn).setAttribute('aria-pressed', String(on));
+      };
+      apply();
+      $(btn).onclick = () => {
+        on = !on;
+        apply();
+        try { localStorage.setItem('ep128web.' + panel, on ? '1' : '0'); } catch (e) { }
+        if (panel === 'typer' && on) $('typer-input').focus();
+        if (panel === 'vjoy' && !on) setJoyState(0);
+      };
+    }
+    $('typer').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const inp = $('typer-input');
+      if (autoTask) return;
+      typeText(inp.value + '\n');
+      inp.value = '';
+    });
+    $('tb-full').onclick = toggleFullscreen;
+  }
+
+  function toggleFullscreen() {
+    const el = $('play');
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  }
+
+  // --------------------------------------------------------------------------
   // UI
 
   function applyVolume() {
@@ -934,6 +1234,7 @@ registerProcessor('ep-output', EPOutput);
     autoTask = null;
     releaseAllKeys();
     api.reset(cold ? 1 : 0);
+    keyedSinceReset = false;
     resumeAudio();
     canvas.focus();
   }
@@ -973,12 +1274,7 @@ registerProcessor('ep-output', EPOutput);
       releaseAllKeys();
     };
     $('btn-turbo').onclick = toggleTurbo;
-    $('btn-full').onclick = () => {
-      const el = $('screen-wrap');
-      if (document.fullscreenElement) document.exitFullscreen();
-      else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
-      canvas.focus();
-    };
+    $('btn-full').onclick = () => { toggleFullscreen(); canvas.focus(); };
     $('btn-snap').onclick = () => {
       if (!ready) return;
       check(api.saveSnapshot('/tmp/save.ep128s'), 'mentés');
@@ -995,6 +1291,7 @@ registerProcessor('ep-output', EPOutput);
     } catch (e) { }
     $('volume').oninput({ target: $('volume') });
 
+    setupTouchControls();
     $('chooser-cancel').onclick = () => { $('chooser').hidden = true; canvas.focus(); };
     $('file-any').onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
     $('file-roms').onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };

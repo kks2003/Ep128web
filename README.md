@@ -57,6 +57,24 @@ Home = HOLD, Alt = ALT, F1–F8 = funkciógombok, CapsLock = LOCK; F11 = reset,
 Shift+F11 = hideg reset, F12 = turbó. Joystick 1: numerikus billentyűzet
 (8/4/6/2 + 0 = tűz), gamepad, vagy nyilak + jobb Ctrl (kapcsolható).
 
+### Mobilon
+
+A kép alatti gombokkal kapcsolható:
+
+- **Billentyűzet**: képernyő-billentyűzet a gép saját kiosztásával (Enterprise:
+  F1–F8, STOP, HOLD, ERASE, ALT stb.; TVC: magyar QWERTZ ékezetes betűkkel).
+  A SHIFT, CTRL és ALT egy koppintásra „ragad” a következő billentyűig;
+  a billentyűk nyomva tarthatók (ismétlés, játékok).
+- **Joystick**: érintős iránykereszt (8 irány) és TŰZ gomb; választható, hogy
+  külső joystick 1-ként vagy kurzorbillentyűk + SPACE-ként működjön.
+- **Szöveg beírása**: a telefon saját billentyűzetével beírt sort (nagybetűk,
+  írásjelek, TVC-n ékezetek is) a gép begépeli és Entert nyom.
+- **⛶**: a kép és a vezérlők együtt teljes képernyőre kerülnek; fekvő
+  tájolásban a joystick a kép két oldalára kerül.
+
+Érintőképernyős eszközön a billentyűzet és a joystick alapból be van kapcsolva;
+a beállítást a böngésző megjegyzi.
+
 A ROM-ok szerzői jogi okokból nincsenek a repóban. Ha a saját szervereden
 `roms/ep128emu_roms-2.0.11.bin` néven elérhető a csomag, az oldal automatikusan
 betölti.
@@ -95,7 +113,8 @@ kiteszi az oldalt. Ehhez a repó *Settings → Pages* oldalán a *Source* legyen
 - `build.sh` – fordítás `em++`-szal
 
 Eltérések a natív ep128emu-tól: nincs debugger/monitor, Lua script, videó- és
-hangfelvétel, OpenGL effektek, egér; a kép 768×288-as (a váltottsoros módok
+hangfelvétel, OpenGL effektek, egér; TVC-n az „í” nem gépelhető (az ep128emu
+billentyűzet-leképezésében nincs rá billentyű); a kép 768×288-as (a váltottsoros módok
 két félképe egybe van hajtva). A ZX Spectrum és CPC gépek nincsenek
 lefordítva.
 
