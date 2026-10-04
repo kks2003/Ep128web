@@ -516,7 +516,30 @@ EMSCRIPTEN_KEEPALIVE int ep_save_snapshot(const char *fileName)
 EMSCRIPTEN_KEEPALIVE int ep_set_disk(int n, const char *fileName)
 {
   try {
-    vm->setDiskImageFile(n, std::string(fileName));
+    std::string imageFileName(fileName);
+    if (machineType == 1 && !imageFileName.empty()) {
+      try {
+        vm->setDiskImageFile(n, imageFileName, -1, -1, -1);
+      }
+      catch (...) {
+        std::FILE *f = std::fopen(imageFileName.c_str(), "rb");
+        if (!f)
+          throw;
+        long fileSize = -1L;
+        if (std::fseek(f, 0L, SEEK_END) >= 0)
+          fileSize = std::ftell(f);
+        std::fclose(f);
+        if (fileSize == (40L * 2L * 9L * 512L))
+          vm->setDiskImageFile(n, imageFileName, 40, 2, 9);
+        else if (fileSize == (80L * 2L * 9L * 512L))
+          vm->setDiskImageFile(n, imageFileName, 80, 2, 9);
+        else
+          throw;
+      }
+    }
+    else {
+      vm->setDiskImageFile(n, imageFileName);
+    }
     return 0;
   }
   catch (...) {
