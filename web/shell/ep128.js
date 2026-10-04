@@ -89,6 +89,9 @@
     Numpad6: 0x70, Numpad4: 0x71, Numpad2: 0x72, Numpad8: 0x73, Numpad0: 0x74,
     Numpad5: 0x72
   };
+  const KEYMAP_TVC = Object.assign({}, KEYMAP, {
+    Escape: 0x38, IntlBackslash: 0x1F, End: undefined, Pause: undefined
+  });
   const JOY_KEYMAP = {
     ArrowRight: 0x70, ArrowLeft: 0x71, ArrowDown: 0x72, ArrowUp: 0x73,
     ControlRight: 0x74
@@ -470,7 +473,7 @@ registerProcessor('ep-output', EPOutput);
   function mapKey(e) {
     if (arrowsAsJoystick && JOY_KEYMAP[e.code] !== undefined)
       return JOY_KEYMAP[e.code];
-    return KEYMAP[e.code];
+    return (machine && machine.type === 1 ? KEYMAP_TVC : KEYMAP)[e.code];
   }
 
   document.addEventListener('keydown', (e) => {
@@ -983,7 +986,7 @@ registerProcessor('ep-output', EPOutput);
        ['4', 0x1B, '!'], ['5', 0x1C, '%'], ['6', 0x1A, '/'], ['7', 0x18, '='],
        ['8', 0x28, '('], ['9', 0x2A, ')'], ['Ö', 0x2C], ['Ü', 0x2B], ['Ó', 0x2D],
        ['DEL', 0x2E, '', 'mod', 1.4]],
-      [['ESC', 0x1F, '', 'mod', 1.3]].concat(
+      [['ESC', 0x38, '', 'mod', 1.3]].concat(
         L('qwertzuiop', [0x11, 0x16, 0x15, 0x13, 0x14, 0x12, 0x10, 0x48, 0x4A, 0x4C]),
         [['Ő', 0x4D], ['Ú', 0x36]]),
       [['LOCK', 0x09, '', 'mod', 1.5]].concat(
