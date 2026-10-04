@@ -10,12 +10,20 @@ került egy kis webes frontend (canvas + Web Audio).
 ## Használat
 
 1. Nyisd meg az oldalt (lásd lent: GitHub Pages vagy helyi szerver).
-2. Első indításkor kéri a ROM-okat: töltsd le az **ep128emu_roms-2.0.11.bin**
+2. Alapértelmezés szerint Videoton TVC 64k+ BASIC 2.2 indul; a gépválasztást
+   az oldal megjegyzi.
+3. Első indításkor kéri a ROM-okat: töltsd le az **ep128emu_roms-2.0.11.bin**
    csomagot ([enterpriseforever.com](https://enterpriseforever.com/letoltesek-downloads/egyeb-misc/msg61025/)
    vagy [ep128.hu](http://ep128.hu/Emu/ep128emu_roms-2.0.11.bin)), és húzd rá az
    oldalra. A böngésző eltárolja (IndexedDB), legközelebb már nem kell.
-3. Programot betölteni a „Fájl betöltése…” gombbal vagy a képre húzással lehet,
+4. Programot betölteni a „Fájl betöltése…” gombbal vagy a képre húzással lehet,
    egyszerre több fájlt vagy egy `.zip` archívumot is:
+
+TVC-játékok a [tvc.hu programletöltései](http://www.tvc.hu/html/programok.html)
+közül választhatók. A játék letöltése után a „Letöltött játék indítása…” gombbal
+válaszd ki a `.cas` fájlt vagy a `.zip` csomagot; a kiválasztott program
+automatikusan elindul. A böngésző biztonsági korlátozásai miatt a weboldal
+letöltését külön kell betölteni.
 
 | Fájl | Mi történik |
 | --- | --- |
