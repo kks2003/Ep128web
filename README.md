@@ -22,7 +22,7 @@ került egy kis webes frontend (canvas + Web Audio).
 | `.cas` (TVC) | TVC módban: FILE eszköz, automatikus `LOAD` + `RUN` |
 | `.com`, `.bas`, egyéb | a `FILE:` eszközre kerül, a gép újraindul és automatikusan kiadja a `LOAD "FILE:név"` (BASIC-nél `RUN`) parancsot |
 | `.tap`, `.wav` | magnóba kerül, automatikus `LOAD "TAPE:"` + lejátszás, betöltés közben turbó |
-| `.img`, `.dsk` | A: lemezmeghajtó; szükség esetén EXDOS-os Enterprise-ra / VT-DOS-os TVC-re vált, és kilistázza a lemezt (`:DIR`, ill. `EXT 2` + `DIR`) |
+| `.img`, `.dsk` | A: lemezmeghajtó; TVC-n a 360 KiB és 720 KiB (nyers, 512 bájtos szektoros) képek is támogatottak; szükség esetén EXDOS-os Enterprise-ra / VT-DOS-os TVC-re vált, és kilistázza a lemezt (`:DIR`, ill. `EXT 2` + `DIR`) |
 | `.zip`, több fájl | minden fájl a `FILE:` eszközre kerül; ha több indítható program van, választani lehet |
 | `.ep128s` / `.ep128d` | ep128emu pillanatkép / demó |
 | `.bin` (ROM-csomag), `.rom` | ROM-ok telepítése |

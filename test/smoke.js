@@ -28,6 +28,7 @@ function fail(msg) {
   const loadRom = api('ep_load_rom', 'number', ['number', 'string', 'number']);
   M.FS.mkdir('/roms');
   M.FS.mkdir('/files');
+  M.FS.mkdir('/disk');
   M.FS.writeFile('/pkg.bin', fs.readFileSync(pkg));
   if (unpack('/pkg.bin', '/roms') < 10) fail('ROM package');
   if (M._ep_init(48000) !== 0) fail('init');
@@ -107,4 +108,11 @@ function fail(msg) {
   run(1000);
   if (!M.FS.readdir('/files').includes('tvcsmoke.cas')) fail('TVC FILE: save');
   console.log('TVC OK (' + M.FS.stat('/files/tvcsmoke.cas').size + ' byte .cas file saved via FILE:)');
+  for (const [name, size] of [['tvc360.img', 360 * 1024], ['tvc720.img', 720 * 1024]]) {
+    const image = '/disk/' + name;
+    M.FS.writeFile(image, Buffer.alloc(size));
+    if (M._ep_set_disk(0, image) !== 0) fail('TVC ' + name + ' disk image');
+    if (M._ep_set_disk(0, '') !== 0) fail('TVC disk eject');
+  }
+  console.log('TVC OK (360 KiB and 720 KiB floppy images mounted)');
 })();
