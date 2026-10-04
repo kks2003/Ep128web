@@ -52,10 +52,11 @@ Gépkonfigurációk:
 A pillanatképek (`.ep128s`) betöltésekor az oldal automatikusan a mentéskori
 géptípusra (Enterprise/TVC) vált.
 
-Billentyűzet: Esc = ESC, Backspace = ERASE, Del = DEL, Ins = INS, End/Pause = STOP,
+Enterprise-billentyűzet: Esc = ESC, Backspace = ERASE, Del = DEL, Ins = INS, End/Pause = STOP,
 Home = HOLD, Alt = ALT, F1–F8 = funkciógombok, CapsLock = LOCK; F11 = reset,
 Shift+F11 = hideg reset, F12 = turbó. Joystick 1: numerikus billentyűzet
 (8/4/6/2 + 0 = tűz), gamepad, vagy nyilak + jobb Ctrl (kapcsolható).
+TVC-n a PC Esc az ESC billentyűt, a magyar PC `í` billentyűje pedig az `í` karaktert adja.
 
 ### Mobilon
 
@@ -113,8 +114,8 @@ kiteszi az oldalt. Ehhez a repó *Settings → Pages* oldalán a *Source* legyen
 - `build.sh` – fordítás `em++`-szal
 
 Eltérések a natív ep128emu-tól: nincs debugger/monitor, Lua script, videó- és
-hangfelvétel, OpenGL effektek, egér; TVC-n az „í” nem gépelhető (az ep128emu
-billentyűzet-leképezésében nincs rá billentyű); a kép 768×288-as (a váltottsoros módok
+hangfelvétel, OpenGL effektek, egér; TVC-n az automatikus szövegbeíróval az „í”
+nem gépelhető; a kép 768×288-as (a váltottsoros módok
 két félképe egybe van hajtva). A ZX Spectrum és CPC gépek nincsenek
 lefordítva.
 
