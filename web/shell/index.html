@@ -96,6 +96,16 @@
     <span id="st-msg"></span>
   </section>
 
+  <section id="tvc-games" class="group">
+    <h3>TVC játékok</h3>
+    <span class="name">Válassz játékot a
+      <a href="http://www.tvc.hu/html/programok.html" target="_blank" rel="noopener noreferrer">tvc.hu programletöltései</a>
+      közül, töltsd le, majd indítsd el itt.</span>
+    <label class="file">Letöltött játék indítása…
+      <input type="file" id="file-games" accept=".cas,.zip" multiple>
+    </label>
+  </section>
+
   <section id="media">
     <div class="group">
       <h3>Magnó</h3>
@@ -135,6 +145,10 @@
         <code>.ep128s</code> → pillanatkép, <code>.ep128d</code> → demó,
         <code>.bin</code> → ROM-csomag. Minden más fájl a <code>FILE:</code> eszközre kerül,
         és a program automatikusan elindul; ha több indítható program van, választhatsz.</li>
+      <li><b>TVC-játékok</b>: nyisd meg a tvc.hu programletöltéseit, töltsd le a kiválasztott
+        játékot, majd a „Letöltött játék indítása…” gombbal válaszd ki a <code>.cas</code>
+        fájlt vagy a <code>.zip</code> csomagot. A böngésző biztonsági korlátozásai miatt
+        a letöltött fájlt külön ki kell választani.</li>
       <li><b>Utántöltős programok</b>: tedd fel az összes fájlt egyszerre (vagy egy ZIP-ben).
         Az alapértelmezett eszköz a betöltés módjához igazodik (Enterprise-on
         <code>:DEF_DEV_FILE</code> / <code>:DEF_DEV_TAPE</code> / <code>:DEF_DEV_DISK</code>),

@@ -1297,6 +1297,7 @@ registerProcessor('ep-output', EPOutput);
     setupTouchControls();
     $('chooser-cancel').onclick = () => { $('chooser').hidden = true; canvas.focus(); };
     $('file-any').onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
+    $('file-games').onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
     $('file-roms').onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
 
     $('tape-play').onclick = () => { if (tapeName) api.tapeCommand(1); canvas.focus(); };
@@ -1516,7 +1517,7 @@ registerProcessor('ep-output', EPOutput);
 
     let id = null;
     try { id = localStorage.getItem('ep128web.machine'); } catch (e) { }
-    machine = MACHINES.find((m) => m.id === id) || MACHINES[0];
+    machine = MACHINES.find((m) => m.id === id) || MACHINES.find((m) => m.id === 'tvc64p-22');
     setupUI();
     listFiles();
     applyMachine(machine);
