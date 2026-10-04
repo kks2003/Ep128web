@@ -534,7 +534,7 @@ EMSCRIPTEN_KEEPALIVE int ep_set_disk(int n, const char *fileName)
         else if (fileSize == (80L * 2L * 9L * 512L))
           vm->setDiskImageFile(n, imageFileName, 80, 2, 9);
         else
-          throw;
+          vm->setDiskImageFile(n, imageFileName);
       }
     }
     else {
