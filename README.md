@@ -121,3 +121,7 @@ lefordítva.
 ## Licenc
 
 GPL v2 vagy újabb, mint az ep128emu (lásd `ep128emu/COPYING`).
+
+## Weboldal
+
+[https://kks2003.github.io/Ep128web/](https://kks2003.github.io/Ep128web/)
