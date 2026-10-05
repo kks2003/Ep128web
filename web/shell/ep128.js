@@ -292,8 +292,14 @@
 
   let machineType = 0;
 
+  function updateLoadButton() {
+    const b = $('btn-load');
+    if (b) b.hidden = !(machine && machine.type === 1);
+  }
+
   function applyMachine(m, coldReset) {
     machine = m;
+    updateLoadButton();
     if (vkbdType >= 0) renderKeyboard();
     const missing = missingROMs(m);
     if (missing.length) {
@@ -797,6 +803,7 @@ registerProcessor('ep-output', EPOutput);
         check(api.setMachineType(type), 'gép');
         machineType = type;
         machine = m;
+        updateLoadButton();
         applyVolume();
         renderKeyboard();
       }
@@ -1284,6 +1291,7 @@ registerProcessor('ep-output', EPOutput);
       releaseAllKeys();
     };
     $('btn-turbo').onclick = toggleTurbo;
+    $('btn-load').onclick = () => { typeText('load"*"\n'); canvas.focus(); };
     $('btn-full').onclick = () => { toggleFullscreen(); canvas.focus(); };
     $('btn-snap').onclick = () => {
       if (!ready) return;
