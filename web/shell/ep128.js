@@ -160,6 +160,7 @@
   CHARMAP_TVC._ = [0x43, true];
   const CHARMAP = [CHARMAP_EP, CHARMAP_TVC];
   const PAUSE = '\u0001';      // in autotyped text: wait 2.5 seconds
+  const PRESS_ESC = '\u0002';  // in autotyped text: press the TVC ESC key
 
   function isTypable(text, type) {
     return Array.from(text).every((ch) => CHARMAP[type][ch]);
@@ -569,6 +570,11 @@ registerProcessor('ep-output', EPOutput);
         ev.push([-1, 0, 2500000]);
         continue;
       }
+      if (ch === PRESS_ESC) {
+        ev.push([KEYMAP_TVC.Escape, 1, 60000], [KEYMAP_TVC.Escape, 0, 30000],
+                [-1, 0, 50000]);
+        continue;
+      }
       const k = CHARMAP[machine.type][ch];
       if (!k) continue;
       if (k[1]) ev.push([KEY_SHIFT, 1, 30000]);
@@ -835,7 +841,7 @@ registerProcessor('ep-output', EPOutput);
       setTVCFileIO(false, m);
       check(api.setDisk(0, '/disk/' + diskName), 'lemez');
       setMessage('Lemez az A: meghajtóban – VT-DOS indítása…');
-      startAutostart('ext 2\n' + PAUSE + 'dir\n', null);
+      startAutostart('ext 2\n' + PAUSE + 'dir\n' + PAUSE + PRESS_ESC, null);
     } else {
       if (!machine.roms.some((r) => r[0].startsWith('exdos'))) {
         applyMachine(MACHINES.find((x) => x.id === 'ep128uk-exdos'));
