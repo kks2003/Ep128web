@@ -143,6 +143,7 @@
     m['-'] = [0x43, false];
     for (const c of ['£', '~', '*', '}', '{', '|', '<', '>', '^', '[', ']', '\\', '&'])
       delete m[c];
+    m['*'] = [0x24, false];
     const shifted = { "'": 0x19, '+': 0x1D, '!': 0x1B, '%': 0x1C, '/': 0x1A,
       '=': 0x18, '(': 0x28, ')': 0x2A, '?': 0x42, '$': 0x17, '`': 0x27 };
     for (const c in shifted) m[c] = [shifted[c], true];
