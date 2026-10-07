@@ -1773,10 +1773,21 @@ registerProcessor('ep-output', EPOutput);
       } catch (e) { console.warn(e); }
     }
     if (!fileExists('/roms/exos21.rom')) {
-      try {
-        const r = await fetch('roms/ep128emu_roms-2.0.11.bin');
-        if (r.ok) installROMPackage(new Uint8Array(await r.arrayBuffer()));
-      } catch (e) { }
+      const romUrls = [
+        'https://tvc.homeserver.hu/dl.php?file=ep128emu_roms-2.0.11.bin',
+        'roms/ep128emu_roms-2.0.11.bin'
+      ];
+      for (const url of romUrls) {
+        try {
+          const r = await fetch(url);
+          if (r.ok) {
+            const buf = new Uint8Array(await r.arrayBuffer());
+            installROMPackage(buf);
+            db.put('pkg', buf);
+            break;
+          }
+        } catch (e) { }
+      }
     }
 
     let id = null;
