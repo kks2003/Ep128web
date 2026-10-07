@@ -1261,6 +1261,208 @@ registerProcessor('ep-output', EPOutput);
     $('btn-turbo').classList.toggle('on', turbo);
   }
 
+  // ========== CATALOG SECTION ==========
+  const catalogState = {
+    items: [],
+    filtered: []
+  };
+
+  function normalizeCatalogMeta(item) {
+    return {
+      title: item.title || 'Program',
+      description: item.description || '',
+      image_url: item.image_url || '',
+      download_url: item.download_url || item.url || '',
+      file_name: item.file_name || (item.title || 'program') + '.zip',
+      type: item.type || 'ismeretlen',
+      date: item.date || ''
+    };
+  }
+
+  function populateCatalogTypeFilter() {
+    const sel = $('catalog-type');
+    if (!sel) return;
+    const types = [...new Set(catalogState.items.map((i) => i.type).filter(Boolean))].sort();
+    const current = sel.value;
+    sel.innerHTML = '<option value="">Minden típus</option>';
+    for (const t of types) {
+      const opt = document.createElement('option');
+      opt.value = t;
+      opt.textContent = t;
+      sel.appendChild(opt);
+    }
+    if (types.includes(current)) sel.value = current;
+  }
+
+  function renderCatalog(items) {
+    const grid = $('catalog-grid');
+    if (!grid) return;
+
+    grid.textContent = '';
+    if (!items.length) {
+      const empty = document.createElement('div');
+      empty.className = 'catalog-empty';
+      empty.textContent = 'Nincs a szűrőknek megfelelő program.';
+      grid.appendChild(empty);
+      return;
+    }
+
+    for (const item of items) {
+      const entry = normalizeCatalogMeta(item);
+      const card = document.createElement('article');
+      card.className = 'catalog-card';
+
+      const img = document.createElement('img');
+      img.alt = entry.title;
+      img.loading = 'lazy';
+
+      if (entry.image_url) {
+        img.src = entry.image_url;
+        img.onerror = () => { img.remove(); };
+      } else {
+        img.remove();
+      }
+
+      const body = document.createElement('div');
+      body.className = 'catalog-card-body';
+
+      const title = document.createElement('h4');
+      title.textContent = entry.title;
+
+      const desc = document.createElement('p');
+      desc.textContent = entry.description || 'TVC program';
+
+      const meta = document.createElement('div');
+      meta.className = 'catalog-meta';
+
+      if (entry.type) {
+        const type = document.createElement('span');
+        type.textContent = entry.type;
+        meta.appendChild(type);
+      }
+
+      if (entry.date) {
+        const date = document.createElement('span');
+        date.textContent = entry.date;
+        meta.appendChild(date);
+      }
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Betöltés';
+      button.onclick = async () => {
+        await launchCatalogItem(entry);
+      };
+
+      body.appendChild(title);
+      body.appendChild(desc);
+      body.appendChild(meta);
+      body.appendChild(button);
+
+      card.appendChild(img);
+      card.appendChild(body);
+      grid.appendChild(card);
+    }
+  }
+
+  function applyCatalogFilters() {
+    const search = ($('catalog-search')?.value || '').trim().toLowerCase();
+    const type = $('catalog-type')?.value || '';
+    const from = $('catalog-date-from')?.value || '';
+    const to = $('catalog-date-to')?.value || '';
+
+    const filtered = catalogState.items.filter((item) => {
+      const entry = normalizeCatalogMeta(item);
+      const haystack = `${entry.title} ${entry.description} ${entry.type}`.toLowerCase();
+      const searchOk = !search || haystack.includes(search);
+      const typeOk = !type || entry.type === type;
+      const dateOk = (
+        (!from || !entry.date || entry.date >= from) &&
+        (!to || !entry.date || entry.date <= to)
+      );
+
+      return searchOk && typeOk && dateOk;
+    });
+
+    catalogState.filtered = filtered;
+    renderCatalog(filtered);
+    const status = $('catalog-status');
+    if (status) {
+      status.textContent = `${filtered.length} program megjelenítve`;
+    }
+  }
+
+  async function launchCatalogItem(item) {
+    const url = item.download_url;
+    if (!url) {
+      setMessage('Nincs letöltési URL ehhez a programhoz.', true);
+      return;
+    }
+
+    try {
+      setMessage('Program letöltése…');
+      let res;
+      try {
+        res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) throw new Error('Letöltés HTTP ' + res.status);
+      } catch (corsErr) {
+        // Fallback CORS proxy in case direct download is blocked by browser CORS policy
+        res = await fetch('https://corsproxy.io/?' + encodeURIComponent(url));
+        if (!res.ok) throw new Error('Proxy letöltés HTTP ' + res.status);
+      }
+
+      const blob = await res.blob();
+      const fileName = item.file_name || (item.title + '.zip');
+      const file = new File([blob], fileName, {
+        type: blob.type || 'application/octet-stream'
+      });
+
+      await loadFiles([file]);
+      setMessage('Program betöltve.');
+    } catch (e) {
+      console.error(e);
+      setMessage('Hiba a program betöltése közben.', true);
+    }
+  }
+
+  async function loadCatalog() {
+    const status = $('catalog-status');
+    if (!status) return;
+
+    try {
+      let res = await fetch('catalog/programs.json', { cache: 'no-store' });
+      if (!res.ok) {
+        res = await fetch('catalog.json', { cache: 'no-store' });
+      }
+      if (!res.ok) throw new Error('catalog missing');
+
+      const items = await res.json();
+      catalogState.items = Array.isArray(items) ? items : [];
+      populateCatalogTypeFilter();
+      applyCatalogFilters();
+      const count = catalogState.filtered.length;
+      status.textContent = count ? `${count} program található` : 'Nincs megjeleníthető program';
+    } catch (e) {
+      console.error(e);
+      status.textContent = 'A programkatalógus nem érhető el.';
+    }
+  }
+
+  function setupCatalogUI() {
+    const search = $('catalog-search');
+    const type = $('catalog-type');
+    const from = $('catalog-date-from');
+    const to = $('catalog-date-to');
+
+    if (search) search.addEventListener('input', applyCatalogFilters);
+    if (type) type.addEventListener('change', applyCatalogFilters);
+    if (from) from.addEventListener('change', applyCatalogFilters);
+    if (to) to.addEventListener('change', applyCatalogFilters);
+
+    loadCatalog();
+  }
+  // ========== END CATALOG SECTION ==========
+
   function setupUI() {
     const sel = $('machine');
     ['Enterprise', 'Videoton TVC'].forEach((label, type) => {
@@ -1365,6 +1567,7 @@ registerProcessor('ep-output', EPOutput);
     });
     canvas.addEventListener('pointerdown', () => { resumeAudio(); canvas.focus(); });
     document.addEventListener('pointerdown', resumeAudio, { once: true });
+    setupCatalogUI();
   }
 
   // --------------------------------------------------------------------------
