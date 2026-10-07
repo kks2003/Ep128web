@@ -70,31 +70,32 @@ function collectPageEntries(html, pageUrl) {
   const seen = new Set();
 
   // 1. Try structured .game-item cards first
-  const gameItemChunks = html.split('<div class="game-item">').slice(1);
+  const gameItemChunks = html.split(/class=["']game-item["']/i).slice(1);
   if (gameItemChunks.length > 0) {
     for (const chunk of gameItemChunks) {
       const titleMatch = chunk.match(/<h2>\s*([^<]+)\s*<\/h2>/i);
       if (!titleMatch) continue;
       const title = stripHtml(titleMatch[1]);
 
-      const typeMatch = chunk.match(/<div class="game-header">[\s\S]*?<span>\s*([^<]+)\s*<\/span>/i);
-      const category = typeMatch ? stripHtml(typeMatch[1]) : 'Játék';
+      const tipusMatch = chunk.match(/<span class=["']meta-label["']>\s*Típus:\s*<\/span>\s*<span class=["']meta-value["']>\s*([^<]+)\s*<\/span>/i);
+      const category = tipusMatch ? stripHtml(tipusMatch[1]) : 'Játék';
 
-      const imgMatch = chunk.match(/class="main-thumb"[^>]*src="([^"]+)"|src="([^"]+)"[^>]*class="main-thumb"/i);
+      const yearSpanMatch = chunk.match(/<div class=["']game-header["']>[\s\S]*?<span>\s*([^<]+)\s*<\/span>/i);
+      const rawYear = yearSpanMatch ? stripHtml(yearSpanMatch[1]) : '';
+      const date = (rawYear && rawYear !== '????') ? parseDate(rawYear) : '';
+
+      const imgMatch = chunk.match(/class=["']main-thumb["'][^>]*src=["']([^"']+)["']|src=["']([^"']+)["'][^>]*class=["']main-thumb["']/i);
       const rawImg = imgMatch ? (imgMatch[1] || imgMatch[2]) : '';
       const imageUrl = rawImg ? normalizeUrl(rawImg, pageUrl) : '';
 
-      const dlMatch = chunk.match(/href="([^"]+)"[^>]*class="download-btn"|class="download-btn"[^>]*href="([^"]+)"/i);
+      const dlMatch = chunk.match(/href=["']([^"']+)["'][^>]*class=["']download-btn["']|class=["']download-btn["'][^>]*href=["']([^"']+)["']/i);
       const rawDl = dlMatch ? (dlMatch[1] || dlMatch[2]) : '';
       if (!rawDl) continue;
       const fileName = rawDl.split('/').pop() || (title + '.zip');
       const downloadUrl = 'https://tvc.homeserver.hu/dl.php?file=' + encodeURIComponent(fileName);
 
-      const descMatch = chunk.match(/<div class="description">\s*([\s\S]*?)\s*<\/div>/i);
+      const descMatch = chunk.match(/<div class=["']description["']>\s*([\s\S]*?)\s*<\/div>/i);
       const description = descMatch ? stripHtml(descMatch[1]) : `TVC ${category}`;
-
-      const yearMatch = chunk.match(/Kiadás éve:[\s\S]*?class="meta-value">\s*([^<]+)\s*<\/div>/i);
-      const date = yearMatch ? parseDate(stripHtml(yearMatch[1])) : '';
 
       const key = `${downloadUrl}|${title}`;
       if (seen.has(key)) continue;
@@ -110,9 +111,10 @@ function collectPageEntries(html, pageUrl) {
         date
       });
     }
+    return entries;
   }
 
-  // 2. Generic fallback for other download links
+  // 2. Generic fallback only if no .game-item cards exist
   const pageImg = (html.match(/<img\b[^>]*src=(['"])(.*?)\1[^>]*>/i) || [])[2] || '';
   const pageDate = (html.match(/\b(\d{4}[.-]\d{2}[.-]\d{2}|\d{1,2}\.\d{1,2}\.\d{4})\b/) || [])[1] || '';
   const links = [...html.matchAll(/<a\b[^>]*href=(['"])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi)];

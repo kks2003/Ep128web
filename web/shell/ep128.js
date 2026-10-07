@@ -56,6 +56,11 @@
       roms: [['tvc12_sys.rom', [0x00]], ['tvc12_ext.rom', [0x02]]]
     },
     {
+      id: 'tvc64-12-vtdos', type: 1, name: 'TVC 64k · BASIC 1.2 · VT-DOS', ram: 80,
+      roms: [['tvc12_sys.rom', [0x00]], ['tvc12_ext.rom', [0x02]],
+             ['tvc_dos12d.rom', [0x03]]]
+    },
+    {
       id: 'tvc32-12', type: 1, name: 'TVC 32k · BASIC 1.2', ram: 48,
       roms: [['tvc12_sys.rom', [0x00]], ['tvc12_ext.rom', [0x02]]]
     }
@@ -845,7 +850,8 @@ registerProcessor('ep-output', EPOutput);
     if (machine.type === 1) {
       // VT-DOS is needed, and tvcfileio.rom must be removed
       const m = machine.roms.some((r) => r[0].startsWith('tvc_dos'))
-        ? machine : MACHINES.find((x) => x.id === 'tvc64p-22-vtdos');
+        ? machine
+        : (MACHINES.find((x) => x.id === 'tvc64-12-vtdos') || MACHINES.find((x) => x.id === 'tvc64p-22-vtdos'));
       setTVCFileIO(false, m);
       check(api.setDisk(0, '/disk/' + diskName), 'lemez');
       setMessage('Lemez az A: meghajtóban – VT-DOS indítása…');
