@@ -903,7 +903,7 @@ registerProcessor('ep-output', EPOutput);
         M.FS.writeFile('/files/' + base + '.cas', M.FS.readFile('/files/' + name));
         listFiles();
       }
-      cmd = 'load "' + base + '"\nrun\n';
+      cmd = 'load "' + base + '"\n';
     } else {
       let fname = name;
       if (!isTypable(fname, 0)) {
@@ -1327,15 +1327,15 @@ registerProcessor('ep-output', EPOutput);
     const sel = $('catalog-year');
     if (!sel) return;
     const years = [...new Set(catalogState.items.map((i) => (i.date ? i.date.slice(0, 4) : '')).filter(Boolean))].sort();
-    const current = sel.value;
-    sel.innerHTML = '<option value="">Minden évjárat</option>';
+    const current = sel.value || '2000+';
+    sel.innerHTML = '<option value="">Minden évjárat</option><option value="2000+">2000-től</option>';
     for (const y of years) {
       const opt = document.createElement('option');
       opt.value = y;
       opt.textContent = y;
       sel.appendChild(opt);
     }
-    if (years.includes(current)) sel.value = current;
+    sel.value = current;
   }
 
   function renderCatalog(items) {
@@ -1419,7 +1419,13 @@ registerProcessor('ep-output', EPOutput);
       const haystack = `${entry.title} ${entry.description} ${entry.type}`.toLowerCase();
       const searchOk = !search || haystack.includes(search);
       const typeOk = !type || entry.type === type;
-      const yearOk = !year || (entry.date && entry.date.startsWith(year));
+      let yearOk = true;
+      if (year === '2000+') {
+        const y = parseInt(entry.date, 10);
+        yearOk = !isNaN(y) && y >= 2000;
+      } else if (year) {
+        yearOk = entry.date && entry.date.startsWith(year);
+      }
 
       return searchOk && typeOk && yearOk;
     });
