@@ -1393,35 +1393,33 @@ registerProcessor('ep-output', EPOutput);
   }
 
   async function launchCatalogItem(item) {
-    const url = item.download_url;
-    if (!url) {
-      setMessage('Nincs letöltési URL ehhez a programhoz.', true);
-      return;
-    }
+    const fileName = item.file_name || (item.title ? item.title + '.zip' : 'program.zip');
+    // Use dl.php on homeserver which provides Access-Control-Allow-Origin: *
+    const dlUrl = 'https://tvc.homeserver.hu/dl.php?file=' + encodeURIComponent(fileName);
+    const url = item.download_url || dlUrl;
 
     try {
       setMessage('Program letöltése…');
       let res;
       try {
+        res = await fetch(dlUrl, { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+      } catch (err1) {
+        // Fallback to item.download_url if dlUrl failed
         res = await fetch(url, { cache: 'no-store' });
         if (!res.ok) throw new Error('Letöltés HTTP ' + res.status);
-      } catch (corsErr) {
-        // Fallback CORS proxy in case direct download is blocked by browser CORS policy
-        res = await fetch('https://corsproxy.io/?' + encodeURIComponent(url));
-        if (!res.ok) throw new Error('Proxy letöltés HTTP ' + res.status);
       }
 
       const blob = await res.blob();
-      const fileName = item.file_name || (item.title + '.zip');
       const file = new File([blob], fileName, {
         type: blob.type || 'application/octet-stream'
       });
 
       await loadFiles([file]);
-      setMessage('Program betöltve.');
+      setMessage('Program betöltve: ' + (item.title || fileName));
     } catch (e) {
       console.error(e);
-      setMessage('Hiba a program betöltése közben.', true);
+      setMessage('Hiba a program letöltésekor: ' + (e.message || e), true);
     }
   }
 

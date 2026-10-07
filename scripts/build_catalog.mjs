@@ -87,7 +87,8 @@ function collectPageEntries(html, pageUrl) {
       const dlMatch = chunk.match(/href="([^"]+)"[^>]*class="download-btn"|class="download-btn"[^>]*href="([^"]+)"/i);
       const rawDl = dlMatch ? (dlMatch[1] || dlMatch[2]) : '';
       if (!rawDl) continue;
-      const downloadUrl = normalizeUrl(rawDl, pageUrl);
+      const fileName = rawDl.split('/').pop() || (title + '.zip');
+      const downloadUrl = 'https://tvc.homeserver.hu/dl.php?file=' + encodeURIComponent(fileName);
 
       const descMatch = chunk.match(/<div class="description">\s*([\s\S]*?)\s*<\/div>/i);
       const description = descMatch ? stripHtml(descMatch[1]) : `TVC ${category}`;
@@ -95,7 +96,6 @@ function collectPageEntries(html, pageUrl) {
       const yearMatch = chunk.match(/Kiadás éve:[\s\S]*?class="meta-value">\s*([^<]+)\s*<\/div>/i);
       const date = yearMatch ? parseDate(stripHtml(yearMatch[1])) : '';
 
-      const fileName = rawDl.split('/').pop() || (title + '.zip');
       const key = `${downloadUrl}|${title}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -124,8 +124,10 @@ function collectPageEntries(html, pageUrl) {
 
     if (!/(\.zip|\.cas|\.wav|\.tap|\.dsk|\.img|\.bin|\.rom)(\?.*)?$/i.test(urlLower)) continue;
 
-    const label = text || href.split('/').pop() || 'Program';
-    const key = `${href}|${label}`;
+    const fileName = href.split('/').pop() || 'program.zip';
+    const label = text || fileName || 'Program';
+    const downloadUrl = 'https://tvc.homeserver.hu/dl.php?file=' + encodeURIComponent(fileName);
+    const key = `${downloadUrl}|${label}`;
     if (seen.has(key)) continue;
     seen.add(key);
 
@@ -133,8 +135,8 @@ function collectPageEntries(html, pageUrl) {
       title: label.replace(/\.[^.]+$/i, '').trim() || 'Program',
       description: text || 'TVC program',
       image_url: pageImg ? normalizeUrl(pageImg, pageUrl) : '',
-      download_url: href,
-      file_name: href.split('/').pop() || 'program.zip',
+      download_url: downloadUrl,
+      file_name: fileName,
       type: fileTypeFromName(href),
       date: parseDate(pageDate)
     });
@@ -143,16 +145,23 @@ function collectPageEntries(html, pageUrl) {
   return entries;
 }
 
+function decodeHtml(buf) {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+  } catch {
+    return new TextDecoder('windows-1250').decode(buf);
+  }
+}
+
 async function loadPageHtml(pageChar) {
   const pageFileName = `tvc_programok_${pageChar}.html`;
-  const decoder = new TextDecoder('windows-1250');
 
   // Check local directories first for speed and offline stability
   for (const dir of localHtmlDirs) {
     const localPath = path.join(dir, pageFileName);
     if (existsSync(localPath)) {
       const buf = readFileSync(localPath);
-      return { html: decoder.decode(buf), pageUrl: baseUrl + pageFileName };
+      return { html: decodeHtml(buf), pageUrl: baseUrl + pageFileName };
     }
   }
 
@@ -161,7 +170,7 @@ async function loadPageHtml(pageChar) {
   const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const buf = await res.arrayBuffer();
-  return { html: decoder.decode(buf), pageUrl: url };
+  return { html: decodeHtml(buf), pageUrl: url };
 }
 
 async function main() {
