@@ -72,5 +72,7 @@ em++ -O3 $OBJS -o dist/ep128emu.js \
   -lidbfs.js
 
 cp web/shell/* dist/
+mkdir -p dist/catalog
+cp web/catalog/* dist/catalog/ 2>/dev/null || true
 cp "$E/roms/epfileio.rom" "$E/roms/tvcfileio.rom" dist/
 echo "Done: dist/"
