@@ -19,6 +19,7 @@
     <button id="btn-pause" title="Szünet (Pause)">Szünet</button>
     <button id="btn-turbo" title="Gyorsítás (F12)">Turbó</button>
     <button id="btn-load" title='load"*" + Enter (TVC)' hidden>load"*"</button>
+    <button id="btn-run" title='RUN + Enter'>Run</button>
     <label class="file">Fájl betöltése…
       <input type="file" id="file-any" multiple>
     </label>
@@ -97,14 +98,6 @@
     <span id="st-msg"></span>
   </section>
 
-  <section id="tvc-games" class="group">
-    <h3>TVC játékok</h3>
-    <span class="name">Válassz játékot a
-      <a href="http://www.tvc.hu/html/programok.html" target="_blank" rel="noopener noreferrer">tvc.hu programletöltései</a>
-      közül, töltsd le, majd indítsd el itt.</span>
-    <label class="file">Letöltött játék indítása…
-      <input type="file" id="file-games" accept=".cas,.zip" multiple>
-    </label>
   <section id="media">
     <div class="group">
       <h3>Magnó</h3>
@@ -184,8 +177,9 @@
       <select id="catalog-type" aria-label="Típus szűrő">
         <option value="">Minden típus</option>
       </select>
-      <input id="catalog-date-from" type="date" aria-label="Dátumtól">
-      <input id="catalog-date-to" type="date" aria-label="Dátumig">
+      <select id="catalog-year" aria-label="Évjárat szűrő">
+        <option value="">Minden évjárat</option>
+      </select>
     </div>
     <div id="catalog-status" class="small">Katalógus betöltése…</div>
     <div id="catalog-grid" class="catalog-grid"></div>

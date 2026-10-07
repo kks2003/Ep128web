@@ -302,9 +302,17 @@
     if (b) b.hidden = !(machine && machine.type === 1);
   }
 
+  function updateCatalogVisibility() {
+    const cat = $('catalog');
+    if (cat) cat.hidden = !(machine && machine.type === 1);
+  }
+
   function applyMachine(m, coldReset) {
     machine = m;
+    const sel = $('machine');
+    if (sel && sel.value !== m.id) sel.value = m.id;
     updateLoadButton();
+    updateCatalogVisibility();
     if (vkbdType >= 0) renderKeyboard();
     const missing = missingROMs(m);
     if (missing.length) {
@@ -947,9 +955,24 @@ registerProcessor('ep-output', EPOutput);
       const snapshots = of('snapshot');
       const tapes = of('tape');
       const disks = of('disk');
+      const progFiles = of('program');
+
+      // If TVC is active but the user loads an Enterprise program file or tape,
+      // automatically switch to Enterprise 128
+      if (machine.type === 1) {
+        const isEpProg = progFiles.some((f) => {
+          const ext = extOf(f.name);
+          return ['com', 'prg', 'bas', 'ep', 'exe', 'app'].includes(ext);
+        });
+        if (isEpProg || (tapes.length && !progFiles.some((f) => extOf(f.name) === 'cas'))) {
+          const ep = MACHINES.find((x) => x.id === 'ep128hu-exdos') || MACHINES.find((x) => x.id === 'ep128uk-exdos');
+          if (ep) applyMachine(ep);
+        }
+      }
+
       // all other files go to the FILE: directory, so that programs which
       // load further files at run time find them there
-      const startable = storeProgramFiles(of('program'));
+      const startable = storeProgramFiles(progFiles);
       if (snapshots.length) {
         loadSnapshotFile(snapshots[0]);
       } else if (disks.length) {
@@ -960,8 +983,8 @@ registerProcessor('ep-output', EPOutput);
         startProgram(startable[0]);
       } else if (startable.length > 1) {
         choosePrograms(startable.sort());
-      } else if (of('program').length) {
-        setMessage('Fájlok a FILE: eszközre másolva: ' + of('program').map((f) => f.name).join(', '));
+      } else if (progFiles.length) {
+        setMessage('Fájlok a FILE: eszközre másolva: ' + progFiles.map((f) => f.name).join(', '));
       }
     } catch (e) {
       console.error(e);
@@ -1300,6 +1323,21 @@ registerProcessor('ep-output', EPOutput);
     if (types.includes(current)) sel.value = current;
   }
 
+  function populateCatalogYearFilter() {
+    const sel = $('catalog-year');
+    if (!sel) return;
+    const years = [...new Set(catalogState.items.map((i) => (i.date ? i.date.slice(0, 4) : '')).filter(Boolean))].sort();
+    const current = sel.value;
+    sel.innerHTML = '<option value="">Minden évjárat</option>';
+    for (const y of years) {
+      const opt = document.createElement('option');
+      opt.value = y;
+      opt.textContent = y;
+      sel.appendChild(opt);
+    }
+    if (years.includes(current)) sel.value = current;
+  }
+
   function renderCatalog(items) {
     const grid = $('catalog-grid');
     if (!grid) return;
@@ -1374,20 +1412,16 @@ registerProcessor('ep-output', EPOutput);
   function applyCatalogFilters() {
     const search = ($('catalog-search')?.value || '').trim().toLowerCase();
     const type = $('catalog-type')?.value || '';
-    const from = $('catalog-date-from')?.value || '';
-    const to = $('catalog-date-to')?.value || '';
+    const year = $('catalog-year')?.value || '';
 
     const filtered = catalogState.items.filter((item) => {
       const entry = normalizeCatalogMeta(item);
       const haystack = `${entry.title} ${entry.description} ${entry.type}`.toLowerCase();
       const searchOk = !search || haystack.includes(search);
       const typeOk = !type || entry.type === type;
-      const dateOk = (
-        (!from || !entry.date || entry.date >= from) &&
-        (!to || !entry.date || entry.date <= to)
-      );
+      const yearOk = !year || (entry.date && entry.date.startsWith(year));
 
-      return searchOk && typeOk && dateOk;
+      return searchOk && typeOk && yearOk;
     });
 
     catalogState.filtered = filtered;
@@ -1443,6 +1477,7 @@ registerProcessor('ep-output', EPOutput);
       const items = await res.json();
       catalogState.items = Array.isArray(items) ? items : [];
       populateCatalogTypeFilter();
+      populateCatalogYearFilter();
       applyCatalogFilters();
       const count = catalogState.filtered.length;
       status.textContent = count ? `${count} program található` : 'Nincs megjeleníthető program';
@@ -1455,13 +1490,11 @@ registerProcessor('ep-output', EPOutput);
   function setupCatalogUI() {
     const search = $('catalog-search');
     const type = $('catalog-type');
-    const from = $('catalog-date-from');
-    const to = $('catalog-date-to');
+    const year = $('catalog-year');
 
     if (search) search.addEventListener('input', applyCatalogFilters);
     if (type) type.addEventListener('change', applyCatalogFilters);
-    if (from) from.addEventListener('change', applyCatalogFilters);
-    if (to) to.addEventListener('change', applyCatalogFilters);
+    if (year) year.addEventListener('change', applyCatalogFilters);
 
     loadCatalog();
   }
@@ -1498,6 +1531,8 @@ registerProcessor('ep-output', EPOutput);
     };
     $('btn-turbo').onclick = toggleTurbo;
     $('btn-load').onclick = () => { typeText('load"*"\n'); canvas.focus(); };
+    const btnRun = $('btn-run');
+    if (btnRun) btnRun.onclick = () => { typeText('run\n'); canvas.focus(); };
     $('btn-full').onclick = () => { toggleFullscreen(); canvas.focus(); };
     $('btn-snap').onclick = () => {
       if (!ready) return;
@@ -1518,7 +1553,8 @@ registerProcessor('ep-output', EPOutput);
     setupTouchControls();
     $('chooser-cancel').onclick = () => { $('chooser').hidden = true; canvas.focus(); };
     $('file-any').onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
-    $('file-games').onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
+    const fileGames = $('file-games');
+    if (fileGames) fileGames.onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
     $('file-roms').onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
 
     $('tape-play').onclick = () => { if (tapeName) api.tapeCommand(1); canvas.focus(); };
