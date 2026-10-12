@@ -3,10 +3,6 @@
 
 #include <cstdint>
 
-namespace TVC64 {
-  class Memory;
-}
-
 class TVCSoundCards {
 public:
   TVCSoundCards();
@@ -29,7 +25,6 @@ public:
   bool handleWrite(uint16_t addr, uint8_t val);
   bool handleSlotROMRead(uint16_t addr, uint16_t slotPaging, uint8_t &val);
 
-  void updateRAMHeaders(TVC64::Memory &mem);
   void renderAudio(int32_t &outLeft, int32_t &outRight);
   void reset();
 

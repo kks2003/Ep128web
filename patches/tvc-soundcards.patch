@@ -1,5 +1,5 @@
 diff --git a/src/tvc64vm.cpp b/src/tvc64vm.cpp
-index e82f17c..ba5ac65 100644
+index e82f17c..533e89e 100644
 --- a/src/tvc64vm.cpp
 +++ b/src/tvc64vm.cpp
 @@ -32,6 +32,7 @@
@@ -119,35 +119,29 @@ index e82f17c..ba5ac65 100644
      if (videoCapture) {
        delete videoCapture;
        videoCapture = (Ep128Emu::VideoCapture *) 0;
-@@ -1443,6 +1484,10 @@ namespace TVC64 {
+@@ -1443,6 +1484,8 @@ namespace TVC64 {
  #ifdef ENABLE_SDEXT
      sdext.reset(int(isColdReset));
  #endif
-+    if (soundCards) {
++    if (soundCards)
 +      soundCards->reset();
-+      soundCards->updateRAMHeaders(memory);
-+    }
    }
  
    void TVC64VM::resetMemoryConfiguration(size_t memSize)
-@@ -1961,5 +2006,27 @@ namespace TVC64 {
+@@ -1961,5 +2004,23 @@ namespace TVC64 {
      return z80.getReg();
    }
  
 +  void TVC64VM::setGameCardEnabled(bool enabled)
 +  {
-+    if (soundCards) {
++    if (soundCards)
 +      soundCards->setGameCardEnabled(enabled);
-+      soundCards->updateRAMHeaders(memory);
-+    }
 +  }
 +
 +  void TVC64VM::setMultiSoundEnabled(bool enabled)
 +  {
-+    if (soundCards) {
++    if (soundCards)
 +      soundCards->setMultiSoundEnabled(enabled);
-+      soundCards->updateRAMHeaders(memory);
-+    }
 +  }
 +
 +  void TVC64VM::setExtJoyState(int joyIndex, uint8_t state)

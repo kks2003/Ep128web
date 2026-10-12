@@ -2,7 +2,6 @@
 #include "emu76489.h"
 #include "opl3.h"
 #include "saa1099.hpp"
-#include "tvcmem.hpp"
 #include <cstring>
 
 TVCSoundCards::TVCSoundCards()
@@ -54,11 +53,6 @@ void TVCSoundCards::setExtJoyState(int joyIndex, uint8_t state)
     m_joy3State = state;
   else if (joyIndex == 1)
     m_joy4State = state;
-}
-
-bool TVCSoundCards::isSlot1Present() const
-{
-  return false;
 }
 
 bool TVCSoundCards::isSlot2Present() const
@@ -160,17 +154,23 @@ bool TVCSoundCards::handleRead(uint16_t addr, uint8_t &val)
   return false;
 }
 
+// Extension ROM header in the format of tvcfileio.s: "MOPS", name length,
+// name, IRQ vector, init vector, number of device functions (none here).
+// The init routine at 0xC020 is XOR A, RET; everything else reads as RET.
 static uint8_t makeHeaderByte(const char *name, int len, uint16_t offset)
 {
-  if (offset == 0) return 'M';
-  if (offset == 1) return 'O';
-  if (offset == 2) return 'P';
-  if (offset == 3) return 'S';
+  if (offset < 4) return (uint8_t)"MOPS"[offset];
   if (offset == 4) return (uint8_t)len;
-  if (offset >= 5 && offset < uint16_t(5 + len)) return (uint8_t)name[offset - 5];
-  if (offset == uint16_t(5 + len)) return 0x0E;     // Init vector low byte (0xC00E)
-  if (offset == uint16_t(5 + len + 1)) return 0xC0; // Init vector high byte
-  return 0xC9; // Z80 RET opcode
+  if (offset < uint16_t(5 + len)) return (uint8_t)name[offset - 5];
+  switch (offset - uint16_t(5 + len)) {
+  case 0: return 0x21;                  // IRQ vector: 0xC021 (RET)
+  case 1: return 0xC0;
+  case 2: return 0x20;                  // init vector: 0xC020
+  case 3: return 0xC0;
+  case 4: return 0x00;                  // no device functions
+  }
+  if (offset == 0x20) return 0xAF;      // XOR A
+  return 0xC9;                          // RET
 }
 
 bool TVCSoundCards::handleSlotROMRead(uint16_t addr, uint16_t slotPaging, uint8_t &val)
@@ -210,37 +210,6 @@ bool TVCSoundCards::handleSlotROMRead(uint16_t addr, uint16_t slotPaging, uint8_
   }
 
   return false;
-}
-
-void TVCSoundCards::updateRAMHeaders(TVC64::Memory &mem)
-{
-  if (!m_gameCardEnabled && !m_multiSoundEnabled)
-    return;
-
-  // Never overwrite 0x0070 (Slot 1), which is reserved for tvcfileio.rom ("FILE")!
-  if (m_gameCardEnabled && m_multiSoundEnabled) {
-    // Slot 2: GameCard at 0x00A0
-    mem.writeROM(0x00A0, 6);
-    const char *n1 = "JOY+SN";
-    for (int i = 0; i < 6; i++) mem.writeROM(0x00A1 + i, (uint8_t)n1[i]);
-
-    // Slot 3: MultiSound at 0x00D0
-    mem.writeROM(0x00D0, 5);
-    const char *n2 = "SndMx";
-    for (int i = 0; i < 5; i++) mem.writeROM(0x00D1 + i, (uint8_t)n2[i]);
-  }
-  else if (m_gameCardEnabled) {
-    // Slot 2: GameCard at 0x00A0
-    mem.writeROM(0x00A0, 6);
-    const char *n = "JOY+SN";
-    for (int i = 0; i < 6; i++) mem.writeROM(0x00A1 + i, (uint8_t)n[i]);
-  }
-  else if (m_multiSoundEnabled) {
-    // Slot 2: MultiSound at 0x00A0
-    mem.writeROM(0x00A0, 5);
-    const char *n = "SndMx";
-    for (int i = 0; i < 5; i++) mem.writeROM(0x00A1 + i, (uint8_t)n[i]);
-  }
 }
 
 void TVCSoundCards::renderAudio(int32_t &outLeft, int32_t &outRight)
