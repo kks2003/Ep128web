@@ -1,4 +1,4 @@
-﻿diff --git a/src/tvc64vm.cpp b/src/tvc64vm.cpp
+diff --git a/src/tvc64vm.cpp b/src/tvc64vm.cpp
 index e82f17c..ba5ac65 100644
 --- a/src/tvc64vm.cpp
 +++ b/src/tvc64vm.cpp
@@ -81,10 +81,10 @@ index e82f17c..ba5ac65 100644
        retval = 0xFA | uint8_t(vm.memory.readRaw(0x0000C000U) == 0xFF)
                 | (uint8_t(vm.memory.readRaw(0x00010000U) == 0xFF) << 2);
 +      if (vm.soundCards) {
-+        if (vm.soundCards->isSlot1Present())
-+          retval &= ~(1 << 2);
 +        if (vm.soundCards->isSlot2Present())
 +          retval &= ~(1 << 4);
++        if (vm.soundCards->isSlot3Present())
++          retval &= ~(1 << 6);
 +      }
        break;
      case 0x5B:                          // reset tone generator (repeated twice)

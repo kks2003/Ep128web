@@ -617,8 +617,8 @@ EMSCRIPTEN_KEEPALIVE void ep_write_memory(int addr, int value)
   if (!vm)
     return;
   vm->writeMemory(uint32_t(addr), uint8_t(value), true);
-  if (machineType == 1 && addr == 2821) {
-    vm->writeMemory((0xF8U << 14) | 2821U, uint8_t(value), false);
+  if (machineType == 1 && (addr == 2821 || addr == 2829)) {
+    vm->writeMemory((0xF8U << 14) | uint32_t(addr), uint8_t(value), false);
   }
 }
 

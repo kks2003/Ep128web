@@ -58,10 +58,15 @@ void TVCSoundCards::setExtJoyState(int joyIndex, uint8_t state)
 
 bool TVCSoundCards::isSlot1Present() const
 {
-  return m_gameCardEnabled || m_multiSoundEnabled;
+  return false;
 }
 
 bool TVCSoundCards::isSlot2Present() const
+{
+  return m_gameCardEnabled || m_multiSoundEnabled;
+}
+
+bool TVCSoundCards::isSlot3Present() const
 {
   return m_gameCardEnabled && m_multiSoundEnabled;
 }
@@ -83,69 +88,39 @@ bool TVCSoundCards::handleWrite(uint16_t addr, uint8_t val)
 
   addr = addr & 0x7F;
 
-  // If both cards are enabled:
-  // Slot 1 (0x20..0x2F): GameCard
-  // Slot 2 (0x30..0x3F): Multichip Soundcard
-  if (m_gameCardEnabled && m_multiSoundEnabled) {
-    if (addr == 0x20) {
-      if (m_sng) SNG_writeIO((SNG*)m_sng, val);
-      return true;
-    }
-    if (addr == 0x30) {
-      if (m_sng) SNG_writeIO((SNG*)m_sng, val);
-      return true;
-    }
-    if (addr == 0x32) {
-      if (m_saa) ((SAA1099*)m_saa)->writeData(val);
-      return true;
-    }
-    if (addr == 0x33) {
-      if (m_saa) ((SAA1099*)m_saa)->writeAddress(val);
-      return true;
-    }
-    if (addr == 0x34) {
-      m_oplSelectedReg = val;
-      return true;
-    }
-    if (addr == 0x35) {
-      if (m_opl) OPL3_WriteReg((opl3_chip*)m_opl, m_oplSelectedReg, val);
-      return true;
-    }
+  // Never intercept floppy controller
+  if (addr >= 0x10 && addr <= 0x13)
     return false;
+
+  // SN76489 write:
+  // Support Port 0x20 (slot 1 compatibility) and Port 0x30 (slot 2)
+  if (addr == 0x20 || addr == 0x30) {
+    if (m_sng) SNG_writeIO((SNG*)m_sng, val);
+    return true;
   }
 
-  // Only GameCard enabled (Slot 1 at 0x20..0x23)
-  if (m_gameCardEnabled) {
-    if (addr == 0x20) {
-      if (m_sng) SNG_writeIO((SNG*)m_sng, val);
-      return true;
-    }
-    return false;
-  }
-
-  // Only MultiSound enabled (Slot 1 at 0x20..0x25)
+  // MultiSound chips (SAA1099, OPL2)
   if (m_multiSoundEnabled) {
-    if (addr == 0x20) {
-      if (m_sng) SNG_writeIO((SNG*)m_sng, val);
-      return true;
-    }
-    if (addr == 0x22) {
+    // SAA1099 data: 0x22 or 0x32 or 0x42
+    if (addr == 0x22 || addr == 0x32 || addr == 0x42) {
       if (m_saa) ((SAA1099*)m_saa)->writeData(val);
       return true;
     }
-    if (addr == 0x23) {
+    // SAA1099 address: 0x23 or 0x33 or 0x43
+    if (addr == 0x23 || addr == 0x33 || addr == 0x43) {
       if (m_saa) ((SAA1099*)m_saa)->writeAddress(val);
       return true;
     }
-    if (addr == 0x24) {
+    // OPL2 register select: 0x24 or 0x34 or 0x44
+    if (addr == 0x24 || addr == 0x34 || addr == 0x44) {
       m_oplSelectedReg = val;
       return true;
     }
-    if (addr == 0x25) {
+    // OPL2 data: 0x25 or 0x35 or 0x45
+    if (addr == 0x25 || addr == 0x35 || addr == 0x45) {
       if (m_opl) OPL3_WriteReg((opl3_chip*)m_opl, m_oplSelectedReg, val);
       return true;
     }
-    return false;
   }
 
   return false;
@@ -158,40 +133,28 @@ bool TVCSoundCards::handleRead(uint16_t addr, uint8_t &val)
 
   addr = addr & 0x7F;
 
-  if (m_gameCardEnabled && m_multiSoundEnabled) {
-    if (addr == 0x22) {
-      val = m_joy3State;
-      return true;
-    }
-    if (addr == 0x23) {
-      val = m_joy4State;
-      return true;
-    }
-    if (addr == 0x34) {
-      val = 0x00; // YM3812 status
-      return true;
-    }
+  // Never intercept floppy controller
+  if (addr >= 0x10 && addr <= 0x13)
     return false;
-  }
 
+  // GameCard joystick 3 & 4
   if (m_gameCardEnabled) {
-    if (addr == 0x22) {
+    if (addr == 0x22 || addr == 0x32) {
       val = m_joy3State;
       return true;
     }
-    if (addr == 0x23) {
+    if (addr == 0x23 || addr == 0x33) {
       val = m_joy4State;
       return true;
     }
-    return false;
   }
 
+  // MultiSound OPL2 status
   if (m_multiSoundEnabled) {
-    if (addr == 0x24) {
-      val = 0x00; // YM3812 status
+    if (addr == 0x24 || addr == 0x34 || addr == 0x44) {
+      val = 0x00;
       return true;
     }
-    return false;
   }
 
   return false;
@@ -217,19 +180,33 @@ bool TVCSoundCards::handleSlotROMRead(uint16_t addr, uint16_t slotPaging, uint8_
 
   uint16_t offset = addr & 0x3FFF;
 
-  // Slot 1 paged (0x4000)
-  if (slotPaging == 0x4000 && isSlot1Present()) {
-    if (m_gameCardEnabled)
+  // Never touch Slot 0 (0x0000) or Slot 1 (0x4000) - Slot 1 belongs to tvcfileio.rom!
+  if (m_gameCardEnabled && m_multiSoundEnabled) {
+    if (slotPaging == 0x8000) { // Slot 2: GameCard
       val = makeHeaderByte("JOY+SN", 6, offset);
-    else
+      return true;
+    }
+    if (slotPaging == 0xC000) { // Slot 3: MultiSound
       val = makeHeaderByte("SndMx", 5, offset);
-    return true;
+      return true;
+    }
+    return false;
   }
 
-  // Slot 2 paged (0x8000)
-  if (slotPaging == 0x8000 && isSlot2Present()) {
-    val = makeHeaderByte("SndMx", 5, offset);
-    return true;
+  if (m_gameCardEnabled) {
+    if (slotPaging == 0x8000) { // Slot 2: GameCard
+      val = makeHeaderByte("JOY+SN", 6, offset);
+      return true;
+    }
+    return false;
+  }
+
+  if (m_multiSoundEnabled) {
+    if (slotPaging == 0x8000) { // Slot 2: MultiSound
+      val = makeHeaderByte("SndMx", 5, offset);
+      return true;
+    }
+    return false;
   }
 
   return false;
@@ -240,26 +217,29 @@ void TVCSoundCards::updateRAMHeaders(TVC64::Memory &mem)
   if (!m_gameCardEnabled && !m_multiSoundEnabled)
     return;
 
+  // Never overwrite 0x0070 (Slot 1), which is reserved for tvcfileio.rom ("FILE")!
   if (m_gameCardEnabled && m_multiSoundEnabled) {
-    // Slot 1: GameCard at 0x0070
-    mem.writeROM(0x0070, 6);
+    // Slot 2: GameCard at 0x00A0
+    mem.writeROM(0x00A0, 6);
     const char *n1 = "JOY+SN";
-    for (int i = 0; i < 6; i++) mem.writeROM(0x0071 + i, (uint8_t)n1[i]);
+    for (int i = 0; i < 6; i++) mem.writeROM(0x00A1 + i, (uint8_t)n1[i]);
 
-    // Slot 2: MultiSound at 0x00A0
-    mem.writeROM(0x00A0, 5);
+    // Slot 3: MultiSound at 0x00D0
+    mem.writeROM(0x00D0, 5);
     const char *n2 = "SndMx";
-    for (int i = 0; i < 5; i++) mem.writeROM(0x00A1 + i, (uint8_t)n2[i]);
+    for (int i = 0; i < 5; i++) mem.writeROM(0x00D1 + i, (uint8_t)n2[i]);
   }
   else if (m_gameCardEnabled) {
-    mem.writeROM(0x0070, 6);
+    // Slot 2: GameCard at 0x00A0
+    mem.writeROM(0x00A0, 6);
     const char *n = "JOY+SN";
-    for (int i = 0; i < 6; i++) mem.writeROM(0x0071 + i, (uint8_t)n[i]);
+    for (int i = 0; i < 6; i++) mem.writeROM(0x00A1 + i, (uint8_t)n[i]);
   }
   else if (m_multiSoundEnabled) {
-    mem.writeROM(0x0070, 5);
+    // Slot 2: MultiSound at 0x00A0
+    mem.writeROM(0x00A0, 5);
     const char *n = "SndMx";
-    for (int i = 0; i < 5; i++) mem.writeROM(0x0071 + i, (uint8_t)n[i]);
+    for (int i = 0; i < 5; i++) mem.writeROM(0x00A1 + i, (uint8_t)n[i]);
   }
 }
 

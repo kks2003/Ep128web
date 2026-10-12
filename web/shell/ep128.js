@@ -407,7 +407,13 @@
       api.reset(1);
       keyedSinceReset = false;
     }
-    if (m.type === 1) applyTvcSoundCards();
+    if (m.type === 1) {
+      applyTvcSoundCards();
+      if (tvcFileIO) {
+        writeMemory(2821, 129);
+        writeMemory(2829, 129);
+      }
+    }
     ready = true;
     try { localStorage.setItem('ep128web.machine', m.id); } catch (e) { }
     setMessage('');
@@ -737,8 +743,14 @@ registerProcessor('ep-output', EPOutput);
       a.last = v;
       if (a.stable >= 25 || phaseTime > 15e6) {
         a.phase = 'type';
-        if (machine.type === 1 && a.isTvcTape) {
-          writeMemory(2821, 5);
+        if (machine.type === 1) {
+          if (a.isTvcTape) {
+            writeMemory(2821, 5);
+            writeMemory(2829, 5);
+          } else if (tvcFileIO) {
+            writeMemory(2821, 129);
+            writeMemory(2829, 129);
+          }
         }
         // TVC BASIC ignores keys for about a second after the banner appears,
         // and then the first key: wait, and send an Enter first
@@ -751,8 +763,14 @@ registerProcessor('ep-output', EPOutput);
     if (a.events.length) {
       const [code, down, delay] = a.events.shift();
       if (code >= 0) api.setKey(code, down);
-      if (machine.type === 1 && a.isTvcTape) {
-        writeMemory(2821, 5);
+      if (machine.type === 1) {
+        if (a.isTvcTape) {
+          writeMemory(2821, 5);
+          writeMemory(2829, 5);
+        } else if (tvcFileIO) {
+          writeMemory(2821, 129);
+          writeMemory(2829, 129);
+        }
       }
       return delay;
     }
@@ -761,8 +779,14 @@ registerProcessor('ep-output', EPOutput);
       a.phaseT = a.t;
       return 20000;
     }
-    if (machine.type === 1 && a.isTvcTape) {
-      writeMemory(2821, 5);
+    if (machine.type === 1) {
+      if (a.isTvcTape) {
+        writeMemory(2821, 5);
+        writeMemory(2829, 5);
+      } else if (tvcFileIO) {
+        writeMemory(2821, 129);
+        writeMemory(2829, 129);
+      }
     }
     autoTask = null;
     setMessage('');
@@ -941,6 +965,7 @@ registerProcessor('ep-output', EPOutput);
     if (machine.type === 1) {
       setTVCFileIO(false);
       writeMemory(2821, 5);
+      writeMemory(2829, 5);
     }
     check(api.setTape('/tape/' + tapeName), 'kazetta');
     $('tape-name').textContent = f.name;
@@ -949,7 +974,10 @@ registerProcessor('ep-output', EPOutput);
     // their further parts from the tape as well
     startAutostart(machine.type === 1 ? 'load\n' : ':def_dev_tape\nload\n',
                    () => {
-                     if (machine.type === 1) writeMemory(2821, 5);
+                     if (machine.type === 1) {
+                       writeMemory(2821, 5);
+                       writeMemory(2829, 5);
+                     }
                      api.tapeCommand(1);
                    },
                    machine.type === 1);
@@ -961,6 +989,11 @@ registerProcessor('ep-output', EPOutput);
     M.FS.writeFile('/disk/' + diskName, f.bytes);
     $('disk-name').textContent = f.name;
     if (machine.type === 1) {
+      if (tapeName) {
+        api.setTape('');
+        tapeName = '';
+        $('tape-name').textContent = 'nincs kazetta';
+      }
       // VT-DOS is needed, and tvcfileio.rom must be removed
       const m = machine.roms.some((r) => r[0].startsWith('tvc_dos'))
         ? machine
@@ -1009,6 +1042,8 @@ registerProcessor('ep-output', EPOutput);
         tapeName = '';
         $('tape-name').textContent = 'nincs kazetta';
       }
+      writeMemory(2821, 129);
+      writeMemory(2829, 129);
       let base = name.replace(/\.cas$/i, '');
       if (!isTypable(base, 1)) {
         // the name cannot be typed: start it through a copy with a simple name
@@ -1731,13 +1766,29 @@ registerProcessor('ep-output', EPOutput);
     };
     $('btn-turbo').onclick = toggleTurbo;
     $('btn-load').onclick = () => {
-      if (machine.type === 1 && tapeName) writeMemory(2821, 5);
+      if (machine.type === 1) {
+        if (tapeName) {
+          writeMemory(2821, 5);
+          writeMemory(2829, 5);
+        } else if (tvcFileIO) {
+          writeMemory(2821, 129);
+          writeMemory(2829, 129);
+        }
+      }
       typeText('load"*"\n');
       canvas.focus();
     };
     const btnRun = $('btn-run');
     if (btnRun) btnRun.onclick = () => {
-      if (machine.type === 1 && tapeName) writeMemory(2821, 5);
+      if (machine.type === 1) {
+        if (tapeName) {
+          writeMemory(2821, 5);
+          writeMemory(2829, 5);
+        } else if (tvcFileIO) {
+          writeMemory(2821, 129);
+          writeMemory(2829, 129);
+        }
+      }
       typeText('run\n');
       canvas.focus();
     };
