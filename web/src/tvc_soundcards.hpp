@@ -39,6 +39,9 @@ private:
   void *m_saa; // SAA1099*
 
   uint8_t m_oplSelectedReg;
+
+  int gameCardPort() const;
+  int multiSoundPort() const;
 };
 
 #endif // TVC_SOUNDCARDS_HPP_INCLUDED
