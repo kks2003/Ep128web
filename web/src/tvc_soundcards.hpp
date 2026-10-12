@@ -17,10 +17,6 @@ public:
   // Active LOW: 0 = pressed, 1 = released.
   void setExtJoyState(int joyIndex, uint8_t state);
 
-  bool isSlot1Present() const { return false; } // Slot 1 reserved for tvcfileio.rom
-  bool isSlot2Present() const;
-  bool isSlot3Present() const;
-
   bool handleRead(uint16_t addr, uint8_t &val);
   bool handleWrite(uint16_t addr, uint8_t val);
   bool handleSlotROMRead(uint16_t addr, uint16_t slotPaging, uint8_t &val);
