@@ -223,6 +223,10 @@
     return result;
   }
 
+  function writeMemory(addr, val) {
+    if (api && api.writeMemory) api.writeMemory(addr, val);
+  }
+
   // --------------------------------------------------------------------------
   // IndexedDB storage for ROM images
 
@@ -606,7 +610,7 @@ registerProcessor('ep-output', EPOutput);
     return ev;
   }
 
-  function startAutostart(command, onTyped) {
+  function startAutostart(command, onTyped, isTvcTape = false) {
     releaseAllKeys();
     api.reset(1);
     keyedSinceReset = false;
@@ -614,7 +618,8 @@ registerProcessor('ep-output', EPOutput);
       // the TVC starts BASIC directly, the Enterprise shows a logo first
       phase: machine.type === 1 ? 'basic' : 'boot',
       t: 0, phaseT: 0, dark: false, logo: 0, stable: 0,
-      command, onTyped, events: null, wait: 0
+      command, onTyped, events: null, wait: 0,
+      isTvcTape: isTvcTape || (machine.type === 1 && !!tapeName)
     };
     setMessage('Indítás…');
   }
@@ -649,6 +654,9 @@ registerProcessor('ep-output', EPOutput);
       a.last = v;
       if (a.stable >= 25 || phaseTime > 15e6) {
         a.phase = 'type';
+        if (machine.type === 1 && a.isTvcTape) {
+          writeMemory(2821, 5);
+        }
         // TVC BASIC ignores keys for about a second after the banner appears,
         // and then the first key: wait, and send an Enter first
         a.events = machine.type === 1
@@ -660,12 +668,18 @@ registerProcessor('ep-output', EPOutput);
     if (a.events.length) {
       const [code, down, delay] = a.events.shift();
       if (code >= 0) api.setKey(code, down);
+      if (machine.type === 1 && a.isTvcTape) {
+        writeMemory(2821, 5);
+      }
       return delay;
     }
     if (a.phase === 'logo') {
       a.phase = 'basic';
       a.phaseT = a.t;
       return 20000;
+    }
+    if (machine.type === 1 && a.isTvcTape) {
+      writeMemory(2821, 5);
     }
     autoTask = null;
     setMessage('');
@@ -840,14 +854,21 @@ registerProcessor('ep-output', EPOutput);
     ensureDir('/tape');
     tapeName = sanitizeName(f.name);
     M.FS.writeFile('/tape/' + tapeName, f.bytes);
-    if (machine.type === 1) setTVCFileIO(false);
+    if (machine.type === 1) {
+      setTVCFileIO(false);
+      writeMemory(2821, 5);
+    }
     check(api.setTape('/tape/' + tapeName), 'kazetta');
     $('tape-name').textContent = f.name;
     setMessage('Kazetta betöltve – indítás…');
     // the default device is set to TAPE: so that multi-part programs load
     // their further parts from the tape as well
     startAutostart(machine.type === 1 ? 'load\n' : ':def_dev_tape\nload\n',
-                   () => api.tapeCommand(1));
+                   () => {
+                     if (machine.type === 1) writeMemory(2821, 5);
+                     api.tapeCommand(1);
+                   },
+                   machine.type === 1);
   }
 
   function loadDiskFile(f) {
@@ -923,7 +944,11 @@ registerProcessor('ep-output', EPOutput);
   // lets the user choose which program to start when several were loaded
   function choosePrograms(names) {
     const box = $('chooser');
+    const title = $('chooser-title');
+    const desc = $('chooser-desc');
     const list = $('chooser-list');
+    if (title) title.textContent = 'Melyik programot indítsam?';
+    if (desc) desc.textContent = 'Az összes fájl a FILE: eszközre került, így a program futás közben is betöltheti a többit.';
     list.textContent = '';
     for (const n of names) {
       const b = document.createElement('button');
@@ -931,6 +956,40 @@ registerProcessor('ep-output', EPOutput);
       b.onclick = () => { box.hidden = true; startProgram(n); canvas.focus(); };
       list.appendChild(b);
     }
+    box.hidden = false;
+  }
+
+  function chooseCasOrWav(casFiles, wavFiles, onChoose) {
+    const box = $('chooser');
+    const title = $('chooser-title');
+    const desc = $('chooser-desc');
+    const list = $('chooser-list');
+    if (title) title.textContent = 'CAS vagy WAV formátum?';
+    if (desc) desc.textContent = 'A betöltött ZIP archívumban CAS és WAV formátum is található. Melyiket szeretnéd elindítani?';
+    list.textContent = '';
+
+    for (const f of casFiles) {
+      const b = document.createElement('button');
+      b.textContent = '💾 CAS: ' + f.name;
+      b.onclick = () => {
+        box.hidden = true;
+        onChoose('cas', f);
+        canvas.focus();
+      };
+      list.appendChild(b);
+    }
+
+    for (const f of wavFiles) {
+      const b = document.createElement('button');
+      b.textContent = '📼 WAV: ' + f.name;
+      b.onclick = () => {
+        box.hidden = true;
+        onChoose('wav', f);
+        canvas.focus();
+      };
+      list.appendChild(b);
+    }
+
     box.hidden = false;
   }
 
@@ -952,45 +1011,70 @@ registerProcessor('ep-output', EPOutput);
         setMessage('Először a ROM-okat kell betölteni', true);
         return;
       }
-      const snapshots = of('snapshot');
-      const tapes = of('tape');
-      const disks = of('disk');
-      const progFiles = of('program');
 
-      // If TVC is active but the user loads an Enterprise program file or tape,
-      // automatically switch to Enterprise 128
-      if (machine.type === 1) {
-        const isEpProg = progFiles.some((f) => {
-          const ext = extOf(f.name);
-          return ['com', 'prg', 'bas', 'ep', 'exe', 'app'].includes(ext);
+      const casFiles = files.filter((f) => extOf(f.name) === 'cas');
+      const wavFiles = files.filter((f) => extOf(f.name) === 'wav');
+
+      if (casFiles.length > 0 && wavFiles.length > 0) {
+        chooseCasOrWav(casFiles, wavFiles, (chosenType, chosenFile) => {
+          let chosenFiles;
+          if (chosenType === 'cas') {
+            chosenFiles = files.filter((f) => extOf(f.name) !== 'wav');
+          } else {
+            chosenFiles = [chosenFile, ...files.filter((f) => extOf(f.name) !== 'cas' && f !== chosenFile)];
+          }
+          processLoadedFiles(chosenFiles);
         });
-        if (isEpProg || (tapes.length && !progFiles.some((f) => extOf(f.name) === 'cas'))) {
-          const ep = MACHINES.find((x) => x.id === 'ep128hu-exdos') || MACHINES.find((x) => x.id === 'ep128uk-exdos');
-          if (ep) applyMachine(ep);
-        }
+        return;
       }
 
-      // all other files go to the FILE: directory, so that programs which
-      // load further files at run time find them there
-      const startable = storeProgramFiles(progFiles);
-      if (snapshots.length) {
-        loadSnapshotFile(snapshots[0]);
-      } else if (disks.length) {
-        loadDiskFile(disks[0]);
-      } else if (tapes.length) {
-        loadTapeFile(tapes[0]);
-      } else if (startable.length === 1) {
-        startProgram(startable[0]);
-      } else if (startable.length > 1) {
-        choosePrograms(startable.sort());
-      } else if (progFiles.length) {
-        setMessage('Fájlok a FILE: eszközre másolva: ' + progFiles.map((f) => f.name).join(', '));
-      }
+      processLoadedFiles(files);
     } catch (e) {
       console.error(e);
       setMessage(String(e.message || e), true);
     }
     canvas.focus();
+  }
+
+  function processLoadedFiles(files) {
+    const of = (kind) => files.filter((f) => fileKind(f) === kind);
+    const snapshots = of('snapshot');
+    const tapes = of('tape');
+    const disks = of('disk');
+    const progFiles = of('program');
+
+    // If TVC is active but the user loads an Enterprise program file or tape,
+    // automatically switch to Enterprise 128
+    if (machine.type === 1) {
+      const isEpProg = progFiles.some((f) => {
+        const ext = extOf(f.name);
+        return ['com', 'prg', 'bas', 'ep', 'exe', 'app'].includes(ext);
+      });
+      if (isEpProg || (tapes.length && !progFiles.some((f) => extOf(f.name) === 'cas'))) {
+        const ep = MACHINES.find((x) => x.id === 'ep128hu-exdos') || MACHINES.find((x) => x.id === 'ep128uk-exdos');
+        if (ep) applyMachine(ep);
+      }
+    } else if (machine.type === 0 && progFiles.some((f) => extOf(f.name) === 'cas')) {
+      const tvc = MACHINES.find((x) => x.id === 'tvc64p-22') || MACHINES.find((x) => x.type === 1);
+      if (tvc) applyMachine(tvc);
+    }
+
+    // all other files go to the FILE: directory, so that programs which
+    // load further files at run time find them there
+    const startable = storeProgramFiles(progFiles);
+    if (snapshots.length) {
+      loadSnapshotFile(snapshots[0]);
+    } else if (disks.length) {
+      loadDiskFile(disks[0]);
+    } else if (tapes.length) {
+      loadTapeFile(tapes[0]);
+    } else if (startable.length === 1) {
+      startProgram(startable[0]);
+    } else if (startable.length > 1) {
+      choosePrograms(startable.sort());
+    } else if (progFiles.length) {
+      setMessage('Fájlok a FILE: eszközre másolva: ' + progFiles.map((f) => f.name).join(', '));
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -1538,7 +1622,11 @@ registerProcessor('ep-output', EPOutput);
     $('btn-turbo').onclick = toggleTurbo;
     $('btn-load').onclick = () => { typeText('load"*"\n'); canvas.focus(); };
     const btnRun = $('btn-run');
-    if (btnRun) btnRun.onclick = () => { typeText('run\n'); canvas.focus(); };
+    if (btnRun) btnRun.onclick = () => {
+      if (machine.type === 1 && tapeName) writeMemory(2821, 5);
+      typeText('run\n');
+      canvas.focus();
+    };
     $('btn-full').onclick = () => { toggleFullscreen(); canvas.focus(); };
     $('btn-snap').onclick = () => {
       if (!ready) return;
@@ -1563,7 +1651,13 @@ registerProcessor('ep-output', EPOutput);
     if (fileGames) fileGames.onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
     $('file-roms').onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
 
-    $('tape-play').onclick = () => { if (tapeName) api.tapeCommand(1); canvas.focus(); };
+    $('tape-play').onclick = () => {
+      if (tapeName) {
+        if (machine.type === 1) writeMemory(2821, 5);
+        api.tapeCommand(1);
+      }
+      canvas.focus();
+    };
     $('tape-stop').onclick = () => { if (tapeName) api.tapeCommand(0); canvas.focus(); };
     $('tape-rew').onclick = () => { if (tapeName) api.tapeCommand(2); canvas.focus(); };
     $('tape-rec').onclick = () => { if (tapeName) api.tapeCommand(3); canvas.focus(); };
@@ -1745,6 +1839,8 @@ registerProcessor('ep-output', EPOutput);
       tapePosition: c('ep_tape_position', 'number', []),
       tapeLength: c('ep_tape_length', 'number', []),
       ledState: c('ep_led_state', 'number', []),
+      readMemory: c('ep_read_memory', 'number', ['number']),
+      writeMemory: c('ep_write_memory', null, ['number', 'number']),
       unpackRoms: c('ep_unpack_rom_package', 'number', ['string', 'string'])
     };
     for (const d of ['/roms', '/files', '/tmp', '/disk', '/tape']) ensureDir(d);

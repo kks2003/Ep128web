@@ -602,6 +602,16 @@ EMSCRIPTEN_KEEPALIVE int ep_read_memory(int addr)
   return vm->readMemory(uint32_t(addr), true);
 }
 
+EMSCRIPTEN_KEEPALIVE void ep_write_memory(int addr, int value)
+{
+  if (!vm)
+    return;
+  vm->writeMemory(uint32_t(addr), uint8_t(value), true);
+  if (machineType == 1 && addr == 2821) {
+    vm->writeMemory((0xF8U << 14) | 2821U, uint8_t(value), false);
+  }
+}
+
 EMSCRIPTEN_KEEPALIVE uint32_t ep_led_state()
 {
   return vm->getFloppyDriveLEDState();
