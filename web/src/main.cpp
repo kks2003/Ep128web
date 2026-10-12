@@ -19,6 +19,7 @@
 #include "ep128vm.hpp"
 #include "nick.hpp"
 #include "tvc64vm.hpp"
+#include "tvc_soundcards.hpp"
 #include "decompm2.hpp"
 
 #include <emscripten/emscripten.h>
@@ -250,6 +251,10 @@ namespace {
   Ep128Emu::VirtualMachine  *vm = (Ep128Emu::VirtualMachine *) 0;
   int             machineType = -1;
   std::string     lastError;
+  bool            tvcGameCardEnabled = false;
+  bool            tvcMultiSoundEnabled = false;
+  uint8_t         tvcJoy3State = 0xFF;
+  uint8_t         tvcJoy4State = 0xFF;
 
   int handleException()
   {
@@ -291,10 +296,15 @@ EMSCRIPTEN_KEEPALIVE int ep_set_machine_type(int type)
     machineType = -1;
     if (type == 1) {
       // clock frequencies as set by ep128emu's EmulatorConfiguration for TVC
-      vm = new TVC64::TVC64VM(*display, *audioOutput);
-      vm->setCPUFrequency(3125000);
-      vm->setVideoFrequency(1562500);
-      vm->setSoundClockFrequency(390625);
+      TVC64::TVC64VM *tvc = new TVC64::TVC64VM(*display, *audioOutput);
+      tvc->setCPUFrequency(3125000);
+      tvc->setVideoFrequency(1562500);
+      tvc->setSoundClockFrequency(390625);
+      tvc->setGameCardEnabled(tvcGameCardEnabled);
+      tvc->setMultiSoundEnabled(tvcMultiSoundEnabled);
+      tvc->setExtJoyState(0, tvcJoy3State);
+      tvc->setExtJoyState(1, tvcJoy4State);
+      vm = tvc;
     }
     else {
       vm = new Ep128::Ep128VM(*display, *audioOutput);
@@ -683,6 +693,34 @@ EMSCRIPTEN_KEEPALIVE int ep_unpack_rom_package(const char *pkgName,
   }
   catch (...) {
     return handleException();
+  }
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_set_tvc_gamecard(int enabled)
+{
+  tvcGameCardEnabled = (enabled != 0);
+  if (vm && machineType == 1) {
+    TVC64::TVC64VM *tvc = static_cast<TVC64::TVC64VM *>(vm);
+    tvc->setGameCardEnabled(tvcGameCardEnabled);
+  }
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_set_tvc_multisound(int enabled)
+{
+  tvcMultiSoundEnabled = (enabled != 0);
+  if (vm && machineType == 1) {
+    TVC64::TVC64VM *tvc = static_cast<TVC64::TVC64VM *>(vm);
+    tvc->setMultiSoundEnabled(tvcMultiSoundEnabled);
+  }
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_set_tvc_ext_joy(int joyIndex, int state)
+{
+  if (joyIndex == 0) tvcJoy3State = (uint8_t)state;
+  else if (joyIndex == 1) tvcJoy4State = (uint8_t)state;
+  if (vm && machineType == 1) {
+    TVC64::TVC64VM *tvc = static_cast<TVC64::TVC64VM *>(vm);
+    tvc->setExtJoyState(joyIndex, (uint8_t)state);
   }
 }
 

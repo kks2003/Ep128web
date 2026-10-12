@@ -201,6 +201,19 @@
   let autoTask = null;          // automatic typing / autostart state
   let tvcFileIO = true;         // TVC: FILE: device instead of cassette
   let cartridgeName = '';       // TVC: cartridge ROM image name
+  let tvcGameCard = true;       // TVC: GameCard (SN76489 + Joy 3-4)
+  let tvcMultiSound = false;    // TVC: Multichip Soundcard (SN, SAA, OPL2)
+  try {
+    const gc = localStorage.getItem('ep128web.tvcGameCard');
+    if (gc !== null) tvcGameCard = (gc === '1');
+    const ms = localStorage.getItem('ep128web.tvcMultiSound');
+    if (ms !== null) tvcMultiSound = (ms === '1');
+  } catch (e) {}
+
+  function applyTvcSoundCards() {
+    if (api && api.setTvcGameCard) api.setTvcGameCard(tvcGameCard ? 1 : 0);
+    if (api && api.setTvcMultiSound) api.setTvcMultiSound(tvcMultiSound ? 1 : 0);
+  }
 
   function setMessage(text, isError) {
     statusMsg.textContent = text || '';
@@ -320,6 +333,12 @@
     const nameEl = $('cart-name');
     if (grp) grp.hidden = !(machine && machine.type === 1);
     if (nameEl) nameEl.textContent = cartridgeName || 'nincs modul';
+    updateTvcCardsUI();
+  }
+
+  function updateTvcCardsUI() {
+    const grp = $('tvc-cards-group');
+    if (grp) grp.hidden = !(machine && machine.type === 1);
   }
 
   function ejectCartridge() {
@@ -388,6 +407,7 @@
       api.reset(1);
       keyedSinceReset = false;
     }
+    if (m.type === 1) applyTvcSoundCards();
     ready = true;
     try { localStorage.setItem('ep128web.machine', m.id); } catch (e) { }
     setMessage('');
@@ -582,33 +602,54 @@ registerProcessor('ep-output', EPOutput);
     if (document.hidden) releaseAllKeys();
   });
 
-  let padState = 0;
+  let padState = [0, 0, 0, 0];
   function pollGamepads() {
     if (!navigator.getGamepads) return;
-    let state = 0;
-    let name = '';
-    for (const gp of navigator.getGamepads()) {
+    let names = [];
+    const pads = navigator.getGamepads();
+    for (let pIdx = 0; pIdx < Math.min(pads.length, 4); pIdx++) {
+      const gp = pads[pIdx];
       if (!gp) continue;
-      name = gp.id;
+      names.push(gp.id);
       const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0;
       const b = (i) => gp.buttons[i] && gp.buttons[i].pressed;
+      let state = 0;
       if (ax > 0.5 || b(15)) state |= 1;      // right
       if (ax < -0.5 || b(14)) state |= 2;     // left
       if (ay > 0.5 || b(13)) state |= 4;      // down
       if (ay < -0.5 || b(12)) state |= 8;     // up
       if (b(0) || b(1) || b(2) || b(3)) state |= 16;
-      break;
+
+      if (state !== padState[pIdx]) {
+        if (pIdx === 0) {
+          const codes = [0x70, 0x71, 0x72, 0x73, 0x74];
+          codes.forEach((c, i) => {
+            const bit = 1 << i;
+            if ((state & bit) && !(padState[0] & bit)) api.setKey(c, 1);
+            else if (!(state & bit) && (padState[0] & bit)) api.setKey(c, 0);
+          });
+        } else if (pIdx === 1) {
+          const codes = [0x78, 0x79, 0x7A, 0x7B, 0x7C];
+          codes.forEach((c, i) => {
+            const bit = 1 << i;
+            if ((state & bit) && !(padState[1] & bit)) api.setKey(c, 1);
+            else if (!(state & bit) && (padState[1] & bit)) api.setKey(c, 0);
+          });
+        } else if (pIdx === 2 || pIdx === 3) {
+          if (api && api.setTvcExtJoy) {
+            let extByte = 0xFF;
+            if (state & 8) extByte &= ~1;   // up
+            if (state & 4) extByte &= ~2;   // down
+            if (state & 2) extByte &= ~4;   // left
+            if (state & 1) extByte &= ~8;   // right
+            if (state & 16) extByte &= ~16; // fire
+            api.setTvcExtJoy(pIdx - 2, extByte);
+          }
+        }
+        padState[pIdx] = state;
+      }
     }
-    if (state !== padState) {
-      const codes = [0x70, 0x71, 0x72, 0x73, 0x74];
-      codes.forEach((c, i) => {
-        const bit = 1 << i;
-        if ((state & bit) && !(padState & bit)) api.setKey(c, 1);
-        else if (!(state & bit) && (padState & bit)) api.setKey(c, 0);
-      });
-      padState = state;
-    }
-    $('pad-status').textContent = name ? 'Gamepad: ' + name : '';
+    $('pad-status').textContent = names.length ? 'Gamepad: ' + names[0] + (names.length > 1 ? ' (+' + (names.length - 1) + ')' : '') : '';
   }
 
   // --------------------------------------------------------------------------
@@ -1767,6 +1808,26 @@ registerProcessor('ep-output', EPOutput);
       arrowsAsJoystick = e.target.checked;
       canvas.focus();
     };
+    const gcBox = $('tvc-gamecard');
+    if (gcBox) {
+      gcBox.checked = tvcGameCard;
+      gcBox.onchange = (e) => {
+        tvcGameCard = e.target.checked;
+        try { localStorage.setItem('ep128web.tvcGameCard', tvcGameCard ? '1' : '0'); } catch (err) {}
+        applyTvcSoundCards();
+        canvas.focus();
+      };
+    }
+    const msBox = $('tvc-multisound');
+    if (msBox) {
+      msBox.checked = tvcMultiSound;
+      msBox.onchange = (e) => {
+        tvcMultiSound = e.target.checked;
+        try { localStorage.setItem('ep128web.tvcMultiSound', tvcMultiSound ? '1' : '0'); } catch (err) {}
+        applyTvcSoundCards();
+        canvas.focus();
+      };
+    }
 
     const wrap = $('screen-wrap');
     wrap.addEventListener('dragover', (e) => { e.preventDefault(); wrap.classList.add('drag'); });
@@ -1912,7 +1973,10 @@ registerProcessor('ep-output', EPOutput);
       ledState: c('ep_led_state', 'number', []),
       readMemory: c('ep_read_memory', 'number', ['number']),
       writeMemory: c('ep_write_memory', null, ['number', 'number']),
-      unpackRoms: c('ep_unpack_rom_package', 'number', ['string', 'string'])
+      unpackRoms: c('ep_unpack_rom_package', 'number', ['string', 'string']),
+      setTvcGameCard: c('ep_set_tvc_gamecard', null, ['number']),
+      setTvcMultiSound: c('ep_set_tvc_multisound', null, ['number']),
+      setTvcExtJoy: c('ep_set_tvc_ext_joy', null, ['number', 'number'])
     };
     for (const d of ['/roms', '/files', '/tmp', '/disk', '/tape']) ensureDir(d);
 

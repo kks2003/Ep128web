@@ -1,0 +1,184 @@
+﻿diff --git a/src/tvc64vm.cpp b/src/tvc64vm.cpp
+index e82f17c..ba5ac65 100644
+--- a/src/tvc64vm.cpp
++++ b/src/tvc64vm.cpp
+@@ -32,6 +32,7 @@
+ #ifdef ENABLE_SDEXT
+ #  include "sdext.hpp"
+ #endif
++#include "tvc_soundcards.hpp"
+ 
+ #include <vector>
+ 
+@@ -164,7 +165,17 @@ namespace TVC64 {
+         uint32_t  tmp = uint32_t(tapeInputSignal + tapeOutputSignal) << 12;
+         if (((toneGenCnt2 | 0xF7) + uint8_t(toneGenEnabled)) & 0xFF)
+           tmp += uint32_t(audioOutputLevelTable[audioOutputLevel]);
+-        soundOutputSignal = tmp | (tmp << 16);
++        if (soundCards) {
++          int32_t extL = 0, extR = 0;
++          soundCards->renderAudio(extL, extR);
++          int32_t l = int32_t(tmp) + extL;
++          int32_t r = int32_t(tmp) + extR;
++          if (l < 0) l = 0; else if (l > 65535) l = 65535;
++          if (r < 0) r = 0; else if (r > 65535) r = 65535;
++          soundOutputSignal = (uint32_t(l) & 0xFFFF) | ((uint32_t(r) & 0xFFFF) << 16);
++        } else {
++          soundOutputSignal = tmp | (tmp << 16);
++        }
+         sendAudioOutput(soundOutputSignal);
+       }
+       videoRenderer.runOneCycle();
+@@ -555,8 +566,14 @@ namespace TVC64 {
+   EP128EMU_REGPARM2 uint8_t TVC64VM::Memory_::extensionRead(uint16_t addr)
+   {
+     if (getPage(uint8_t(addr >> 14)) == 0x02) { // EXT
+-      if (EP128EMU_UNLIKELY(getPaging() & 0xC000))
++      if (EP128EMU_UNLIKELY(getPaging() & 0xC000)) {
++        if (vm.soundCards) {
++          uint8_t romVal = 0xFF;
++          if (vm.soundCards->handleSlotROMRead(addr, getPaging() & 0xC000, romVal))
++            return romVal;
++        }
+         return readRaw((0x0000C000U | addr) + (getPaging() & 0xC000));
++      }
+       if (addr & 0x1000)
+         return extensionRAM[addr & 0x0FFF];
+       return readRaw(0x0000C000U | (uint32_t(vm.vtdosROMPage) << 12)
+@@ -570,8 +587,14 @@ namespace TVC64 {
+                                                   uint16_t addr) const
+   {
+     if (getPage(uint8_t(addr >> 14)) == 0x02) { // EXT
+-      if (EP128EMU_UNLIKELY(getPaging() & 0xC000))
++      if (EP128EMU_UNLIKELY(getPaging() & 0xC000)) {
++        if (vm.soundCards) {
++          uint8_t romVal = 0xFF;
++          if (vm.soundCards->handleSlotROMRead(addr, getPaging() & 0xC000, romVal))
++            return romVal;
++        }
+         return readRaw((0x0000C000U | addr) + (getPaging() & 0xC000));
++      }
+       if (addr & 0x1000)
+         return extensionRAM[addr & 0x0FFF];
+       return readRaw(0x0000C000U | (uint32_t(vm.vtdosROMPage) << 12)
+@@ -688,8 +711,13 @@ namespace TVC64 {
+   uint8_t TVC64VM::ioPortReadCallback(void *userData, uint16_t addr)
+   {
+     TVC64VM&  vm = *(reinterpret_cast<TVC64VM *>(userData));
+-    uint8_t   retval = 0xFF;
+     addr = addr & 0x7F;
++    if (vm.soundCards) {
++      uint8_t scVal = 0xFF;
++      if (vm.soundCards->handleRead(addr, scVal))
++        return scVal;
++    }
++    uint8_t   retval = 0xFF;
+     switch (addr) {
+     // 0x00-0x0F: unused (write only)
+     case 0x10:                          // extension 0: floppy drive controller
+@@ -760,6 +788,12 @@ namespace TVC64 {
+       // extensions 0 and 1 are floppy drives, the others are unused
+       retval = 0xFA | uint8_t(vm.memory.readRaw(0x0000C000U) == 0xFF)
+                | (uint8_t(vm.memory.readRaw(0x00010000U) == 0xFF) << 2);
++      if (vm.soundCards) {
++        if (vm.soundCards->isSlot1Present())
++          retval &= ~(1 << 2);
++        if (vm.soundCards->isSlot2Present())
++          retval &= ~(1 << 4);
++      }
+       break;
+     case 0x5B:                          // reset tone generator (repeated twice)
+     case 0x5F:
+@@ -795,6 +829,8 @@ namespace TVC64 {
+   {
+     TVC64VM&  vm = *(reinterpret_cast<TVC64VM *>(userData));
+     addr = addr & 0x7F;
++    if (vm.soundCards && vm.soundCards->handleWrite(addr, value))
++      return;
+     switch (addr) {
+     case 0x00:                          // border color
+       vm.videoRenderer.setColor(4, value);
+@@ -1329,7 +1365,8 @@ namespace TVC64 {
+       videoCapture((Ep128Emu::VideoCapture *) 0),
+       tapeSamplesPerCRTCCycle(0L),
+       tapeSamplesRemaining(-1L),
+-      crtcFrequency(1562500)
++      crtcFrequency(1562500),
++      soundCards(new TVCSoundCards())
+   {
+     for (size_t i = 0;
+          i < (sizeof(callbacks) / sizeof(TVC64VMCallback));
+@@ -1363,6 +1400,10 @@ namespace TVC64 {
+ 
+   TVC64VM::~TVC64VM()
+   {
++    if (soundCards) {
++      delete soundCards;
++      soundCards = (TVCSoundCards *) 0;
++    }
+     if (videoCapture) {
+       delete videoCapture;
+       videoCapture = (Ep128Emu::VideoCapture *) 0;
+@@ -1443,6 +1484,10 @@ namespace TVC64 {
+ #ifdef ENABLE_SDEXT
+     sdext.reset(int(isColdReset));
+ #endif
++    if (soundCards) {
++      soundCards->reset();
++      soundCards->updateRAMHeaders(memory);
++    }
+   }
+ 
+   void TVC64VM::resetMemoryConfiguration(size_t memSize)
+@@ -1961,5 +2006,27 @@ namespace TVC64 {
+     return z80.getReg();
+   }
+ 
++  void TVC64VM::setGameCardEnabled(bool enabled)
++  {
++    if (soundCards) {
++      soundCards->setGameCardEnabled(enabled);
++      soundCards->updateRAMHeaders(memory);
++    }
++  }
++
++  void TVC64VM::setMultiSoundEnabled(bool enabled)
++  {
++    if (soundCards) {
++      soundCards->setMultiSoundEnabled(enabled);
++      soundCards->updateRAMHeaders(memory);
++    }
++  }
++
++  void TVC64VM::setExtJoyState(int joyIndex, uint8_t state)
++  {
++    if (soundCards)
++      soundCards->setExtJoyState(joyIndex, state);
++  }
++
+ }       // namespace TVC64
+ 
+diff --git a/src/tvc64vm.hpp b/src/tvc64vm.hpp
+index 4329dbc..ea45220 100644
+--- a/src/tvc64vm.hpp
++++ b/src/tvc64vm.hpp
+@@ -40,6 +40,8 @@ namespace Ep128Emu {
+   class VideoCapture;
+ }
+ 
++class TVCSoundCards;
++
+ namespace TVC64 {
+ 
+   class TVC64VM : public Ep128Emu::VirtualMachine {
+@@ -215,6 +217,10 @@ namespace TVC64 {
+     void setCallback(void (*func)(void *userData), void *userData_,
+                      bool isEnabled);
+    public:
++    TVCSoundCards *soundCards;
++    void setGameCardEnabled(bool enabled);
++    void setMultiSoundEnabled(bool enabled);
++    void setExtJoyState(int joyIndex, uint8_t state);
+     TVC64VM(Ep128Emu::VideoDisplay&, Ep128Emu::AudioOutput&);
+     virtual ~TVC64VM();
+     /*!

@@ -26,7 +26,7 @@ fi
 OBJDIR=build/obj
 mkdir -p "$OBJDIR" dist
 
-CFLAGS="-O3 -fexceptions -DHAVE_STDINT_H -DZ80_ENABLE_CMOS -DCPC_LSB_FIRST=1 -DENABLE_SDEXT -Iweb/stubs -I$E/src -I$E/z80 -I$E"
+CFLAGS="-O3 -fexceptions -DHAVE_STDINT_H -DZ80_ENABLE_CMOS -DCPC_LSB_FIRST=1 -DENABLE_SDEXT -Iweb/stubs -Iweb/src -I$E/src -I$E/z80 -I$E"
 CFLAGS="$CFLAGS -Wno-deprecated-declarations -Wno-unused-parameter"
 
 SOURCES="
@@ -60,6 +60,9 @@ SOURCES="
   $E/src/sdext.cpp
   $E/z80/z80.cpp
   $E/z80/z80funcs2.cpp
+  web/src/emu76489.c
+  web/src/opl3.c
+  web/src/tvc_soundcards.cpp
   web/src/soundio_web.cpp
   web/src/sndfile_wav.cpp
   web/src/main.cpp
@@ -67,7 +70,7 @@ SOURCES="
 
 OBJS=""
 for src in $SOURCES; do
-  obj="$OBJDIR/$(echo "$src" | tr '/' '_' | sed 's/\.cpp$/.o/')"
+  obj="$OBJDIR/$(echo "$src" | tr '/' '_' | sed -E 's/\.(cpp|c)$/.o/')"
   OBJS="$OBJS $obj"
   if [ ! -f "$obj" ] || [ "$src" -nt "$obj" ]; then
     echo "CXX $src"
