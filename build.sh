@@ -10,6 +10,19 @@ if [ ! -f ep128emu/src/ep128vm.cpp ]; then
 fi
 
 E=ep128emu
+
+# Apply local patches if any
+if [ -d patches ]; then
+  for p in patches/*.patch; do
+    if [ -f "$p" ]; then
+      if git -C "$E" apply --check "../$p" >/dev/null 2>&1; then
+        echo "Applying patch: $p"
+        git -C "$E" apply "../$p"
+      fi
+    fi
+  done
+fi
+
 OBJDIR=build/obj
 mkdir -p "$OBJDIR" dist
 
