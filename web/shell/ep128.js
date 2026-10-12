@@ -1735,6 +1735,7 @@ registerProcessor('ep-output', EPOutput);
       typeText('load"*"\n');
       canvas.focus();
     };
+    const btnRun = $('btn-run');
     if (btnRun) btnRun.onclick = () => {
       if (machine.type === 1 && tapeName) writeMemory(2821, 5);
       typeText('run\n');
