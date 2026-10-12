@@ -55,16 +55,6 @@ void TVCSoundCards::setExtJoyState(int joyIndex, uint8_t state)
     m_joy4State = state;
 }
 
-bool TVCSoundCards::isSlot2Present() const
-{
-  return m_gameCardEnabled || m_multiSoundEnabled;
-}
-
-bool TVCSoundCards::isSlot3Present() const
-{
-  return m_gameCardEnabled && m_multiSoundEnabled;
-}
-
 void TVCSoundCards::reset()
 {
   if (m_sng) SNG_reset((SNG*)m_sng);
@@ -151,22 +141,24 @@ bool TVCSoundCards::handleRead(uint16_t addr, uint8_t &val)
   return false;
 }
 
-// Extension ROM in the format of tvcfileio.s: "MOPS", name length, name,
-// IRQ vector, init vector, number of device functions (none here).
-// Like initDevice in tvcfileio.s, the init routine stores the name length
-// and the name at the slot's RAM area (IX & 0xFFF0: 0x0040 + 0x30 * slot),
-// this is where programs look for the cards. Everything else reads as RET.
+// Extension ROM of a card with ID 3 (port 0x5A), as read by the IOS at
+// boot (see tvc12_ext.rom at 0xF050): "MOPS", name length and a name of
+// at most 4 characters (copied to the slot's RAM area at
+// 0x0040 + 0x30 * slot), IRQ vector at 0x09, init vector at 0x0B, number of
+// device functions at 0x0D. The init routine is called with IX pointing to
+// the slot's RAM area, and it stores the full name of the card there, which
+// is where programs look for the cards. Everything else reads as RET.
 static uint8_t makeROMByte(const char *name, int len, uint16_t offset)
 {
   if (offset < 4) return (uint8_t)"MOPS"[offset];
-  if (offset == 4) return (uint8_t)len;
-  if (offset < uint16_t(5 + len)) return (uint8_t)name[offset - 5];
-  switch (offset - uint16_t(5 + len)) {
-  case 0: return 0x1F;                  // IRQ vector: 0xC01F (RET)
-  case 1: return 0xC0;
-  case 2: return 0x20;                  // init vector: 0xC020
-  case 3: return 0xC0;
-  case 4: return 0x00;                  // no device functions
+  if (offset == 4) return 4;
+  if (offset < 9) return (uint8_t)name[offset - 5];
+  switch (offset) {
+  case 0x09: return 0x1F;               // IRQ vector: 0xC01F (RET)
+  case 0x0A: return 0xC0;
+  case 0x0B: return 0x20;               // init vector: 0xC020
+  case 0x0C: return 0xC0;
+  case 0x0D: return 0x00;               // no device functions
   }
   if (offset < 0x20) return 0xC9;
   // init routine at 0xC020

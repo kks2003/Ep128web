@@ -1,5 +1,5 @@
 diff --git a/src/tvc64vm.cpp b/src/tvc64vm.cpp
-index e82f17c..533e89e 100644
+index e82f17c..4e14b23 100644
 --- a/src/tvc64vm.cpp
 +++ b/src/tvc64vm.cpp
 @@ -32,6 +32,7 @@
@@ -76,20 +76,7 @@ index e82f17c..533e89e 100644
      switch (addr) {
      // 0x00-0x0F: unused (write only)
      case 0x10:                          // extension 0: floppy drive controller
-@@ -760,6 +788,12 @@ namespace TVC64 {
-       // extensions 0 and 1 are floppy drives, the others are unused
-       retval = 0xFA | uint8_t(vm.memory.readRaw(0x0000C000U) == 0xFF)
-                | (uint8_t(vm.memory.readRaw(0x00010000U) == 0xFF) << 2);
-+      if (vm.soundCards) {
-+        if (vm.soundCards->isSlot2Present())
-+          retval &= ~(1 << 4);
-+        if (vm.soundCards->isSlot3Present())
-+          retval &= ~(1 << 6);
-+      }
-       break;
-     case 0x5B:                          // reset tone generator (repeated twice)
-     case 0x5F:
-@@ -795,6 +829,8 @@ namespace TVC64 {
+@@ -795,6 +823,8 @@ namespace TVC64 {
    {
      TVC64VM&  vm = *(reinterpret_cast<TVC64VM *>(userData));
      addr = addr & 0x7F;
@@ -98,7 +85,7 @@ index e82f17c..533e89e 100644
      switch (addr) {
      case 0x00:                          // border color
        vm.videoRenderer.setColor(4, value);
-@@ -1329,7 +1365,8 @@ namespace TVC64 {
+@@ -1329,7 +1359,8 @@ namespace TVC64 {
        videoCapture((Ep128Emu::VideoCapture *) 0),
        tapeSamplesPerCRTCCycle(0L),
        tapeSamplesRemaining(-1L),
@@ -108,7 +95,7 @@ index e82f17c..533e89e 100644
    {
      for (size_t i = 0;
           i < (sizeof(callbacks) / sizeof(TVC64VMCallback));
-@@ -1363,6 +1400,10 @@ namespace TVC64 {
+@@ -1363,6 +1394,10 @@ namespace TVC64 {
  
    TVC64VM::~TVC64VM()
    {
@@ -119,7 +106,7 @@ index e82f17c..533e89e 100644
      if (videoCapture) {
        delete videoCapture;
        videoCapture = (Ep128Emu::VideoCapture *) 0;
-@@ -1443,6 +1484,8 @@ namespace TVC64 {
+@@ -1443,6 +1478,8 @@ namespace TVC64 {
  #ifdef ENABLE_SDEXT
      sdext.reset(int(isColdReset));
  #endif
@@ -128,7 +115,7 @@ index e82f17c..533e89e 100644
    }
  
    void TVC64VM::resetMemoryConfiguration(size_t memSize)
-@@ -1961,5 +2004,23 @@ namespace TVC64 {
+@@ -1961,5 +1998,23 @@ namespace TVC64 {
      return z80.getReg();
    }
  
