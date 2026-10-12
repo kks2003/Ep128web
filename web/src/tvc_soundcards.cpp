@@ -87,7 +87,7 @@ bool TVCSoundCards::handleWrite(uint16_t addr, uint8_t val)
   // Slot 1 (0x20..0x2F): GameCard
   // Slot 2 (0x30..0x3F): Multichip Soundcard
   if (m_gameCardEnabled && m_multiSoundEnabled) {
-    if (addr == 0x20 || addr == 0x10) {
+    if (addr == 0x20) {
       if (m_sng) SNG_writeIO((SNG*)m_sng, val);
       return true;
     }
@@ -114,34 +114,34 @@ bool TVCSoundCards::handleWrite(uint16_t addr, uint8_t val)
     return false;
   }
 
-  // Only GameCard enabled (Slot 1 at 0x20, mirrored at 0x10)
+  // Only GameCard enabled (Slot 1 at 0x20..0x23)
   if (m_gameCardEnabled) {
-    if (addr == 0x20 || addr == 0x10) {
+    if (addr == 0x20) {
       if (m_sng) SNG_writeIO((SNG*)m_sng, val);
       return true;
     }
     return false;
   }
 
-  // Only MultiSound enabled (Slot 1 at 0x20, mirrored at 0x10)
+  // Only MultiSound enabled (Slot 1 at 0x20..0x25)
   if (m_multiSoundEnabled) {
-    if (addr == 0x20 || addr == 0x10) {
+    if (addr == 0x20) {
       if (m_sng) SNG_writeIO((SNG*)m_sng, val);
       return true;
     }
-    if (addr == 0x22 || addr == 0x12) {
+    if (addr == 0x22) {
       if (m_saa) ((SAA1099*)m_saa)->writeData(val);
       return true;
     }
-    if (addr == 0x23 || addr == 0x13) {
+    if (addr == 0x23) {
       if (m_saa) ((SAA1099*)m_saa)->writeAddress(val);
       return true;
     }
-    if (addr == 0x24 || addr == 0x14) {
+    if (addr == 0x24) {
       m_oplSelectedReg = val;
       return true;
     }
-    if (addr == 0x25 || addr == 0x15) {
+    if (addr == 0x25) {
       if (m_opl) OPL3_WriteReg((opl3_chip*)m_opl, m_oplSelectedReg, val);
       return true;
     }
@@ -159,11 +159,11 @@ bool TVCSoundCards::handleRead(uint16_t addr, uint8_t &val)
   addr = addr & 0x7F;
 
   if (m_gameCardEnabled && m_multiSoundEnabled) {
-    if (addr == 0x22 || addr == 0x12) {
+    if (addr == 0x22) {
       val = m_joy3State;
       return true;
     }
-    if (addr == 0x23 || addr == 0x13) {
+    if (addr == 0x23) {
       val = m_joy4State;
       return true;
     }
@@ -175,11 +175,11 @@ bool TVCSoundCards::handleRead(uint16_t addr, uint8_t &val)
   }
 
   if (m_gameCardEnabled) {
-    if (addr == 0x22 || addr == 0x12) {
+    if (addr == 0x22) {
       val = m_joy3State;
       return true;
     }
-    if (addr == 0x23 || addr == 0x13) {
+    if (addr == 0x23) {
       val = m_joy4State;
       return true;
     }
@@ -187,7 +187,7 @@ bool TVCSoundCards::handleRead(uint16_t addr, uint8_t &val)
   }
 
   if (m_multiSoundEnabled) {
-    if (addr == 0x24 || addr == 0x14) {
+    if (addr == 0x24) {
       val = 0x00; // YM3812 status
       return true;
     }

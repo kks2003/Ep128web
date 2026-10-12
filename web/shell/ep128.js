@@ -1730,8 +1730,11 @@ registerProcessor('ep-output', EPOutput);
       releaseAllKeys();
     };
     $('btn-turbo').onclick = toggleTurbo;
-    $('btn-load').onclick = () => { typeText('load"*"\n'); canvas.focus(); };
-    const btnRun = $('btn-run');
+    $('btn-load').onclick = () => {
+      if (machine.type === 1 && tapeName) writeMemory(2821, 5);
+      typeText('load"*"\n');
+      canvas.focus();
+    };
     if (btnRun) btnRun.onclick = () => {
       if (machine.type === 1 && tapeName) writeMemory(2821, 5);
       typeText('run\n');
