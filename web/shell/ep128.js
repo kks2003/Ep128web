@@ -200,6 +200,7 @@
   let diskName = '';
   let autoTask = null;          // automatic typing / autostart state
   let tvcFileIO = true;         // TVC: FILE: device instead of cassette
+  let cartridgeName = '';       // TVC: cartridge ROM image name
 
   function setMessage(text, isError) {
     statusMsg.textContent = text || '';
@@ -290,9 +291,12 @@
   }
 
   function machineROMs(m) {
+    let roms = m.roms;
     if (m.type === 1 && tvcFileIO)
-      return m.roms.concat([['tvcfileio.rom', [0x04]]]);
-    return m.roms;
+      roms = roms.concat([['tvcfileio.rom', [0x04]]]);
+    if (m.type === 1 && cartridgeName && fileExists('/roms/' + cartridgeName))
+      roms = roms.concat([[cartridgeName, [0x01]]]);
+    return roms;
   }
 
   function missingROMs(m) {
@@ -311,12 +315,50 @@
     if (cat) cat.hidden = !(machine && machine.type === 1);
   }
 
+  function updateCartridgeUI() {
+    const grp = $('cart-group');
+    const nameEl = $('cart-name');
+    if (grp) grp.hidden = !(machine && machine.type === 1);
+    if (nameEl) nameEl.textContent = cartridgeName || 'nincs modul';
+  }
+
+  function ejectCartridge() {
+    if (!cartridgeName) return;
+    cartridgeName = '';
+    if (machine && machine.type === 1) {
+      check(api.loadRom(1, '', 0), 'cartridge');
+      api.reset(1);
+      keyedSinceReset = false;
+    }
+    updateCartridgeUI();
+    setMessage('Cartridge eltávolítva');
+    canvas.focus();
+  }
+
+  function loadCartridgeFile(f) {
+    if (machine.type !== 1) {
+      const tvc = MACHINES.find((x) => x.id === 'tvc64p-22') || MACHINES.find((x) => x.type === 1);
+      if (tvc) applyMachine(tvc);
+    }
+    cartridgeName = sanitizeName(f.name) || 'cartridge.crt';
+    M.FS.writeFile('/roms/' + cartridgeName, f.bytes);
+    check(api.loadRom(1, '/roms/' + cartridgeName, 0), 'cartridge');
+    api.reset(1);
+    keyedSinceReset = false;
+    updateCartridgeUI();
+    setMessage('TVC Cartridge (bővítő modul) betöltve: ' + f.name);
+  }
+
   function applyMachine(m, coldReset) {
     machine = m;
     const sel = $('machine');
     if (sel && sel.value !== m.id) sel.value = m.id;
     updateLoadButton();
     updateCatalogVisibility();
+    if (m.type !== 1) {
+      cartridgeName = '';
+    }
+    updateCartridgeUI();
     if (vkbdType >= 0) renderKeyboard();
     const missing = missingROMs(m);
     if (missing.length) {
@@ -619,7 +661,7 @@ registerProcessor('ep-output', EPOutput);
       phase: machine.type === 1 ? 'basic' : 'boot',
       t: 0, phaseT: 0, dark: false, logo: 0, stable: 0,
       command, onTyped, events: null, wait: 0,
-      isTvcTape: isTvcTape || (machine.type === 1 && !!tapeName)
+      isTvcTape: !!isTvcTape
     };
     setMessage('Indítás…');
   }
@@ -781,6 +823,7 @@ registerProcessor('ep-output', EPOutput);
 
   function fileKind(f) {
     const ext = extOf(f.name);
+    if (ext === 'crt') return 'cartridge';
     if (ext === 'rom' || (ext === 'bin' && f.bytes.length > 100000 && /rom/i.test(f.name)))
       return 'rom';
     if (ext === 'ep128s' || ext === 'ep128d' || ext === 'ep128s2') return 'snapshot';
@@ -916,7 +959,15 @@ registerProcessor('ep-output', EPOutput);
   function startProgram(name) {
     let cmd;
     if (machine.type === 1) {
-      if (!tvcFileIO) setTVCFileIO(true);
+      const m = machine.roms.some((r) => r[0].startsWith('tvc_dos'))
+        ? (MACHINES.find((x) => x.id === 'tvc64p-22') || MACHINES.find((x) => x.id === 'tvc64-12'))
+        : machine;
+      setTVCFileIO(true, m);
+      if (tapeName) {
+        api.setTape('');
+        tapeName = '';
+        $('tape-name').textContent = 'nincs kazetta';
+      }
       let base = name.replace(/\.cas$/i, '');
       if (!isTypable(base, 1)) {
         // the name cannot be typed: start it through a copy with a simple name
@@ -938,7 +989,7 @@ registerProcessor('ep-output', EPOutput);
       // FILE: as default device, so that further files are loaded from there
       cmd = ':def_dev_file\n' + (isBasic ? 'run' : 'load') + ' "file:' + fname + '"\n';
     }
-    startAutostart(cmd, null);
+    startAutostart(cmd, null, false);
   }
 
   // lets the user choose which program to start when several were loaded
@@ -1019,6 +1070,11 @@ registerProcessor('ep-output', EPOutput);
         chooseCasOrWav(casFiles, wavFiles, (chosenType, chosenFile) => {
           let chosenFiles;
           if (chosenType === 'cas') {
+            if (tapeName) {
+              api.setTape('');
+              tapeName = '';
+              $('tape-name').textContent = 'nincs kazetta';
+            }
             chosenFiles = files.filter((f) => extOf(f.name) !== 'wav');
           } else {
             chosenFiles = [chosenFile, ...files.filter((f) => extOf(f.name) !== 'cas' && f !== chosenFile)];
@@ -1038,25 +1094,38 @@ registerProcessor('ep-output', EPOutput);
 
   function processLoadedFiles(files) {
     const of = (kind) => files.filter((f) => fileKind(f) === kind);
+    const cartridges = of('cartridge');
     const snapshots = of('snapshot');
     const tapes = of('tape');
     const disks = of('disk');
     const progFiles = of('program');
 
-    // If TVC is active but the user loads an Enterprise program file or tape,
-    // automatically switch to Enterprise 128
+    if (cartridges.length) {
+      loadCartridgeFile(cartridges[0]);
+      return;
+    }
+
+    // Only switch to Enterprise if explicit Enterprise program or Enterprise tape (.tap, .tzx, .cdt)
     if (machine.type === 1) {
       const isEpProg = progFiles.some((f) => {
         const ext = extOf(f.name);
-        return ['com', 'prg', 'bas', 'ep', 'exe', 'app'].includes(ext);
+        return ['com', 'prg', 'ep', 'exe', 'app'].includes(ext);
       });
-      if (isEpProg || (tapes.length && !progFiles.some((f) => extOf(f.name) === 'cas'))) {
+      const isEpTape = tapes.some((f) => {
+        const ext = extOf(f.name);
+        return ['tap', 'tzx', 'cdt'].includes(ext);
+      });
+      if (isEpProg || isEpTape) {
         const ep = MACHINES.find((x) => x.id === 'ep128hu-exdos') || MACHINES.find((x) => x.id === 'ep128uk-exdos');
         if (ep) applyMachine(ep);
       }
-    } else if (machine.type === 0 && progFiles.some((f) => extOf(f.name) === 'cas')) {
-      const tvc = MACHINES.find((x) => x.id === 'tvc64p-22') || MACHINES.find((x) => x.type === 1);
-      if (tvc) applyMachine(tvc);
+    } else if (machine.type === 0) {
+      const isTvcProg = progFiles.some((f) => extOf(f.name) === 'cas');
+      const isTvcTape = tapes.some((f) => extOf(f.name) === 'wav');
+      if (isTvcProg || isTvcTape) {
+        const tvc = MACHINES.find((x) => x.id === 'tvc64p-22') || MACHINES.find((x) => x.type === 1);
+        if (tvc) applyMachine(tvc);
+      }
     }
 
     // all other files go to the FILE: directory, so that programs which
@@ -1690,6 +1759,8 @@ registerProcessor('ep-output', EPOutput);
         if (n !== '.' && n !== '..') M.FS.unlink('/files/' + n);
       listFiles();
     };
+    const cartEject = $('cart-eject');
+    if (cartEject) cartEject.onclick = ejectCartridge;
     $('tape-fast').onchange = (e) => { tapeFast = e.target.checked; canvas.focus(); };
     $('arrows-joy').onchange = (e) => {
       releaseAllKeys();

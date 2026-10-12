@@ -121,6 +121,11 @@
       <span id="files-list" class="name">üres</span>
       <button id="files-clear">Törlés</button>
     </div>
+    <div class="group" id="cart-group">
+      <h3>Cartridge</h3>
+      <span id="cart-name" class="name">nincs modul</span>
+      <button id="cart-eject">Kiadás</button>
+    </div>
     <div class="group">
       <h3>Joystick</h3>
       <label><input type="checkbox" id="arrows-joy"> Nyilak + Jobb Ctrl = joystick 1</label>
@@ -134,6 +139,7 @@
       <li><b>Fájl betöltése</b> (vagy húzd a képre, akár több fájlt vagy egy <code>.zip</code>-et):
         <code>.tap</code>/<code>.wav</code> → magnó,
         <code>.img</code>/<code>.dsk</code> → A: lemez (TVC-n 360/720 kB-os nyers lemezkép is használható; szükség esetén EXDOS-os / VT-DOS-os gépre vált, és kilistázza),
+        <code>.crt</code> → TVC cartridge (bővítő modul),
         <code>.ep128s</code> → pillanatkép, <code>.ep128d</code> → demó,
         <code>.bin</code> → ROM-csomag. Minden más fájl a <code>FILE:</code> eszközre kerül,
         és a program automatikusan elindul; ha több indítható program van, választhatsz.</li>
