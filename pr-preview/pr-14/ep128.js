@@ -107,6 +107,8 @@
     ArrowRight: 0x70, ArrowLeft: 0x71, ArrowDown: 0x72, ArrowUp: 0x73,
     ControlRight: 0x74
   };
+  const SCROLL_KEYS = new Set(['PageUp', 'PageDown', 'Home', 'End', 'Space',
+    'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
   const KEY_SHIFT = 0x07;
   const KEY_ENTER = 0x3E;
   const KEY_SPACE = 0x46;
@@ -605,13 +607,13 @@ registerProcessor('ep-output', EPOutput);
       return;
     }
     if (e.metaKey) return;      // leave Cmd+... shortcuts to the browser
-    // not emulated keys that would scroll the page away from the screen
-    if (e.code === 'PageUp' || e.code === 'PageDown') {
-      e.preventDefault();
+    const code = mapKey(e);
+    if (code === undefined) {
+      // keys without an emulated key that would scroll the page away from
+      // the screen (e.g. End on the TVC)
+      if (SCROLL_KEYS.has(e.code)) e.preventDefault();
       return;
     }
-    const code = mapKey(e);
-    if (code === undefined) return;
     e.preventDefault();
     resumeAudio();
     if (autoTask || e.repeat) return;   // the EP has its own auto-repeat
@@ -1558,9 +1560,24 @@ registerProcessor('ep-output', EPOutput);
     update();
   }
 
+  let muted = false;
+  try { muted = localStorage.getItem('ep128web.muted') === '1'; } catch (e) { }
+
   function applyVolume() {
-    const v = Number($('volume').value) / 100;
+    const v = muted ? 0 : Number($('volume').value) / 100;
     api.setVolume(v * v);
+    const b = $('btn-mute');
+    if (b) {
+      b.textContent = muted ? '🔇' : '🔊';
+      b.title = muted ? 'Hang bekapcsolása' : 'Némítás';
+      b.setAttribute('aria-pressed', String(muted));
+    }
+  }
+
+  function toggleMute() {
+    muted = !muted;
+    try { localStorage.setItem('ep128web.muted', muted ? '1' : '0'); } catch (e) { }
+    applyVolume();
   }
 
   function reset(cold) {
@@ -1844,6 +1861,7 @@ registerProcessor('ep-output', EPOutput);
       download(M.FS.readFile('/tmp/save.ep128s'), 'ep128-' +
                new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.ep128s');
     };
+    $('btn-mute').onclick = () => { toggleMute(); canvas.focus(); };
     $('volume').oninput = (e) => {
       applyVolume();
       try { localStorage.setItem('ep128web.volume', e.target.value); } catch (er) { }
