@@ -164,6 +164,8 @@ VENDORED = ["web/src/card/tvc-lfs.c", "web/src/card/littlefs/lfs.c", "web/src/ca
             "web/src/card/tvc-graphics.c", "web/src/card/tvc-routines.c", "web/src/card/tvc-io-regs.c",
             "web/src/card/tvc-card-data.c", "web/src/card/zx7Compress.c",
             "web/src/card/tvc-sid.c", "web/src/card/tvc-sound-emu.c",
+            "web/src/card/tvc-fatfs.c", "web/src/card/tvc-fatfs-pendrive.c", "web/src/card/tvc-fatfs-dskdrive.c",
+            "web/src/card/diskio-emu.c", "web/src/card/fatfs/ff.c", "web/src/card/fatfs/ffunicode.c",
             "web/src/tvc256kpp_fs.cpp"]
 
 def unit_checks():

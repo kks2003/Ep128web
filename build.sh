@@ -74,6 +74,12 @@ SOURCES="
   web/src/card/zx7Compress.c
   web/src/card/tvc-sid.c
   web/src/card/tvc-sound-emu.c
+  web/src/card/tvc-fatfs.c
+  web/src/card/tvc-fatfs-pendrive.c
+  web/src/card/tvc-fatfs-dskdrive.c
+  web/src/card/diskio-emu.c
+  web/src/card/fatfs/ff.c
+  web/src/card/fatfs/ffunicode.c
   web/src/card/littlefs/lfs.c
   web/src/card/littlefs/lfs_util.c
   web/src/soundio_web.cpp

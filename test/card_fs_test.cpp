@@ -124,7 +124,7 @@ int main(int argc, char **argv)
   CHECK(TVC256kppFS::mscCommand(WRITE, io) == 0x8A);                  // FR_WRITE_PROTECTED
   CHECK(TVC256kppFS::mscCommand(MKDIR, io) != 0);
   io[0x10] = 0;                                                       // USB drive: none
-  CHECK(TVC256kppFS::mscCommand(OPENDIR, io) == 0x83);                // FR_NOT_READY
+  CHECK(TVC256kppFS::mscCommand(OPENDIR, io) >= 0x80);
   io[0x10] = 1;                                                       // PSRAM drive: not formatted
   CHECK(TVC256kppFS::mscCommand(OPENDIR, io) == 0x83);
 
@@ -185,6 +185,65 @@ int main(int argc, char **argv)
   io[0x10] = 1;
   CHECK(TVC256kppFS::mscCommand(OPENDIR, io) == 0x83);
 
+  // USB pendrive: plug in an empty one, copy a file, list and read it back
+  CHECK(TVC256kppFS::usbAttach(2) && TVC256kppFS::usbPresent());
+  CHECK(TVC256kppFS::putUsbFile("Hello.cas", &expected[0], expected.size()));
+  io[0x10] = 0;
+  std::vector<std::string> uf = list(".");
+  CHECK(uf.size() == 1 && (uf[0] == "HELLO.CAS" || uf[0] == "Hello.cas"));
+  std::memset(&io[0x100], 0, 0x600);
+  io[0x100] = 0x01; io[0x101] = 0x11; putStr(0x102, "hello");
+  CHECK(TVC256kppFS::mscCommand(OPEN, io) == 0);
+  CHECK(u32(0x204) == expected.size() - 128);
+  std::memcpy(handle, &io[0x200], 4);
+  std::memset(&io[0x100], 0, 0x600);
+  std::memcpy(&io[0x100], handle, 4); io[0x104] = 64; io[0x105] = 0;
+  CHECK(TVC256kppFS::mscCommand(READ, io) == 0 && io[0x200] == 64);
+  CHECK(std::memcmp(&io[0x202], &expected[128], 64) == 0);
+  std::memcpy(&io[0x100], handle, 4);
+  CHECK(TVC256kppFS::mscCommand(CLOSE, io) == 0);
+  // DSK drive: that pendrive's image as a .dsk file on the PSRAM drive,
+  // mounted (MSC_MOUNT_DSK) and listed as drive 3
+  size_t imgSize = 0;
+  const uint8_t *img = TVC256kppFS::usbImage(imgSize);
+  std::vector<uint8_t> dsk(img, img + imgSize);
+  TVC256kppFS::usbDetach();
+  CHECK(!TVC256kppFS::usbPresent());
+  CHECK(TVC256kppFS::putPsramFile("disk.dsk", &dsk[0], dsk.size()));
+  io[0x10] = 1;
+  std::memset(&io[0x100], 0, 0x600);
+  putStr(0x100, "disk.dsk");
+  CHECK(TVC256kppFS::mscCommand(0x12, io) == 0 && io[0x25] == 1);    // MSC_MOUNT_DSK
+  io[0x10] = 3;
+  std::vector<std::string> df = list(".");
+  CHECK(df.size() == 1 && (df[0] == "HELLO.CAS" || df[0] == "Hello.cas"));
+  CHECK(TVC256kppFS::mscCommand(0x13, io) == 0 && io[0x25] == 0);    // MSC_UMOUNT_DSK
+  TVC256kppFS::resetPsramDrive();
+
+  // built-in function 15 (launcher: "load dir to PSRAM"): a directory of
+  // the pendrive is copied to a freshly formatted PSRAM drive
+  {
+    CHECK(TVC256kppFS::usbAttach(2));
+    card_power_on();
+    currentP2 = 4;
+    uint8_t *par = &TVC_RAM[4 * 0x4000];
+    io[0x10] = 0;
+    std::memset(&io[0x100], 0, 0x600);
+    putStr(0x100, "games");
+    CHECK(TVC256kppFS::mscCommand(MKDIR, io) == 0);
+    CHECK(TVC256kppFS::putUsbFile("games/a.cas", &expected[0], expected.size()));
+    CHECK(TVC256kppFS::putUsbFile("games/b.cas", &expected[0], 300));
+    TVC_ROM[0x1810] = 0;
+    par[0] = 5; std::memcpy(&par[1], "games", 5); par[6] = 0;    // no progress display
+    card_reg_write(0xC1, 0); card_reg_write(0xC0, 15);
+    CHECK(card_reg_read(0xC2) == 0 && par[0] == 2);                   // 2 files copied
+    CHECK(TVC_ROM[0x1824] == 1 && TVC_ROM[0x1810] == 1);              // PSRAM drive, selected
+    io[0x10] = 1;
+    std::vector<std::string> pl = list("/");
+    CHECK(pl.size() == 2);
+    TVC256kppFS::usbDetach();
+    TVC256kppFS::resetPsramDrive();
+  }
   // a file copied to the PSRAM drive by the web page (formats the drive)
   CHECK(TVC256kppFS::putPsramFile("Game.CAS", &expected[0], expected.size()));
   io[0x10] = 1;

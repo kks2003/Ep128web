@@ -88,6 +88,15 @@ class TVC256kpp {
   // the launcher's "load dir to PSRAM" does) and selects that drive, so
   // that LOAD through the card finds it.
   static bool putPsramFile(const char *name, const uint8_t *data, size_t size);
+  // USB pendrive: plug in an empty FAT pendrive (sizeMB > 0) or unplug it
+  // (0); copy a file to it and make it the current drive
+  static bool setUsbPendrive(uint32_t sizeMB)
+  {
+    if (!sizeMB) { TVC256kppFS::usbDetach(); return true; }
+    return TVC256kppFS::usbAttach(sizeMB);
+  }
+  static bool usbPendrivePresent() { return TVC256kppFS::usbPresent(); }
+  static bool putUsbFile(const char *name, const uint8_t *data, size_t size);
   uint8_t  baseRegister(int set) const { return sel_[set & 1]; }
 
  private:

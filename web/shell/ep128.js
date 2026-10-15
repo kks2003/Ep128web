@@ -245,6 +245,17 @@
 
   function applyTvcSlots() {
     if (api && api.setTvcSlot) tvcSlots.forEach((card, slot) => api.setTvcSlot(slot, card));
+    applyTvcUsb();
+  }
+
+  // USB pendrive of the TVC256k++ card: plugged in (empty, 16 MB) when the
+  // option is on; it keeps its files until it is unplugged or the page reloads
+  let tvcUsb = false, tvcUsbPlugged = false;
+  try { tvcUsb = localStorage.getItem('ep128web.tvcUsb') === '1'; } catch (e) { }
+  function applyTvcUsb() {
+    if (!api || !api.cardUsb) return;
+    if (tvcUsb && !tvcUsbPlugged) tvcUsbPlugged = (api.cardUsb(16) === 0);
+    else if (!tvcUsb && tvcUsbPlugged) { api.cardUsb(0); tvcUsbPlugged = false; }
   }
 
   function setMessage(text, isError) {
@@ -1605,11 +1616,15 @@ registerProcessor('ep-output', EPOutput);
   function setupTvcSlotsUI() {
     const selects = [0, 1, 2, 3].map((i) => $('tvc-slot' + i));
     if (selects.some((x) => !x)) return;
-    const show = () => selects.forEach((sel, i) => { sel.value = String(tvcSlots[i]); });
+    const usbBox = $('tvc-usb');
+    const show = () => {
+      selects.forEach((sel, i) => { sel.value = String(tvcSlots[i]); });
+      if (usbBox) usbBox.checked = tvcUsb;
+    };
     const pending = () => selects.map((sel) => Number(sel.value));
     const update = () => {
       const p = pending();
-      const changed = p.some((c, i) => c !== tvcSlots[i]);
+      const changed = p.some((c, i) => c !== tvcSlots[i]) || (usbBox && usbBox.checked !== tvcUsb);
       $('tvc-slots-apply').classList.toggle('on', changed);
       $('tvc-slots-note').textContent = !validTvcSlots(p)
         ? 'Egy kártya csak egy portban lehet.'
@@ -1624,12 +1639,17 @@ registerProcessor('ep-output', EPOutput);
       }
       sel.onchange = update;
     }
+    if (usbBox) usbBox.onchange = update;
     show();
     $('tvc-slots-apply').onclick = () => {
       const p = pending();
       if (!validTvcSlots(p)) { update(); return; }
       tvcSlots = p;
-      try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots)); } catch (e) { }
+      if (usbBox) tvcUsb = usbBox.checked;
+      try {
+        localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots));
+        localStorage.setItem('ep128web.tvcUsb', tvcUsb ? '1' : '0');
+      } catch (e) { }
       update();
       if (machine.type === 1) {
         autoTask = null;
@@ -2167,6 +2187,7 @@ registerProcessor('ep-output', EPOutput);
       loadTvcCardFlash: c('ep_load_tvc_card_flash', 'number', ['string']),
       cardPutFile: c('ep_tvc_card_put_file', 'number', ['string', 'string']),
       setMouse: c('ep_set_mouse', null, ['number', 'number', 'number', 'number']),
+      cardUsb: c('ep_tvc_card_usb', 'number', ['number']),
       setTvcExtJoy: c('ep_set_tvc_ext_joy', null, ['number', 'number'])
     };
     for (const d of ['/roms', '/files', '/tmp', '/disk', '/tape']) ensureDir(d);

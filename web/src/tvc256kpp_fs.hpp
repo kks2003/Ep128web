@@ -33,6 +33,16 @@ namespace TVC256kppFS {
   // the card does), formatting a 4 MB drive first if there is none
   bool putPsramFile(const char *name, const uint8_t *data, size_t size);
 
+  // USB pendrive (FatFS, "0:"): plugs in an empty, freshly formatted FAT
+  // pendrive of sizeMB megabytes, or unplugs it; putUsbFile() copies a file
+  // to its root directory
+  bool usbAttach(uint32_t sizeMB);
+  void usbDetach();
+  bool usbPresent();
+  bool putUsbFile(const char *name, const uint8_t *data, size_t size);
+  // the pendrive's sectors (e.g. to save them), nullptr if none
+  const uint8_t *usbImage(size_t &size);
+
   // Executes one REG_USB_MSC_CMD command. ioRam is the 2 kB RAM at the end of
   // the IO ROM area ($D800-$DFFF): parameters at +$100, results at +$200.
   // Returns the value of the command register afterwards: 0 or error + $80.

@@ -1,5 +1,5 @@
 /* Vendored from https://github.com/dikdom/tvc256kplusplus (sources/firmware/TVC-IO/tvc-lfs.c),
- * MIT license. Changes for Ep128web: includes, portable file/dir handles, DSK stubs. */
+ * MIT license. Changes for Ep128web: includes, portable file/dir handles. */
 #include "tvc-lfs.h"
 #include "card_shim.h"
 
@@ -751,12 +751,60 @@ uint8_t tvc_lfs_file_rename(lfs_t *lfs, char *working_dir) {
  *  
  */
 
-/* DSK drive (FatFS on top of a .dsk image) is not emulated yet. */
+extern uint8_t dsk_file_type;
+lfs_file_t dsk_file_lfs;
+lfs_t *dsk_lfs_fs;
+extern FATFS dsk_fat_fs;
+void set_active_drive(uint8_t ld_num);
+
 uint8_t tvc_lfs_mount_dsk(lfs_t *lfs, uint8_t dsk_target_file_type) {
-    (void) lfs; (void) dsk_target_file_type;
-    return FR_NOT_ENABLED;
+    uint8_t len = TVC_ROM[0x1900];
+    char fNameBuf[256];
+    TVC_ROM[0x1901 + len] = 0;
+    // usb_printf("lfs dsk mount: fName: %s\n", fNameBuf);sleep_ms(50);
+    if(dsk_file_type != 0) {
+        return FR_NOT_READY;
+    }
+    strcpy(fNameBuf, (char *)&TVC_ROM[0x1901]);
+
+    int retVal = lfs_file_open(lfs, &dsk_file_lfs, fNameBuf, LFS_O_RDWR);
+    // usb_printf("lfs dsk fopen: fName: %s, res: %d\n", fNameBuf, retVal);sleep_ms(50);
+    if(retVal != 0) {
+        return FR_NO_FILE;
+    }
+
+    dsk_file_type = dsk_target_file_type;
+    dsk_lfs_fs = lfs;
+
+    // usb_printf("mount: f_open res: %02x\n", fres);sleep_ms(50);
+    FRESULT fres = f_mount(&dsk_fat_fs, "1:", 1);
+    // usb_printf("lfs dsk fmount: res: %d\n", fres);sleep_ms(50);
+    // usb_printf("mount: f_mount res: %02x\n", fres);sleep_ms(50);
+    if(fres != FR_OK) {
+        lfs_file_close(lfs, &dsk_file_lfs);
+        dsk_file_type = 0;
+        set_active_drive(0);
+    }
+
+    TVC_ROM[0x1825] = (fres == FR_OK);
+
+    // usb_printf("mount: fres: %02x\n", fres);sleep_ms(50);
+    return fres;
 }
 
 uint8_t tvc_lfs_unmount_dsk() {
-    return FR_INVALID_OBJECT;
+    if((dsk_file_type == 2) || (dsk_file_type == 3)) {
+        set_active_drive(0);
+        f_unmount("1:");
+        lfs_file_close(dsk_lfs_fs, &dsk_file_lfs);
+        if(TVC_ROM[0x1810] == 3) // if active drive was DSK, then set it to either PSRAM or FLASH drive
+            TVC_ROM[0x1810] = dsk_file_type - 1;
+
+        dsk_file_type = 0;
+        TVC_ROM[0x1825] = 0;
+    } else {
+        return FR_INVALID_OBJECT;
+    }
+
+    return FR_OK;
 }

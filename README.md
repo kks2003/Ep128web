@@ -161,7 +161,16 @@ program látja a kártyát, és a többi fájlt is onnan töltheti be. Hideg res
 - **egér**: a 🖱 gombbal (csak TVC-n, kártyával) a böngésző egere a kártya USB-egere lesz
   (relatív mozgás, három gomb, sebesség-regiszter); kilépés: Esc. Az első mozdulattól a
   `REG_USB_INIT` jelzi, hogy van egér;
-- még nincs: USB pendrive és DSK drive, állapotmentés.
+- **USB pendrive**: a „Bővítőportok” csoportban bekapcsolható egy üres, 16 MB-os FAT
+  pendrive a kártya USB-portjába (a betöltés gombbal lép életbe). Ilyenkor bootoláskor ez
+  lesz az aktív meghajtó, a ráhúzott fájlok erre kerülnek, és a launcher „Load dir to
+  PSRAM” (L) parancsa is működik a rajta lévő könyvtárakkal. A tartalma az oldal
+  újratöltéséig marad meg;
+- **DSK drive**: a firmware FatFS-kódja (`tvc-fatfs.c`) fut, így a pendrive-on, a PSRAM- vagy
+  a flash drive-on lévő `.dsk` képek csatolhatók (`MDSK`, `UMDSK`), és a 3-as meghajtóként
+  használhatók. A flash drive az emulátorban csak olvasható, ezért az ott lévő képre írni nem
+  lehet;
+- még nincs: állapotmentés (a kártya állapota a pillanatképbe nem kerül bele).
 
 A kártya IO ROM-ját a `scripts/extract_card_rom.py` állítja elő a firmware
 `TVC-IO-v0.24.uf2` fájljából (`web/src/tvc256kpp_rom.cpp`). A Z80-oldali viselkedés

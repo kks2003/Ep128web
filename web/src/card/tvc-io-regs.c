@@ -84,7 +84,6 @@ uint8_t registerFunctionBitmapBase = 0xff;
 
 /* no USB devices: copy_dir_to_psram() reports it */
 uint8_t registerInitializedUSBDevices = 0;
-uint8_t dsk_file_type = 0;
 
 volatile bool card_int_active = false;
 

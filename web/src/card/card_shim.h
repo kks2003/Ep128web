@@ -14,23 +14,9 @@
 extern "C" {
 #endif
 
-/* FatFS result codes (ff.h), as used by the card firmware */
-typedef enum {
-  FR_OK = 0, FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH,
-  FR_INVALID_NAME, FR_DENIED, FR_EXIST, FR_INVALID_OBJECT, FR_WRITE_PROTECTED,
-  FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_MKFS_ABORTED,
-  FR_TIMEOUT, FR_LOCKED, FR_NOT_ENOUGH_CORE, FR_TOO_MANY_OPEN_FILES,
-  FR_INVALID_PARAMETER
-} FRESULT;
+/* FatFS (the card firmware's version and configuration) */
+#include "fatfs/ff.h"
 
-/* FatFS open mode flags (ff.h) */
-#define FA_READ          0x01
-#define FA_WRITE         0x02
-#define FA_OPEN_EXISTING 0x00
-#define FA_CREATE_NEW    0x04
-#define FA_CREATE_ALWAYS 0x08
-#define FA_OPEN_ALWAYS   0x10
-#define FA_OPEN_APPEND   0x30
 #ifndef MIN
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #endif
@@ -57,7 +43,8 @@ extern uint8_t TVC_ROM[0x2000];
 extern uint8_t TVC_RAM[];
 extern uint8_t *psram_array;
 extern uint32_t psram_size_mb;
-static inline uint32_t psram_size(void) { return psram_size_mb; }
+/* as psram.c: the size in bytes */
+static inline uint32_t psram_size(void) { return psram_size_mb << 20; }
 
 #ifdef __cplusplus
 }

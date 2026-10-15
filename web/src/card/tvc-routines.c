@@ -1477,7 +1477,10 @@ uint8_t get_first_usable_psram_pos(uint8_t *bufStart) {
 
 uint8_t delete_psram_drive(__unused uint8_t *bufStart) {
     if(psram_drive_initialized) {
-        int len = psram_size() * 1024 * 1024 - free_psram_start;
+        /* Ep128web: the firmware computed psram_size() * 1024 * 1024 - free_psram_start
+         * here (psram_size() is in bytes: the length overflows); this erases
+         * the drive's area */
+        uint32_t len = (free_psram_start > psram_size()) ? psram_size() : free_psram_start;
         memset(psram_array, 0xff, len);
         psram_drive_initialized = false;
         free_psram_start = 0;

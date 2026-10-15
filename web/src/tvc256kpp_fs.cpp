@@ -21,19 +21,24 @@ uint32_t psram_size_mb = 8;
 // PSRAM drive state used by the card's built-in functions (tvc-routines.c)
 bool psram_drive_initialized = false;
 uint32_t free_psram_start = 0;
-// only referenced by copy_dir_to_psram() after USB checks that always fail
+// the PSRAM drive's littlefs (also used by copy_dir_to_psram())
 lfs_t lfs_psram;
 // open file / directory handles of tvc-lfs.c
 extern bool lfs_file_in_use[4];
 extern bool lfs_dir_in_use[4];
 
-bool ends_with_cas(char *fileName)
-{
-  if (!fileName)
-    return false;
-  size_t n = std::strlen(fileName);
-  return (n >= 4 && strcasecmp(fileName + n - 4, ".cas") == 0);
+// USB pendrive and DSK drive (tvc-fatfs.c, diskio-emu.c)
+extern uint8_t dsk_file_type;
+extern uint8_t registerInitializedUSBDevices;
+extern uint8_t *card_usb_image;
+extern uint32_t card_usb_sectors;
+extern bool availableFileHandles[4];
+extern bool availableDirHandles[4];
+extern uint8_t activeDrive;
 }
+extern "C" {
+#include "card/tvc-fatfs-pendrive.h"
+#include "card/tvc-fatfs-dskdrive.h"
 }
 
 namespace {
@@ -49,6 +54,8 @@ struct Drive {
 };
 
 Drive flashDrive, psramDrive;
+FATFS usbFatFs;                         // the pendrive's volume ("0:")
+std::vector<uint8_t> usbSectors;        // the pendrive's sectors
 uint32_t statOpens = 0, statReadBytes = 0;
 std::vector<uint8_t> flashImage;
 uint8_t flashReadBuf[256], flashProgBuf[256], flashLookahead[16];
@@ -143,9 +150,9 @@ bool formatPsramDrive(uint32_t numBlocks)
     return false;
   std::memset(psram_array, 0xFF, size_t(numBlocks) * kBlockSize);
   setupConfig(psramDrive.cfg, false, numBlocks);
-  if (lfs_format(&psramDrive.lfs, &psramDrive.cfg) < 0)
+  if (lfs_format(&lfs_psram, &psramDrive.cfg) < 0)
     return false;
-  psramDrive.ok = (lfs_mount(&psramDrive.lfs, &psramDrive.cfg) >= 0);
+  psramDrive.ok = (lfs_mount(&lfs_psram, &psramDrive.cfg) >= 0);
   std::strcpy(psramDrive.wd, "/");
   TVC_ROM[0x1824] = psramDrive.ok ? 1 : 0;
   psram_drive_initialized = psramDrive.ok;
@@ -160,7 +167,7 @@ bool formatPsramDrive(uint32_t numBlocks)
 void resetPsramDrive()
 {
   if (psramDrive.ok)
-    lfs_unmount(&psramDrive.lfs);
+    lfs_unmount(&lfs_psram);
   psramDrive.ok = false;
   psram_drive_initialized = false;
   free_psram_start = 0;
@@ -170,6 +177,19 @@ void resetPsramDrive()
 
 void powerOn()
 {
+  // the firmware reboots: the .dsk image is not mounted any more, FatFS
+  // forgets the open files, the pendrive is mounted again
+  dsk_file_type = 0;
+  for (int i = 0; i < 4; i++) {
+    availableFileHandles[i] = true;
+    availableDirHandles[i] = true;
+  }
+  f_unmount("1:");
+  if (card_usb_image) {
+    f_mount(&usbFatFs, "0:", 1);
+    f_chdrive("0:");
+  }
+  activeDrive = 0;
   resetPsramDrive();
   for (int i = 0; i < 4; i++) {
     lfs_file_in_use[i] = false;
@@ -183,6 +203,58 @@ void powerOn()
   std::strcpy(flashDrive.wd, "/");
 }
 
+bool usbAttach(uint32_t sizeMB)
+{
+  usbDetach();
+  if (sizeMB < 1 || sizeMB > 64)
+    return false;
+  usbSectors.assign(size_t(sizeMB) << 20, 0);
+  card_usb_image = &usbSectors[0];
+  card_usb_sectors = uint32_t(usbSectors.size() / 512);
+  static uint8_t work[4096];
+  MKFS_PARM opt = { FM_FAT | FM_SFD, 0, 0, 0, 0 };
+  if (f_mkfs("0:", &opt, work, sizeof(work)) != FR_OK
+      || f_mount(&usbFatFs, "0:", 1) != FR_OK) {
+    usbDetach();
+    return false;
+  }
+  f_chdrive("0:");
+  registerInitializedUSBDevices |= 0x02;    // tvc-usb.c tuh_msc_mount_cb()
+  return true;
+}
+
+void usbDetach()
+{
+  if (card_usb_image)
+    f_mount(0, "0:", 0);
+  card_usb_image = 0;
+  card_usb_sectors = 0;
+  usbSectors.clear();
+  registerInitializedUSBDevices &= uint8_t(~0x02);
+}
+
+bool usbPresent() { return card_usb_image != 0; }
+
+const uint8_t *usbImage(size_t &size)
+{
+  size = usbSectors.size();
+  return card_usb_image;
+}
+
+bool putUsbFile(const char *name, const uint8_t *data, size_t size)
+{
+  if (!card_usb_image)
+    return false;
+  std::string path = std::string("0:/") + name;
+  FIL f;
+  if (f_open(&f, path.c_str(), FA_WRITE | FA_CREATE_ALWAYS) != FR_OK)
+    return false;
+  UINT n = 0;
+  bool ok = (f_write(&f, data, UINT(size), &n) == FR_OK && n == size);
+  ok = (f_close(&f) == FR_OK) && ok;
+  return ok;
+}
+
 bool putPsramFile(const char *name, const uint8_t *data, size_t size)
 {
   if (!psramDrive.ok && !formatPsramDrive(1024))
@@ -191,11 +263,11 @@ bool putPsramFile(const char *name, const uint8_t *data, size_t size)
   for (const char *p = name; *p; p++)
     path += char(std::tolower((unsigned char) *p));
   lfs_file_t f;
-  if (lfs_file_open(&psramDrive.lfs, &f, path.c_str(),
+  if (lfs_file_open(&lfs_psram, &f, path.c_str(),
                     LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC) < 0)
     return false;
-  bool ok = (lfs_file_write(&psramDrive.lfs, &f, data, lfs_size_t(size)) == lfs_ssize_t(size));
-  ok = (lfs_file_close(&psramDrive.lfs, &f) >= 0) && ok;
+  bool ok = (lfs_file_write(&lfs_psram, &f, data, lfs_size_t(size)) == lfs_ssize_t(size));
+  ok = (lfs_file_close(&lfs_psram, &f) >= 0) && ok;
   return ok;
 }
 
@@ -209,20 +281,53 @@ uint8_t driveCommand(uint8_t drive, uint8_t cmd)
 {
   if (psramDrive.ok && !psram_drive_initialized) {
     // delete_psram_drive() (built-in function 36) dropped the drive
-    lfs_unmount(&psramDrive.lfs);
+    lfs_unmount(&lfs_psram);
     psramDrive.ok = false;
     std::strcpy(psramDrive.wd, "/");
+  }
+  if (cmd == 0x13) {
+    // MSC_UMOUNT_DSK: by the type of the mounted image, not the active drive
+    switch (dsk_file_type) {
+    case 1: return tvc_fatfs_pendrive_unmount_dsk();
+    case 2: return psramDrive.ok ? tvc_lfs_unmount_dsk() : uint8_t(FR_NOT_READY);
+    case 3: return flashDrive.ok ? tvc_lfs_unmount_dsk() : uint8_t(FR_NOT_READY);
+    default: return FR_INVALID_OBJECT;
+    }
+  }
+  if (drive == 0 || drive == 3) {
+    // the firmware's FatFS code: USB pendrive (0), mounted .dsk image (3)
+    const bool usb = (drive == 0);
+    switch (cmd) {
+    case 0x01: return usb ? tvc_fatfs_pendrive_open_file() : tvc_fatfs_dskdrive_open_file();
+    case 0x02: return usb ? tvc_fatfs_pendrive_close_file() : tvc_fatfs_dskdrive_close_file();
+    case 0x03: return usb ? tvc_fatfs_pendrive_read_file() : tvc_fatfs_dskdrive_read_file();
+    case 0x04: return usb ? tvc_fatfs_pendrive_write_file() : tvc_fatfs_dskdrive_write_file();
+    case 0x05: return usb ? tvc_fatfs_pendrive_open_dir() : tvc_fatfs_dskdrive_open_dir();
+    case 0x06: return usb ? tvc_fatfs_pendrive_close_dir() : tvc_fatfs_dskdrive_close_dir();
+    case 0x07: return usb ? tvc_fatfs_pendrive_read_dir() : tvc_fatfs_dskdrive_read_dir();
+    case 0x08: return usb ? tvc_fatfs_pendrive_write_file_source() : tvc_fatfs_dskdrive_write_file_source();
+    case 0x09: return usb ? tvc_fatfs_pendrive_read_file_dest() : tvc_fatfs_dskdrive_read_file_dest();
+    case 0x0A: return usb ? tvc_fatfs_pendrive_file_seek() : tvc_fatfs_dskdrive_file_seek();
+    case 0x0B: return usb ? tvc_fatfs_pendrive_getcwd() : tvc_fatfs_dskdrive_getcwd();
+    case 0x0C: return usb ? tvc_fatfs_pendrive_chdir() : tvc_fatfs_dskdrive_chdir();
+    case 0x0D: return usb ? tvc_fatfs_pendrive_mkdir() : tvc_fatfs_dskdrive_mkdir();
+    case 0x0E: return usb ? tvc_fatfs_pendrive_delete() : tvc_fatfs_dskdrive_delete();
+    case 0x0F: return usb ? tvc_fatfs_pendrive_rename() : tvc_fatfs_dskdrive_rename();
+    case 0x10: return usb ? tvc_fatfs_pendrive_getstat() : tvc_fatfs_dskdrive_getstat();
+    case 0x11: return usb ? tvc_fatfs_pendrive_sync() : tvc_fatfs_dskdrive_sync();
+    case 0x12: return usb ? tvc_fatfs_pendrive_mount_dsk() : uint8_t(0x80);
+    default: return 0xFF;
+    }
   }
   Drive *d = (drive == 1 ? &psramDrive : (drive == 2 ? &flashDrive : (Drive *) 0));
   const bool isFlash = (d == &flashDrive);
   uint8_t fres = 0xFF;
   if (!d || !d->ok) {
-    // USB and DSK drives are not emulated; an unformatted PSRAM drive and an
-    // unmounted flash drive report the same
+    // an unformatted PSRAM drive and an unmounted flash drive
     fres = FR_NOT_READY;
   }
   else {
-    lfs_t *l = &d->lfs;
+    lfs_t *l = (d == &psramDrive ? &lfs_psram : &d->lfs);
     switch (cmd) {
     case 0x01: fres = tvc_lfs_file_open(l, true, d->wd); break;           // MSC_FOPENFILE
     case 0x02: fres = tvc_lfs_file_close(l); break;                       // MSC_FCLOSEFILE
@@ -242,7 +347,6 @@ uint8_t driveCommand(uint8_t drive, uint8_t cmd)
     case 0x10: fres = tvc_lfs_getstat(l, d->wd); break;
     case 0x11: fres = isFlash ? uint8_t(0) : tvc_lfs_sync(l); break;
     case 0x12: fres = tvc_lfs_mount_dsk(l, isFlash ? 3 : 2); break;
-    case 0x13: fres = tvc_lfs_unmount_dsk(); break;
     default: break;
     }
   }

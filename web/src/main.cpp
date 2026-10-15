@@ -762,8 +762,9 @@ EMSCRIPTEN_KEEPALIVE int ep_load_tvc_card_flash(const char *path)
   return 0;
 }
 
-// Copies a file of the virtual file system to the TVC256k++ card's PSRAM
-// drive (formatted first if needed) and makes that the card's current drive.
+// Copies a file of the virtual file system to the TVC256k++ card's USB
+// pendrive if one is plugged in, else to its PSRAM drive (formatted first if
+// needed), and makes that the card's current drive.
 // Returns 0 on success, -1 on error.
 EMSCRIPTEN_KEEPALIVE int ep_tvc_card_put_file(const char *name, const char *path)
 {
@@ -778,8 +779,28 @@ EMSCRIPTEN_KEEPALIVE int ep_tvc_card_put_file(const char *name, const char *path
   while ((n = std::fread(chunk, 1, sizeof(chunk), f)) > 0)
     buf.insert(buf.end(), chunk, chunk + n);
   std::fclose(f);
-  if (!TVC256kpp::putPsramFile(name, buf.empty() ? (const uint8_t *) "" : &buf[0], buf.size())) {
+  const uint8_t *data = buf.empty() ? (const uint8_t *) "" : &buf[0];
+  if (TVC256kpp::usbPendrivePresent()) {
+    // with a pendrive plugged in, the files go there (the boot selects it)
+    if (!TVC256kpp::putUsbFile(name, data, buf.size())) {
+      lastError = "the pendrive is full";
+      return -1;
+    }
+    return 0;
+  }
+  if (!TVC256kpp::putPsramFile(name, data, buf.size())) {
     lastError = "the card's PSRAM drive is full";
+    return -1;
+  }
+  return 0;
+}
+
+// Plugs an empty USB pendrive of sizeMB megabytes into the TVC256k++ card
+// (formatted FAT), or unplugs it (0). Returns 0 on success.
+EMSCRIPTEN_KEEPALIVE int ep_tvc_card_usb(int sizeMB)
+{
+  if (!TVC256kpp::setUsbPendrive(uint32_t(sizeMB < 0 ? 0 : sizeMB))) {
+    lastError = "cannot create the pendrive";
     return -1;
   }
   return 0;

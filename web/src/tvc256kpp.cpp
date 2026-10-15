@@ -287,7 +287,8 @@ uint8_t TVC256kpp::regRead(uint8_t r)
   }
   switch (r) {
   case REG_USB_INIT:                       // bit 0: mouse, bit 1: mass storage
-    return mouse.connected ? 0x01 : 0x00;
+    return uint8_t((mouse.connected ? 0x01 : 0x00)
+                   | (TVC256kppFS::usbPresent() ? 0x02 : 0x00));
   case 0xD1:
     return mouse.buttons;
   case 0xD2:                               // DX, DY: cleared by the read
@@ -508,6 +509,14 @@ bool TVC256kpp::putPsramFile(const char *name, const uint8_t *data, size_t size)
   if (!TVC256kppFS::putPsramFile(name, data, size))
     return false;
   TVC_ROM[kDriveSelectOffset] = 1;         // the PSRAM drive is the current one
+  return true;
+}
+
+bool TVC256kpp::putUsbFile(const char *name, const uint8_t *data, size_t size)
+{
+  if (!TVC256kppFS::putUsbFile(name, data, size))
+    return false;
+  TVC_ROM[kDriveSelectOffset] = 0;         // the pendrive is the current drive
   return true;
 }
 
