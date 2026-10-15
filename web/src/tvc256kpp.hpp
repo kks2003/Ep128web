@@ -71,6 +71,11 @@ class TVC256kpp {
   static void clearOverlay() { currentOverlay_ = (const uint8_t *) 0; }
   // the card's /INT output (sprite collision interrupt)
   bool irqActive() const;
+  // the browser's mouse as the card's USB mouse (relative movement, buttons:
+  // bit 0 left, 1 middle, 2 right)
+  static void mouseInput(int dx, int dy, int buttons);
+  // vSID output, added to the TVC's sound (called at 390625 Hz)
+  void renderAudio(int32_t &outLeft, int32_t &outRight);
 
   // Flash drive image (flash-root-*.bin, 15 MB littlefs). Shared by all
   // card instances; returns false if it is not a valid littlefs image.
@@ -101,6 +106,7 @@ class TVC256kpp {
   std::vector<uint8_t> psram_;
   uint8_t *buf_[2];                // internal pages 16 / 17 (PSRAM windows)
   uint8_t overlay_[768];
+  int32_t dcIn_, dcOut_;           // DC blocking filter of the sound output
   static const uint8_t *currentOverlay_;
   void (*pagingCb_)(void *);
   void *pagingCbData_;

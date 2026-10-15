@@ -25,7 +25,8 @@ namespace {
     REG_USB_INIT = 0xD0,
     REG_USB_MOUSE_DW = 0xD4,
     REG_USB_MOUSE_SPEED = 0xD5,
-    REG_USB_MSC_CMD = 0xD6
+    REG_USB_MSC_CMD = 0xD6,
+    REG_VSID_BASE = 0xE0
   };
   const uint16_t kRamOffset = 0x1800;    // start of IO RAM in the 8 kB area
   const uint16_t kDriveSelectOffset = 0x1810;   // $D810, mirrors REG_DRIVE_SELECT
@@ -47,6 +48,41 @@ namespace {
 }
 
 const uint8_t *TVC256kpp::currentOverlay_ = (const uint8_t *) 0;
+
+namespace {
+  // USB mouse (firmware: tvc-usb.c process_mouse_report()); the browser's
+  // mouse acts as the card's USB mouse once it sends a report
+  struct {
+    bool connected;
+    int32_t sumX, sumY;
+    bool restartX, restartY;   // the TVC read the value: start a new sum
+    int8_t dx, dy;
+    uint8_t buttons;
+    uint8_t speed;             // kept in the card's flash: survives power-off
+  } mouse = { false, 0, 0, false, false, 0, 0, 0, 0x10 };
+
+  int8_t mouseValue(int32_t sum)
+  {
+    double speed = double(mouse.speed >> 5) + double(mouse.speed & 0x1F) / 32.0;
+    double v = double(sum) * speed;
+    long m = long(v < 0 ? v - 0.5 : v + 0.5);
+    if (m > 255) m = 255;
+    else if (m < -254) m = -254;
+    return int8_t(uint8_t(m & 0xFF));
+  }
+}
+
+void TVC256kpp::mouseInput(int dx, int dy, int buttons)
+{
+  mouse.connected = true;
+  mouse.buttons = uint8_t(buttons & 7);      // left 1, middle 2, right 4
+  if (mouse.restartX) { mouse.sumX = 0; mouse.restartX = false; }
+  if (mouse.restartY) { mouse.sumY = 0; mouse.restartY = false; }
+  mouse.sumX += dx;
+  mouse.sumY += dy;
+  mouse.dx = mouseValue(mouse.sumX);
+  mouse.dy = mouseValue(mouse.sumY);
+}
 
 const size_t TVC256kpp::kFastRamSize;
 const size_t TVC256kpp::kPsramSize;
@@ -103,7 +139,6 @@ bool TVC256kpp::loadROM(const uint8_t *data, size_t size)
 void TVC256kpp::setDefaults()
 {
   std::memset(regs_, 0, sizeof(regs_));
-  regs_[REG_USB_MOUSE_SPEED] = 0x10;
   sel_[0] = sel_[1] = 0;
   inc_[0] = inc_[1] = 1;
   romPage_ = 0;
@@ -115,6 +150,8 @@ void TVC256kpp::setDefaults()
   std::memset(ioRam_, 0, 0x800);
   TVC256kppFS::powerOn();                 // no PSRAM drive, root directory
   card_power_on();                        // graphics, functions
+  card_sid_power_on();
+  dcIn_ = dcOut_ = 0;
   card_int_active = false;
   currentOverlay_ = (const uint8_t *) 0;
 }
@@ -222,6 +259,8 @@ uint8_t TVC256kpp::regRead(uint8_t r)
 {
   if (isFirmwareRegister(r))
     return card_reg_read(r);
+  if (r >= REG_VSID_BASE)
+    return card_sid_read(uint8_t(r - REG_VSID_BASE));
   switch (r) {
   case REG_MEMORY_P2:
     return pageSel_[0];
@@ -246,10 +285,31 @@ uint8_t TVC256kpp::regRead(uint8_t r)
   default:
     break;
   }
-  if (r == 0xD2 || r == 0xD3) {            // mouse DX, DY clear on read
-    uint8_t v = regs_[r];
-    regs_[r] = 0;
-    return v;
+  switch (r) {
+  case REG_USB_INIT:                       // bit 0: mouse, bit 1: mass storage
+    return mouse.connected ? 0x01 : 0x00;
+  case 0xD1:
+    return mouse.buttons;
+  case 0xD2:                               // DX, DY: cleared by the read
+    {
+      uint8_t v = uint8_t(mouse.dx);
+      mouse.dx = 0;
+      mouse.restartX = true;
+      return v;
+    }
+  case 0xD3:
+    {
+      uint8_t v = uint8_t(mouse.dy);
+      mouse.dy = 0;
+      mouse.restartY = true;
+      return v;
+    }
+  case REG_USB_MOUSE_DW:
+    return 0;
+  case REG_USB_MOUSE_SPEED:
+    return mouse.speed;
+  default:
+    break;
   }
   return regs_[r];
 }
@@ -258,6 +318,10 @@ void TVC256kpp::regWrite(uint8_t r, uint8_t v)
 {
   if (isFirmwareRegister(r)) {
     card_reg_write(r, v);
+    return;
+  }
+  if (r >= REG_VSID_BASE) {
+    card_sid_write(uint8_t(r - REG_VSID_BASE), v);
     return;
   }
   switch (r) {
@@ -296,6 +360,9 @@ void TVC256kpp::regWrite(uint8_t r, uint8_t v)
   case REG_FW_VERSION_MINOR:
   case REG_USB_INIT:
   case 0xD1: case 0xD2: case 0xD3: case REG_USB_MOUSE_DW:
+    return;
+  case REG_USB_MOUSE_SPEED:
+    mouse.speed = v & 0x7F;
     return;
   case REG_USB_MSC_CMD:
     // file commands run to completion at once; the register then reads 0 or
@@ -442,4 +509,21 @@ bool TVC256kpp::putPsramFile(const char *name, const uint8_t *data, size_t size)
     return false;
   TVC_ROM[kDriveSelectOffset] = 1;         // the PSRAM drive is the current one
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// vSID sound
+
+void TVC256kpp::renderAudio(int32_t &outLeft, int32_t &outRight)
+{
+  if (!enabled_)
+    return;
+  // SID clocks (336 MHz / 341) per TVC audio sample (1562500 / 4 Hz), 16.16
+  const uint32_t step = uint32_t((336000000.0 / 341.0) / 390625.0 * 65536.0 + 0.5);
+  int32_t x = int32_t(card_sid_clock(step));
+  // the card's output is AC coupled: remove the DC level (about 6 Hz high-pass)
+  dcOut_ = x - dcIn_ + int32_t((int64_t(dcOut_) * 65530) / 65536);
+  dcIn_ = x;
+  outLeft += dcOut_ / 2;
+  outRight += dcOut_ / 2;
 }

@@ -153,7 +153,15 @@ program látja a kártyát, és a többi fájlt is onnan töltheti be. Hideg res
   a mutatót olvasta/írta, a függvényes fájlírás (`$84`) pedig fordított irányban másolt;
 - a PSRAM drive a 34-es függvénnyel létrehozható; az `LCDSR` (mappa másolása a PSRAM-ba)
   USB-t igényel, ez nem megy;
-- még nincs: USB és DSK drive, vSID hang, egér, állapotmentés.
+- **vSID**: a kártya SID-emulációja (`tvc-sid.c`, a firmware saját kódja) szól a TVC
+  hangjával keverve, a kártyán használt mintavétellel (985 kHz-es SID-órajel, 41 kHz-es
+  minták, szűrő nélkül, mint a firmware-ben); a `$E0`–`$FF` regiszterek írhatók-olvashatók
+  (a 27/28 az OSC3/ENV3 értéke). A firmware a reset után az első hangot csak a gate bit
+  0 → 1 váltásánál indítja;
+- **egér**: a 🖱 gombbal (csak TVC-n, kártyával) a böngésző egere a kártya USB-egere lesz
+  (relatív mozgás, három gomb, sebesség-regiszter); kilépés: Esc. Az első mozdulattól a
+  `REG_USB_INIT` jelzi, hogy van egér;
+- még nincs: USB pendrive és DSK drive, állapotmentés.
 
 A kártya IO ROM-ját a `scripts/extract_card_rom.py` állítja elő a firmware
 `TVC-IO-v0.24.uf2` fájljából (`web/src/tvc256kpp_rom.cpp`). A Z80-oldali viselkedés

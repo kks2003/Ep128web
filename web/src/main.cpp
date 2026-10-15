@@ -411,6 +411,11 @@ EMSCRIPTEN_KEEPALIVE void ep_set_key(int keyCode, int isPressed)
 
 EMSCRIPTEN_KEEPALIVE void ep_set_mouse(int dX, int dY, int buttons, int wheel)
 {
+  if (machineType == 1) {
+    // TVC: the TVC256k++ card's USB mouse (buttons: 1 left, 2 middle, 4 right)
+    TVC256kpp::mouseInput(dX, dY, buttons);
+    return;
+  }
   vm->setMouseState(int8_t(dX), int8_t(dY), uint8_t(buttons), uint8_t(wheel));
 }
 

@@ -442,4 +442,8 @@ void card_power_on(void) {
 
 void card_reset(void) {
     card_gfx_reset();
+    /* reset_handler(): only the register copy is cleared, the SID emulation
+     * keeps its volume until the next write (as on the card) */
+    extern uint8_t SID[];
+    SID[24] = 0;
 }

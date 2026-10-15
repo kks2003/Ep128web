@@ -37,6 +37,14 @@ void card_border_write(uint8_t v);
 void card_gfx_vsync(void);
 const uint8_t *card_gfx_line(void);
 
+/* vSID: power-on state, register access (0..31), and the output: advances
+ * the SID by clocks16 / 65536 SID clocks (985 kHz) and returns the current
+ * output level (0..65535, as the card's PWM pair gets it) */
+void card_sid_power_on(void);
+void card_sid_write(uint8_t addr, uint8_t value);
+uint8_t card_sid_read(uint8_t addr);
+uint16_t card_sid_clock(uint32_t clocks16);
+
 /* the card's /INT output (sprite collision interrupts) */
 extern volatile bool card_int_active;
 

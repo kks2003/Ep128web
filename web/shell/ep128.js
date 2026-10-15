@@ -414,6 +414,7 @@
       cartridgeName = '';
     }
     updateCartridgeUI();
+    updateMouseButton();
     if (vkbdType >= 0) renderKeyboard();
     const missing = missingROMs(m);
     if (missing.length) {
@@ -1077,6 +1078,46 @@ registerProcessor('ep-output', EPOutput);
         setMessage('Nem fért a kártya PSRAM drive-jára: ' + failed.join(', '), true);
     };
     startAutostart('load "' + base + '"\n', null, false, tvcRedirectFor(SLOT_CARD256), prepare);
+  }
+
+  // TVC256k++ card: the browser's mouse becomes the card's USB mouse while
+  // the pointer is locked to the screen (the button starts it, Esc ends it)
+  function setupMouse() {
+    const btn = $('btn-mouse');
+    if (!btn) return;
+    const toCard = (b) => (b & 1) | ((b & 4) >> 1) | ((b & 2) << 1);   // left, middle, right
+    let buttons = 0;
+    const locked = () => document.pointerLockElement === canvas;
+    btn.onclick = () => {
+      if (!ready) return;
+      canvas.focus();
+      if (canvas.requestPointerLock) canvas.requestPointerLock();
+    };
+    document.addEventListener('pointerlockchange', () => {
+      btn.classList.toggle('on', locked());
+      if (locked()) setMessage('Egér a TVC256k++ kártyán – kilépés: Esc');
+      else { buttons = 0; if (ready) api.setMouse(0, 0, 0, 0); setMessage(''); }
+    });
+    canvas.addEventListener('mousemove', (e) => {
+      if (!locked() || !ready) return;
+      api.setMouse(e.movementX | 0, e.movementY | 0, buttons, 0);
+    });
+    const onButton = (e) => {
+      if (!locked() || !ready) return;
+      buttons = toCard(e.buttons);
+      api.setMouse(0, 0, buttons, 0);
+      e.preventDefault();
+    };
+    canvas.addEventListener('mousedown', onButton);
+    canvas.addEventListener('mouseup', onButton);
+    canvas.addEventListener('contextmenu', (e) => { if (locked()) e.preventDefault(); });
+    updateMouseButton();
+  }
+
+  // the mouse button is shown on the TVC when the TVC256k++ card is installed
+  function updateMouseButton() {
+    const btn = $('btn-mouse');
+    if (btn) btn.hidden = !(machine && machine.type === 1 && tvcSlotOf(SLOT_CARD256) >= 0);
   }
 
   function startProgram(name) {
@@ -1899,6 +1940,7 @@ registerProcessor('ep-output', EPOutput);
       canvas.focus();
     };
     $('btn-full').onclick = () => { toggleFullscreen(); canvas.focus(); };
+    setupMouse();
     $('btn-snap').onclick = () => {
       if (!ready) return;
       check(api.saveSnapshot('/tmp/save.ep128s'), 'mentés');
@@ -2124,6 +2166,7 @@ registerProcessor('ep-output', EPOutput);
       setTvcSlot: c('ep_set_tvc_slot', null, ['number', 'number']),
       loadTvcCardFlash: c('ep_load_tvc_card_flash', 'number', ['string']),
       cardPutFile: c('ep_tvc_card_put_file', 'number', ['string', 'string']),
+      setMouse: c('ep_set_mouse', null, ['number', 'number', 'number', 'number']),
       setTvcExtJoy: c('ep_set_tvc_ext_joy', null, ['number', 'number'])
     };
     for (const d of ['/roms', '/files', '/tmp', '/disk', '/tape']) ensureDir(d);

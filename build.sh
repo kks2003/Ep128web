@@ -72,6 +72,8 @@ SOURCES="
   web/src/card/tvc-io-regs.c
   web/src/card/tvc-card-data.c
   web/src/card/zx7Compress.c
+  web/src/card/tvc-sid.c
+  web/src/card/tvc-sound-emu.c
   web/src/card/littlefs/lfs.c
   web/src/card/littlefs/lfs_util.c
   web/src/soundio_web.cpp

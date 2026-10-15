@@ -1,8 +1,17 @@
 diff --git a/src/tvc64vm.cpp b/src/tvc64vm.cpp
-index ab06f25..b61f966 100644
+index ab06f25..4e26437 100644
 --- a/src/tvc64vm.cpp
 +++ b/src/tvc64vm.cpp
-@@ -664,8 +664,18 @@ namespace TVC64 {
+@@ -169,6 +169,8 @@ namespace TVC64 {
+         if (soundCards) {
+           int32_t extL = 0, extR = 0;
+           soundCards->renderAudio(extL, extR);
++          if (card256)
++            card256->renderAudio(extL, extR);     // TVC256k++ vSID
+           int32_t l = int32_t(tmp) + extL;
+           int32_t r = int32_t(tmp) + extR;
+           if (l < 0) l = 0; else if (l > 65535) l = 65535;
+@@ -664,8 +666,18 @@ namespace TVC64 {
  
    void TVC64VM::TVCVideo_::drawLine(const uint8_t *buf, size_t nBytes)
    {
@@ -21,7 +30,7 @@ index ab06f25..b61f966 100644
      if (vm.videoCapture)
        vm.videoCapture->horizontalSync(buf, nBytes);
    }
-@@ -673,6 +683,8 @@ namespace TVC64 {
+@@ -673,6 +685,8 @@ namespace TVC64 {
    void TVC64VM::TVCVideo_::vsyncStateChange(bool newState,
                                              unsigned int currentSlot_)
    {

@@ -121,6 +121,39 @@ static void graphicsChecks(TVC256kpp &c)
   CHECK(c.irqActive());
   rd(c, 0x20, 0x96);
   CHECK(!c.irqActive());
+  // vSID: a sawtooth tone at full volume makes the output move
+  wr(c, 0x20, 0xE0 + 24, 15);                   // volume
+  wr(c, 0x20, 0xE0 + 0, 0x00); wr(c, 0x20, 0xE0 + 1, 0x20);   // ~490 Hz
+  wr(c, 0x20, 0xE0 + 5, 0x00); wr(c, 0x20, 0xE0 + 6, 0xF0);   // sustain 15
+  wr(c, 0x20, 0xE0 + 4, 0x20);                  // gate off first (the firmware
+  for (int i = 0; i < 100; i++) {               // starts the attack on a 0 -> 1 edge)
+    int32_t l = 0, r = 0;
+    c.renderAudio(l, r);
+  }
+  wr(c, 0x20, 0xE0 + 4, 0x21);                  // sawtooth + gate
+  CHECK(rd(c, 0x20, 0xE0 + 4) == 0x21);
+  {
+    int32_t mn = 1 << 30, mx = -(1 << 30);
+    for (int i = 0; i < 39062; i++) {           // 0.1 s
+      int32_t l = 0, r = 0;
+      c.renderAudio(l, r);
+      if (i > 20000) { if (l < mn) mn = l; if (l > mx) mx = l; }
+    }
+    CHECK(mx - mn > 2000);
+    CHECK(rd(c, 0x20, 0xE0 + 28) == 0);         // envelope 3: voice 3 is silent
+  }
+  wr(c, 0x20, 0xE0 + 4, 0x20);                  // gate off
+  // USB mouse: speed $10 = 0.5; DX/DY clear on read
+  TVC256kpp::mouseInput(10, -3, 1);
+  CHECK(rd(c, 0x20, 0xD0) == 1 && rd(c, 0x20, 0xD1) == 1);
+  CHECK(rd(c, 0x20, 0xD2) == 5 && rd(c, 0x20, 0xD3) == 0xFE);
+  CHECK(rd(c, 0x20, 0xD2) == 0);
+  TVC256kpp::mouseInput(4, 0, 0);
+  CHECK(rd(c, 0x20, 0xD2) == 2 && rd(c, 0x20, 0xD1) == 0);
+  wr(c, 0x20, 0xD5, 0x20);                      // speed 1.0
+  TVC256kpp::mouseInput(7, 0, 0);
+  CHECK(rd(c, 0x20, 0xD5) == 0x20 && rd(c, 0x20, 0xD2) == 7);
+  wr(c, 0x20, 0xD5, 0x10);
   // warm reset switches the overlay off
   c.reset(false);
   CHECK(rd(c, 0x20, 0x90) == 0 && overlayLine(c, 1) == 0);
