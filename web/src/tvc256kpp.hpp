@@ -116,7 +116,6 @@ class TVC256kpp {
   std::vector<uint8_t> psram_;
   uint8_t *buf_[2];                // internal pages 16 / 17 (PSRAM windows)
   uint8_t overlay_[768];
-  int32_t dcIn_, dcOut_;           // DC blocking filter of the sound output
   static const uint8_t *currentOverlay_;
   void (*pagingCb_)(void *);
   void *pagingCbData_;

@@ -1,17 +1,30 @@
 diff --git a/src/tvc64vm.cpp b/src/tvc64vm.cpp
-index ab06f25..4e26437 100644
+index ab06f25..c4816a1 100644
 --- a/src/tvc64vm.cpp
 +++ b/src/tvc64vm.cpp
-@@ -169,6 +169,8 @@ namespace TVC64 {
-         if (soundCards) {
+@@ -166,11 +166,18 @@ namespace TVC64 {
+         uint32_t  tmp = uint32_t(tapeInputSignal + tapeOutputSignal) << 12;
+         if (((toneGenCnt2 | 0xF7) + uint8_t(toneGenEnabled)) & 0xFF)
+           tmp += uint32_t(audioOutputLevelTable[audioOutputLevel]);
+-        if (soundCards) {
++        if (soundCards && (soundCards->isGameCardEnabled()
++                           || soundCards->isMultiSoundEnabled()
++                           || (card256 && card256->isEnabled()))) {
            int32_t extL = 0, extR = 0;
            soundCards->renderAudio(extL, extR);
+-          int32_t l = int32_t(tmp) + extL;
+-          int32_t r = int32_t(tmp) + extR;
 +          if (card256)
 +            card256->renderAudio(extL, extR);     // TVC256k++ vSID
-           int32_t l = int32_t(tmp) + extL;
-           int32_t r = int32_t(tmp) + extR;
++          // the cards' signals swing around zero: mix them around a middle
++          // level, so that the negative half is not cut off at 0 (the DC
++          // level is removed by the audio converter's DC blocking filter)
++          int32_t l = int32_t(tmp) * 3 / 4 + extL / 2 + 16384;
++          int32_t r = int32_t(tmp) * 3 / 4 + extR / 2 + 16384;
            if (l < 0) l = 0; else if (l > 65535) l = 65535;
-@@ -664,8 +666,18 @@ namespace TVC64 {
+           if (r < 0) r = 0; else if (r > 65535) r = 65535;
+           soundOutputSignal = (uint32_t(l) & 0xFFFF) | ((uint32_t(r) & 0xFFFF) << 16);
+@@ -664,8 +671,18 @@ namespace TVC64 {
  
    void TVC64VM::TVCVideo_::drawLine(const uint8_t *buf, size_t nBytes)
    {
@@ -30,7 +43,7 @@ index ab06f25..4e26437 100644
      if (vm.videoCapture)
        vm.videoCapture->horizontalSync(buf, nBytes);
    }
-@@ -673,6 +685,8 @@ namespace TVC64 {
+@@ -673,6 +690,8 @@ namespace TVC64 {
    void TVC64VM::TVCVideo_::vsyncStateChange(bool newState,
                                              unsigned int currentSlot_)
    {

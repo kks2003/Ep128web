@@ -151,7 +151,6 @@ void TVC256kpp::setDefaults()
   TVC256kppFS::powerOn();                 // no PSRAM drive, root directory
   card_power_on();                        // graphics, functions
   card_sid_power_on();
-  dcIn_ = dcOut_ = 0;
   card_int_active = false;
   currentOverlay_ = (const uint8_t *) 0;
 }
@@ -534,10 +533,11 @@ void TVC256kpp::renderAudio(int32_t &outLeft, int32_t &outRight)
     return;
   // SID clocks (336 MHz / 341) per TVC audio sample (1562500 / 4 Hz), 16.16
   const uint32_t step = uint32_t((336000000.0 / 341.0) / 390625.0 * 65536.0 + 0.5);
-  int32_t x = int32_t(card_sid_clock(step));
-  // the card's output is AC coupled: remove the DC level (about 6 Hz high-pass)
-  dcOut_ = x - dcIn_ + int32_t((int64_t(dcOut_) * 65530) / 65536);
-  dcIn_ = x;
-  outLeft += dcOut_ / 2;
-  outRight += dcOut_ / 2;
+  // the card's PWM output (0..65535): as a signal around the middle level;
+  // its DC part (e.g. the volume register, used for samples) is removed by
+  // the audio converter's DC blocking filter, as the card's output is AC
+  // coupled
+  int32_t x = int32_t(card_sid_clock(step)) - 32768;
+  outLeft += x;
+  outRight += x;
 }
