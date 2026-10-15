@@ -1,0 +1,395 @@
+// TVC256k++ IO card emulation, step 1. See tvc256kpp.hpp.
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "tvc256kpp.hpp"
+#include <cstring>
+
+namespace {
+  enum {
+    REG_SPRITE_FOREGROUND = 0x60,
+    REG_SPRITE_SP_COLLISION_LOW = 0x96,
+    REG_SPRITE_BG_COLLISION_HIGH = 0x99,
+    REG_SCREEN_BORDER_COLOR = 0xA7,
+    REG_SCREEN_Y = 0xA8,
+    REG_SCREEN_MAXY = 0xA9,
+    REG_MEMORY_P2 = 0xB0,
+    REG_MEMORY_P3 = 0xB1,
+    REG_MEMORY_MAP_8M_P2_LOW = 0xB2,
+    REG_MEMORY_MAP_8M_P2_HIGH = 0xB3,
+    REG_MEMORY_MAP_8M_P3_LOW = 0xB4,
+    REG_MEMORY_MAP_8M_P3_HIGH = 0xB5,
+    REG_MEMORY_PSRAM_SIZE_IN_MB = 0xB6,
+    REG_MEMORY_ROM_PAGE = 0xB7,
+    REG_FUNCTION_EXECUTE = 0xC0,
+    REG_FUNCTION_PARAM_START = 0xC1,
+    REG_FUNCTION_RESULT = 0xC2,
+    REG_FW_VERSION_MAJOR = 0xC3,
+    REG_FW_VERSION_MINOR = 0xC4,
+    REG_DRIVE_SELECT = 0xC5,
+    REG_FUNCTION_MULTI_EXECUTE = 0xC6,
+    REG_DRIVE_PSRAM_VALID = 0xC8,
+    REG_DRIVE_FLASH_VALID = 0xC9,
+    REG_DRIVE_DSK_VALID = 0xCA,
+    REG_USB_INIT = 0xD0,
+    REG_USB_MOUSE_DW = 0xD4,
+    REG_USB_MOUSE_SPEED = 0xD5,
+    REG_USB_MSC_CMD = 0xD6
+  };
+  const uint16_t kRamOffset = 0x1800;    // start of IO RAM in the 8 kB area
+  const uint16_t kDriveSelectOffset = 0x1810;   // $D810, mirrors REG_DRIVE_SELECT
+}
+
+const size_t TVC256kpp::kFastRamSize;
+const size_t TVC256kpp::kPsramSize;
+const size_t TVC256kpp::kPageSize;
+const size_t TVC256kpp::kRomPageSize;
+const size_t TVC256kpp::kIoAreaSize;
+const uint8_t TVC256kpp::kFwMajor;
+const uint8_t TVC256kpp::kFwMinor;
+
+TVC256kpp::TVC256kpp()
+  : enabled_(false), slot_(1), border_(0), romPage_(0),
+    pagingCb_(0), pagingCbData_(0)
+{
+  std::memset(TVC256kppFS::fastRam(), 0, kFastRamSize);
+  psram_.assign(kPsramSize, 0);
+  buf_[0].assign(kPageSize, 0);
+  buf_[1].assign(kPageSize, 0);
+  rom_.assign(2 * kRomPageSize, 0xFF);
+  loadROM(tvc256kpp_rom_data, tvc256kpp_rom_size);
+  TVC256kppFS::attachPsram(&psram_[0], uint32_t(kPsramSize >> 20));
+  setDefaults();
+}
+
+TVC256kpp::~TVC256kpp()
+{
+  TVC256kppFS::resetPsramDrive();
+  TVC256kppFS::attachPsram((uint8_t *) 0, 0);
+}
+
+void TVC256kpp::setSlot(int slot)
+{
+  if (slot < 0) slot = 0;
+  if (slot > 3) slot = 3;
+  slot_ = slot;
+}
+
+void TVC256kpp::setEnabled(bool e)
+{
+  if (e == enabled_)
+    return;
+  enabled_ = e;
+  notifyPaging();
+}
+
+bool TVC256kpp::loadROM(const uint8_t *data, size_t size)
+{
+  if (!data || size != 2 * kRomPageSize)
+    return false;
+  rom_.assign(data, data + size);
+  return true;
+}
+
+void TVC256kpp::setDefaults()
+{
+  std::memset(regs_, 0, sizeof(regs_));
+  for (int i = 0; i < 16; i++)
+    regs_[REG_SPRITE_FOREGROUND + i] = 1;            // default: foreground
+  regs_[REG_SCREEN_MAXY] = 240;
+  regs_[REG_USB_MOUSE_SPEED] = 0x10;
+  regs_[REG_FUNCTION_EXECUTE] = 0xFF;
+  regs_[REG_FUNCTION_MULTI_EXECUTE] = 0xFF;
+  sel_[0] = sel_[1] = 0;
+  inc_[0] = inc_[1] = 1;
+  romPage_ = 0;
+  pageSel_[0] = 4;                                   // U2: fast page 4
+  pageSel_[1] = 5;                                   // U3: fast page 5
+  psramHi_[0] = psramHi_[1] = 0;
+  psramCached_[0] = psramCached_[1] = -1;
+  std::memset(ioRam_, 0, sizeof(ioRam_));
+  TVC256kppFS::resetPsramDrive();         // power-on: no PSRAM drive
+}
+
+void TVC256kpp::reset(bool cold)
+{
+  // Warm reset: the card keeps paging and memory contents, only the video
+  // state is reinitialised (not emulated yet). Cold reset: full re-init.
+  if (cold) {
+    flushPsramBuffers();
+    setDefaults();
+    notifyPaging();
+  }
+  else {
+    for (int i = 0; i < 16; i++)
+      regs_[REG_SPRITE_FOREGROUND + i] = 1;
+    regs_[REG_SCREEN_MAXY] = 240;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// memory paging
+
+uint8_t *TVC256kpp::getPage(int i)
+{
+  if (!enabled_ || i < 0 || i > 1)
+    return (uint8_t *) 0;
+  uint8_t s = pageSel_[i];
+  if (s == 0xFF)
+    return (uint8_t *) 0;
+  if (s < 16)
+    return TVC256kppFS::fastRam() + size_t(s) * kPageSize;
+  if (s == 0x10 || s == 0x11)
+    return &buf_[s & 1][0];
+  return (uint8_t *) 0;
+}
+
+void TVC256kpp::selectFast(int i, uint8_t v)
+{
+  pageSel_[i] = (v == 0xFF ? uint8_t(0xFF) : uint8_t(v & 0x0F));
+  notifyPaging();
+}
+
+void TVC256kpp::writebackBuffer(int i)
+{
+  if (psramCached_[i] >= 0) {
+    std::memcpy(&psram_[size_t(psramCached_[i]) * kPageSize],
+                &buf_[i][0], kPageSize);
+  }
+}
+
+void TVC256kpp::flushPsramBuffers()
+{
+  writebackBuffer(0);
+  writebackBuffer(1);
+}
+
+void TVC256kpp::reloadPsramBuffers()
+{
+  for (int i = 0; i < 2; i++) {
+    if (psramCached_[i] >= 0)
+      std::memcpy(&buf_[i][0], &psram_[size_t(psramCached_[i]) * kPageSize], kPageSize);
+  }
+}
+
+bool TVC256kpp::formatPsramDrive(uint32_t numBlocks)
+{
+  flushPsramBuffers();
+  bool ok = TVC256kppFS::formatPsramDrive(numBlocks);
+  reloadPsramBuffers();
+  ioRam_[0x24] = ok ? 1 : 0;              // REG_DRIVE_PSRAM_VALID
+  return ok;
+}
+
+void TVC256kpp::mapPsram(int i)
+{
+  int page = int(regs_[REG_MEMORY_MAP_8M_P2_LOW + 2 * i])
+             | (int(psramHi_[i] & 1) << 8);
+  if (psramCached_[i] != page) {
+    // the previously cached page goes back to the PSRAM first
+    writebackBuffer(i);
+    // never keep one PSRAM page in two buffers
+    if (psramCached_[i ^ 1] == page)
+      writebackBuffer(i ^ 1);
+    std::memcpy(&buf_[i][0], &psram_[size_t(page) * kPageSize], kPageSize);
+    psramCached_[i] = page;
+  }
+  pageSel_[i] = uint8_t(0x10 + i);
+  notifyPaging();
+}
+
+// ---------------------------------------------------------------------------
+// register file
+
+uint8_t TVC256kpp::regRead(uint8_t r)
+{
+  switch (r) {
+  case REG_MEMORY_P2:
+    return pageSel_[0];
+  case REG_MEMORY_P3:
+    return pageSel_[1];
+  case REG_MEMORY_PSRAM_SIZE_IN_MB:
+    return uint8_t(kPsramSize >> 20);
+  case REG_MEMORY_ROM_PAGE:
+    return romPage_;
+  case REG_FW_VERSION_MAJOR:
+    return kFwMajor;
+  case REG_FW_VERSION_MINOR:
+    return kFwMinor;
+  case REG_DRIVE_SELECT:
+    return regs_[REG_DRIVE_SELECT];
+  case REG_DRIVE_PSRAM_VALID:
+    return ioRam_[0x24];
+  case REG_DRIVE_FLASH_VALID:
+    return TVC256kppFS::flashValid() ? 1 : 0;
+  case REG_DRIVE_DSK_VALID:
+    return ioRam_[0x25];
+  default:
+    break;
+  }
+  if (r >= REG_SPRITE_SP_COLLISION_LOW && r <= REG_SPRITE_BG_COLLISION_HIGH) {
+    uint8_t v = regs_[r];                  // collision registers clear on read
+    regs_[r] = 0;
+    return v;
+  }
+  if (r == 0xD2 || r == 0xD3) {            // mouse DX, DY clear on read
+    uint8_t v = regs_[r];
+    regs_[r] = 0;
+    return v;
+  }
+  return regs_[r];
+}
+
+void TVC256kpp::regWrite(uint8_t r, uint8_t v)
+{
+  switch (r) {
+  case REG_MEMORY_P2:
+    selectFast(0, v);
+    return;
+  case REG_MEMORY_P3:
+    selectFast(1, v);
+    return;
+  case REG_MEMORY_MAP_8M_P2_LOW:
+    regs_[r] = v;
+    mapPsram(0);
+    return;
+  case REG_MEMORY_MAP_8M_P3_LOW:
+    regs_[r] = v;
+    mapPsram(1);
+    return;
+  case REG_MEMORY_MAP_8M_P2_HIGH:
+    psramHi_[0] = v & 1;
+    regs_[r] = psramHi_[0];
+    return;
+  case REG_MEMORY_MAP_8M_P3_HIGH:
+    psramHi_[1] = v & 1;
+    regs_[r] = psramHi_[1];
+    return;
+  case REG_MEMORY_ROM_PAGE:
+    if (v <= 1)
+      romPage_ = v;                        // values above 1 are ignored
+    return;
+  case REG_FUNCTION_EXECUTE:
+  case REG_FUNCTION_MULTI_EXECUTE:
+    // built-in functions are not implemented yet: report an error code
+    regs_[REG_FUNCTION_RESULT] = 0xFE;
+    regs_[r] = 0xFF;                       // "executed"
+    return;
+  case REG_DRIVE_SELECT:
+    regs_[r] = v & 3;
+    ioRam_[kDriveSelectOffset - kRamOffset] = regs_[r];
+    return;
+  // read-only registers
+  case REG_SCREEN_Y:
+  case REG_MEMORY_PSRAM_SIZE_IN_MB:
+  case REG_FUNCTION_RESULT:
+  case REG_FW_VERSION_MAJOR:
+  case REG_FW_VERSION_MINOR:
+  case REG_USB_INIT:
+  case 0xD1: case 0xD2: case 0xD3: case REG_USB_MOUSE_DW:
+    return;
+  case REG_USB_MSC_CMD:
+    // file commands run to completion at once; the register then reads 0 or
+    // the error code + $80 (the Z80 side polls it)
+    flushPsramBuffers();
+    regs_[r] = TVC256kppFS::mscCommand(v, ioRam_);
+    reloadPsramBuffers();
+    return;
+  case REG_DRIVE_PSRAM_VALID:
+  case REG_DRIVE_FLASH_VALID:
+  case REG_DRIVE_DSK_VALID:
+    return;
+  default:
+    break;
+  }
+  if (r >= REG_SPRITE_SP_COLLISION_LOW && r <= REG_SPRITE_BG_COLLISION_HIGH)
+    return;                                // collision state is read-only
+  regs_[r] = v;
+}
+
+// ---------------------------------------------------------------------------
+// I/O ports
+
+bool TVC256kpp::handleRead(uint16_t port, uint8_t &val)
+{
+  if (!enabled_)
+    return false;
+  int d = int(port) - baseSlotPort();
+  if (d < 0 || d > 6 || d == 3)
+    return false;
+  int set = (d >= 4 ? 1 : 0);
+  switch (d & 3) {
+  case 0:
+    val = sel_[set];
+    break;
+  case 1:
+    val = regRead(sel_[set]);
+    sel_[set] = uint8_t(sel_[set] + inc_[set]);
+    break;
+  default:
+    val = inc_[set];
+    break;
+  }
+  return true;
+}
+
+bool TVC256kpp::handleWrite(uint16_t port, uint8_t value)
+{
+  if (!enabled_)
+    return false;
+  if (port == 0x00) {                      // the card watches the border colour
+    border_ = value;
+    return false;                          // the TVC still handles it
+  }
+  int d = int(port) - baseSlotPort();
+  if (d < 0 || d > 6 || d == 3)
+    return false;
+  int set = (d >= 4 ? 1 : 0);
+  switch (d & 3) {
+  case 0:
+    sel_[set] = value;
+    break;
+  case 1:
+    regWrite(sel_[set], value);
+    sel_[set] = uint8_t(sel_[set] + inc_[set]);
+    break;
+  default:
+    inc_[set] = value;
+    break;
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// IO ROM area
+
+bool TVC256kpp::handleSlotROMRead(uint16_t addr, uint16_t slotPaging,
+                                  uint8_t &val)
+{
+  if (!enabled_ || (slotPaging >> 14) != slot_)
+    return false;
+  uint16_t offs = addr & (kIoAreaSize - 1);
+  if (offs < kRomPageSize) {
+    val = rom_[size_t(romPage_) * kRomPageSize + offs];
+  }
+  else if (offs == kDriveSelectOffset) {
+    val = regs_[REG_DRIVE_SELECT];
+  }
+  else {
+    val = ioRam_[offs - kRamOffset];
+  }
+  return true;
+}
+
+bool TVC256kpp::handleSlotROMWrite(uint16_t addr, uint16_t slotPaging,
+                                   uint8_t val)
+{
+  if (!enabled_ || (slotPaging >> 14) != slot_)
+    return false;
+  uint16_t offs = addr & (kIoAreaSize - 1);
+  if (offs >= kRamOffset) {
+    ioRam_[offs - kRamOffset] = val;
+    if (offs == kDriveSelectOffset)
+      regs_[REG_DRIVE_SELECT] = val & 3;
+  }
+  return true;                             // writes to the ROM area are ignored
+}

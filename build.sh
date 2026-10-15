@@ -63,6 +63,12 @@ SOURCES="
   web/src/emu76489.c
   web/src/opl3.c
   web/src/tvc_soundcards.cpp
+  web/src/tvc256kpp.cpp
+  web/src/tvc256kpp_rom.cpp
+  web/src/tvc256kpp_fs.cpp
+  web/src/card/tvc-lfs.c
+  web/src/card/littlefs/lfs.c
+  web/src/card/littlefs/lfs_util.c
   web/src/soundio_web.cpp
   web/src/sndfile_wav.cpp
   web/src/main.cpp
@@ -74,7 +80,10 @@ for src in $SOURCES; do
   OBJS="$OBJS $obj"
   if [ ! -f "$obj" ] || [ "$src" -nt "$obj" ]; then
     echo "CXX $src"
-    em++ $CFLAGS -c "$src" -o "$obj"
+    case "$src" in
+      web/src/card/*.c|web/src/card/*/*.c) emcc -O3 -w -DHAVE_STDINT_H -Iweb/src -c "$src" -o "$obj" ;;  # vendored C code
+      *) em++ $CFLAGS -c "$src" -o "$obj" ;;
+    esac
   fi
 done
 

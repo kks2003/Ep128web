@@ -20,10 +20,12 @@
 #include "nick.hpp"
 #include "tvc64vm.hpp"
 #include "tvc_soundcards.hpp"
+#include "tvc256kpp.hpp"
 #include "decompm2.hpp"
 
 #include <emscripten/emscripten.h>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -253,6 +255,8 @@ namespace {
   std::string     lastError;
   bool            tvcGameCardEnabled = false;
   bool            tvcMultiSoundEnabled = false;
+  bool            tvcCard256Enabled = false;   // TVC256k++ IO card
+  int             tvcCard256Slot = 2;          // 1..3; slot 0 is VT-DOS, slot 1 is used by FILE:
   uint8_t         tvcJoy3State = 0xFF;
   uint8_t         tvcJoy4State = 0xFF;
 
@@ -302,6 +306,8 @@ EMSCRIPTEN_KEEPALIVE int ep_set_machine_type(int type)
       tvc->setSoundClockFrequency(390625);
       tvc->setGameCardEnabled(tvcGameCardEnabled);
       tvc->setMultiSoundEnabled(tvcMultiSoundEnabled);
+      tvc->setCard256Slot(tvcCard256Slot);
+      tvc->setCard256Enabled(tvcCard256Enabled);
       tvc->setExtJoyState(0, tvcJoy3State);
       tvc->setExtJoyState(1, tvcJoy4State);
       vm = tvc;
@@ -711,6 +717,49 @@ EMSCRIPTEN_KEEPALIVE void ep_set_tvc_multisound(int enabled)
   if (vm && machineType == 1) {
     TVC64::TVC64VM *tvc = static_cast<TVC64::TVC64VM *>(vm);
     tvc->setMultiSoundEnabled(tvcMultiSoundEnabled);
+  }
+}
+
+// Loads the flash drive image of the TVC256k++ card (flash-root-*.bin, a 15 MB
+// littlefs image) from a file of the virtual file system. The image is shared
+// by all card instances. Returns 0 on success, -1 on error.
+EMSCRIPTEN_KEEPALIVE int ep_load_tvc_card_flash(const char *path)
+{
+  std::FILE *f = std::fopen(path, "rb");
+  if (!f) {
+    lastError = std::string("cannot open ") + path;
+    return -1;
+  }
+  std::vector<unsigned char> buf;
+  unsigned char chunk[65536];
+  size_t n;
+  while ((n = std::fread(chunk, 1, sizeof(chunk), f)) > 0)
+    buf.insert(buf.end(), chunk, chunk + n);
+  std::fclose(f);
+  if (!TVC256kpp::loadFlashImage(&buf[0], buf.size())) {
+    lastError = "not a valid littlefs flash image";
+    return -1;
+  }
+  return 0;
+}
+
+// Counters of the card's file system (0: files opened, 1: bytes read), for tests
+EMSCRIPTEN_KEEPALIVE int ep_tvc_card_fs_stat(int which)
+{
+  return int(TVC256kpp::fsStat(which));
+}
+
+// Enables the TVC256k++ card in the given slot (1..3). The change takes
+// effect for the running machine immediately, but the TVC should be reset
+// afterwards so that its OS detects the card.
+EMSCRIPTEN_KEEPALIVE void ep_set_tvc_card256(int enabled, int slot)
+{
+  tvcCard256Enabled = (enabled != 0);
+  tvcCard256Slot = (slot < 1 ? 1 : (slot > 3 ? 3 : slot));
+  if (vm && machineType == 1) {
+    TVC64::TVC64VM *tvc = static_cast<TVC64::TVC64VM *>(vm);
+    tvc->setCard256Slot(tvcCard256Slot);
+    tvc->setCard256Enabled(tvcCard256Enabled);
   }
 }
 

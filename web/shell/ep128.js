@@ -203,12 +203,20 @@
   let cartridgeName = '';       // TVC: cartridge ROM image name
   let tvcGameCard = true;       // TVC: GameCard (SN76489 + Joy 3-4)
   let tvcMultiSound = false;    // TVC: Multichip Soundcard (SN, SAA, OPL2)
+  let tvcCard256 = false;       // TVC: TVC256k++ IO card (256 kB RAM, 8 MB PSRAM)
   try {
     const gc = localStorage.getItem('ep128web.tvcGameCard');
     if (gc !== null) tvcGameCard = (gc === '1');
     const ms = localStorage.getItem('ep128web.tvcMultiSound');
     if (ms !== null) tvcMultiSound = (ms === '1');
+    const c256 = localStorage.getItem('ep128web.tvcCard256');
+    if (c256 !== null) tvcCard256 = (c256 === '1');
   } catch (e) {}
+
+  function applyTvcCard256() {
+    // slot 2 (EXT 2): slot 0 is the VT-DOS in ep128emu, slot 1 is used by the FILE: device
+    if (api && api.setTvcCard256) api.setTvcCard256(tvcCard256 ? 1 : 0, 2);
+  }
 
   function applyTvcSoundCards() {
     if (api && api.setTvcGameCard) api.setTvcGameCard(tvcGameCard ? 1 : 0);
@@ -403,6 +411,7 @@
     }
     if (diskName)
       api.setDisk(0, '/disk/' + diskName);
+    if (m.type === 1) applyTvcCard256();   // before the reset: the TVC OS detects the card at boot
     if (coldReset !== false) {
       api.reset(1);
       keyedSinceReset = false;
@@ -708,9 +717,21 @@ registerProcessor('ep-output', EPOutput);
       phase: machine.type === 1 ? 'basic' : 'boot',
       t: 0, phaseT: 0, dark: false, logo: 0, stable: 0,
       command, onTyped, events: null, wait: 0,
-      isTvcTape: !!isTvcTape
+      isTvcTape: !!isTvcTape,
+      // TVC: the cassette device redirect the loading command must use
+      // (5: TAPE, 129: FILE: in slot 1), forced while the task types
+      tvcRedirect: isTvcTape ? 5 : (tvcFileIO ? 129 : 0)
     };
     setMessage('Indítás…');
+  }
+
+  // TVC: forces the cassette device redirect (system variables $0B05/$0B0D)
+  // for an autostart task. Plain text typing does not set one, so that it
+  // does not take the redirect away from e.g. the TVC256k++ card's commands.
+  function applyTvcRedirect(a) {
+    if (machine.type !== 1 || !a.tvcRedirect) return;
+    writeMemory(2821, a.tvcRedirect);
+    writeMemory(2829, a.tvcRedirect);
   }
 
   // returns the number of microseconds to emulate before calling again,
@@ -743,15 +764,7 @@ registerProcessor('ep-output', EPOutput);
       a.last = v;
       if (a.stable >= 25 || phaseTime > 15e6) {
         a.phase = 'type';
-        if (machine.type === 1) {
-          if (a.isTvcTape) {
-            writeMemory(2821, 5);
-            writeMemory(2829, 5);
-          } else if (tvcFileIO) {
-            writeMemory(2821, 129);
-            writeMemory(2829, 129);
-          }
-        }
+        applyTvcRedirect(a);
         // TVC BASIC ignores keys for about a second after the banner appears,
         // and then the first key: wait, and send an Enter first
         a.events = machine.type === 1
@@ -763,15 +776,7 @@ registerProcessor('ep-output', EPOutput);
     if (a.events.length) {
       const [code, down, delay] = a.events.shift();
       if (code >= 0) api.setKey(code, down);
-      if (machine.type === 1) {
-        if (a.isTvcTape) {
-          writeMemory(2821, 5);
-          writeMemory(2829, 5);
-        } else if (tvcFileIO) {
-          writeMemory(2821, 129);
-          writeMemory(2829, 129);
-        }
-      }
+      applyTvcRedirect(a);
       return delay;
     }
     if (a.phase === 'logo') {
@@ -779,15 +784,7 @@ registerProcessor('ep-output', EPOutput);
       a.phaseT = a.t;
       return 20000;
     }
-    if (machine.type === 1) {
-      if (a.isTvcTape) {
-        writeMemory(2821, 5);
-        writeMemory(2829, 5);
-      } else if (tvcFileIO) {
-        writeMemory(2821, 129);
-        writeMemory(2829, 129);
-      }
-    }
+    applyTvcRedirect(a);
     autoTask = null;
     setMessage('');
     if (a.onTyped) a.onTyped();
@@ -889,6 +886,8 @@ registerProcessor('ep-output', EPOutput);
   function fileKind(f) {
     const ext = extOf(f.name);
     if (ext === 'crt') return 'cartridge';
+    // TVC256k++ flash drive image (15 MB littlefs), e.g. flash-root-1.3.bin
+    if (ext === 'bin' && (/^flash-root/i.test(f.name) || f.bytes.length === 15728640)) return 'cardflash';
     if (ext === 'rom' || (ext === 'bin' && f.bytes.length > 100000 && /rom/i.test(f.name)))
       return 'rom';
     if (ext === 'ep128s' || ext === 'ep128d' || ext === 'ep128s2') return 'snapshot';
@@ -908,6 +907,14 @@ registerProcessor('ep-output', EPOutput);
     const ext = extOf(name);
     if (machine.type === 1) return ext === 'cas';
     return ['com', 'bas', 'prg', 'ep', 'exe', 'app', ''].includes(ext);
+  }
+
+  function loadCardFlash(f) {
+    try { M.FS.mkdir('/card'); } catch (e) { }
+    M.FS.writeFile('/card/flash.bin', f.bytes);
+    check(api.loadTvcCardFlash('/card/flash.bin'), 'TVC256k++ flash drive kép');
+    db.put('cardflash', f.bytes);
+    setMessage('TVC256k++ flash drive kép betöltve' + (tvcCard256 ? '' : ' – kapcsold be a kártyát'));
   }
 
   function loadROMFile(f) {
@@ -1133,7 +1140,8 @@ registerProcessor('ep-output', EPOutput);
       const of = (kind) => files.filter((f) => fileKind(f) === kind);
       // ROMs first, so that a ROM package and a program can be dropped together
       for (const f of of('rom')) loadROMFile(f);
-      if (!files.some((f) => fileKind(f) !== 'rom')) return;
+      for (const f of of('cardflash')) loadCardFlash(f);
+      if (!files.some((f) => !['rom', 'cardflash'].includes(fileKind(f)))) return;
       if (!ready) {
         setMessage('Először a ROM-okat kell betölteni', true);
         return;
@@ -1884,6 +1892,17 @@ registerProcessor('ep-output', EPOutput);
       };
     }
 
+    const c256Box = $('tvc-card256');
+    if (c256Box) {
+      c256Box.checked = tvcCard256;
+      c256Box.onchange = (e) => {
+        tvcCard256 = e.target.checked;
+        try { localStorage.setItem('ep128web.tvcCard256', tvcCard256 ? '1' : '0'); } catch (err) {}
+        applyTvcCard256();
+        reset(true);          // the TVC OS detects the card at boot
+      };
+    }
+
     const wrap = $('screen-wrap');
     wrap.addEventListener('dragover', (e) => { e.preventDefault(); wrap.classList.add('drag'); });
     wrap.addEventListener('dragleave', () => wrap.classList.remove('drag'));
@@ -2031,6 +2050,8 @@ registerProcessor('ep-output', EPOutput);
       unpackRoms: c('ep_unpack_rom_package', 'number', ['string', 'string']),
       setTvcGameCard: c('ep_set_tvc_gamecard', null, ['number']),
       setTvcMultiSound: c('ep_set_tvc_multisound', null, ['number']),
+      setTvcCard256: c('ep_set_tvc_card256', null, ['number', 'number']),
+      loadTvcCardFlash: c('ep_load_tvc_card_flash', 'number', ['string']),
       setTvcExtJoy: c('ep_set_tvc_ext_joy', null, ['number', 'number'])
     };
     for (const d of ['/roms', '/files', '/tmp', '/disk', '/tape']) ensureDir(d);
@@ -2056,6 +2077,11 @@ registerProcessor('ep-output', EPOutput);
       try {
         if (key === 'pkg') installROMPackage(value);
         else if (key.startsWith('rom:')) M.FS.writeFile('/roms/' + key.slice(4), value);
+        else if (key === 'cardflash') {
+          try { M.FS.mkdir('/card'); } catch (e) { }
+          M.FS.writeFile('/card/flash.bin', value);
+          api.loadTvcCardFlash('/card/flash.bin');
+        }
       } catch (e) { console.warn(e); }
     }
     if (!fileExists('/roms/exos21.rom')) {

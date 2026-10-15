@@ -88,6 +88,47 @@ A ROM-ok szerzői jogi okokból nincsenek a repóban. Ha a saját szervereden
 `roms/ep128emu_roms-2.0.11.bin` néven elérhető a csomag, az oldal automatikusan
 betölti.
 
+### TVC256k++ kártya (kísérleti)
+
+A TVC bővítőkártyák között bekapcsolható a [TVC256k++](https://github.com/dikdom/tvc256kplusplus)
+kártya emulációja a 2-es slotban (BASIC-ből `EXT 2`; a 0-s slotot az ep128emu a VT-DOS-nak,
+az 1-est a `FILE:` eszköznek használja). Bekapcsoláskor a gép hideg újraindul, hogy a TVC OS
+felismerje a kártyát. A kártya bootoláskor magára állítja a kazetta-átirányítást, így a `LOAD`
+és a CLI fájlparancsai a kártya meghajtóit használják. Egy `.cas` program automatikus indítása
+viszont a `FILE:` eszközre állítja át (hogy az utántöltés is onnan jöjjön); utána a kártya
+fájlparancsai („IO operation failed”) csak hideg reset után működnek újra.
+
+Állapot (2. lépés):
+
+- megvalósítva: a kártya IO portjai és regiszterfájlja (két port-készlet, automatikus
+  növelés), 256 kB gyors RAM és 8 MB PSRAM lapozása az U2/U3 területen, az IO ROM
+  (2 × 6 kB, `REG_MEMORY_ROM_PAGE`) és a 2 kB IO RAM, valamint a `REG_DRIVE_SELECT`
+  tükrözése a `$D810` címen;
+- **flash drive**: a kártya firmware-ének saját fájlkezelő kódja (`tvc-lfs.c`, littlefs) fut
+  az emulátorban (`web/src/card/`), így a `REG_USB_MSC_CMD` fájlparancsok (megnyitás,
+  olvasás, könyvtárlistázás, `CD`, `LOAD`) pontosan úgy működnek, mint a valódi kártyán.
+  A flash drive képét (`flash-root-*.bin`, vagy a `flash-root-*-bin.zip`) ráejtheted az
+  oldalra; a böngésző megjegyzi. Utána `EXT 2` → `DS`, `DIR`, `CD games`, `X`, majd
+  `LOAD "aircraft"`, `RUN`;
+- a PSRAM drive alapja is megvan (littlefs a PSRAM-ban), de formázni egyelőre nem lehet
+  (`LCDSR` USB-t igényel);
+- még nincs: USB és DSK drive, a beépített függvények (`REG_FUNCTION_EXECUTE`, ezek kellenek
+  a launcherhez is), sprite-ok és grafikai overlay, vSID, egér, állapotmentés. A `$C0`/`$C6`
+  függvényhívások hibakóddal térnek vissza.
+
+A kártya IO ROM-ját a `scripts/extract_card_rom.py` állítja elő a firmware
+`TVC-IO-v0.24.uf2` fájljából (`web/src/tvc256kpp_rom.cpp`). A Z80-oldali viselkedés
+az ep128emu-ba a `patches/tvc256kpp.patch` segítségével kerül be.
+
+Tesztek (nem kellenek hozzájuk a TVC ROM-ok):
+
+```sh
+python3 test/native_card_test.py     # a teljes emulátor natívan, saját mini Z80-programmal; ha a
+                                     # tvc256kplusplus repó a szomszédos könyvtárban van (vagy --card-repo),
+                                     # a fájlrendszert a valódi flash-képen is teszteli
+python3 test/native_card_test.py --roms ep128emu_roms-2.0.11.bin   # + a valódi TVC BASIC 2.2 bootolása, LOAD a flash drive-ról
+```
+
 ## Fordítás
 
 ```sh
