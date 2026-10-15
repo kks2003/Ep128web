@@ -41,7 +41,7 @@ def build(main_src="test/native_harness.cpp", name="harness"):
         vendored = "/web/src/card/" in s
         cc = ["gcc", "-std=gnu11"] if s.endswith(".c") else ["g++", "-std=gnu++17"]
         extra = ["-Dmain=ep_unused_emscripten_main"] if s.endswith("web/src/main.cpp") else []
-        if not os.path.exists(o) or os.path.getmtime(o) < os.path.getmtime(s):
+        if not os.path.exists(o) or os.path.getmtime(o) < max(os.path.getmtime(s), HEADERS_MTIME):
             subprocess.check_call(cc + cf + extra + ["-c", s, "-o", o])
         objs.append(o)
     exe = os.path.join(OBJ, name)
@@ -150,12 +150,16 @@ def card_repo_files(repo):
     bins = glob.glob(os.path.join(out, "flash-root-*.bin"))
     return bins[0], os.path.join(out, "flash-root", "launcher.cas")
 
+# newest header of web/src: objects older than it are rebuilt (class layouts)
+import glob as _glob
+HEADERS_MTIME = max([os.path.getmtime(h) for h in _glob.glob(os.path.join(ROOT, "web/src/**/*.h*"), recursive=True)] or [0])
+
 def compile_objs(sources, prefix):
     objs = []
     for src in sources:
         cc = ["gcc", "-std=gnu11"] if src.endswith(".c") else ["g++", "-std=gnu++17"]
         o = os.path.join(OBJ, prefix + src.replace("/", "_") + ".o")
-        if not os.path.exists(o) or os.path.getmtime(o) < os.path.getmtime(os.path.join(ROOT, src)):
+        if not os.path.exists(o) or os.path.getmtime(o) < max(os.path.getmtime(os.path.join(ROOT, src)), HEADERS_MTIME):
             subprocess.check_call(cc + ["-O1", "-w", "-I" + os.path.join(ROOT, "web/src"), "-c", os.path.join(ROOT, src), "-o", o])
         objs.append(o)
     return objs
