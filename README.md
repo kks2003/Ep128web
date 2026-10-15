@@ -161,11 +161,14 @@ program látja a kártyát, és a többi fájlt is onnan töltheti be. Hideg res
 - **egér**: a 🖱 gombbal (csak TVC-n, kártyával) a böngésző egere a kártya USB-egere lesz
   (relatív mozgás, három gomb, sebesség-regiszter); kilépés: Esc. Az első mozdulattól a
   `REG_USB_INIT` jelzi, hogy van egér;
-- **USB pendrive**: a „Bővítőportok” csoportban bekapcsolható egy üres, 16 MB-os FAT
-  pendrive a kártya USB-portjába (a betöltés gombbal lép életbe). Ilyenkor bootoláskor ez
-  lesz az aktív meghajtó, a ráhúzott fájlok erre kerülnek, és a launcher „Load dir to
-  PSRAM” (L) parancsa is működik a rajta lévő könyvtárakkal. A tartalma az oldal
-  újratöltéséig marad meg;
+- **USB pendrive**: a TVC-nél megjelenő „USB pendrive (TVC256k++)” panelen bedugható egy
+  FAT pendrive (32–256 MB) a kártya USB-portjába. A panel mutatja a tartalmát (mappák,
+  méretek, szabad hely); fájl, mappa vagy ZIP (kibontva, mappastruktúrával) adható hozzá
+  gombbal vagy a panelre húzva, bármilyen típusú (`.cas`, `.bmp`, `.dsk`…); egyenként
+  letölthetők és törölhetők. A tartalom a böngészőben megmarad (újratöltés után is), a TVC
+  programjai által írt fájlokkal együtt. Bedugott pendrive-nál bootoláskor ez lesz az aktív
+  meghajtó, a képre húzott programok is erre kerülnek, és a launcher „Load dir to PSRAM”
+  (L) parancsa is működik a rajta lévő mappákkal;
 - **DSK drive**: a firmware FatFS-kódja (`tvc-fatfs.c`) fut, így a pendrive-on, a PSRAM- vagy
   a flash drive-on lévő `.dsk` képek csatolhatók (`MDSK`, `UMDSK`), és a 3-as meghajtóként
   használhatók. A flash drive az emulátorban csak olvasható, ezért az ott lévő képre írni nem

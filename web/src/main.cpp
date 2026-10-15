@@ -806,6 +806,80 @@ EMSCRIPTEN_KEEPALIVE int ep_tvc_card_usb(int sizeMB)
   return 0;
 }
 
+// TVC256k++ USB pendrive file manager (paths relative to the root, '/')
+static bool readVfsFile(const char *path, std::vector<unsigned char> &buf)
+{
+  std::FILE *f = std::fopen(path, "rb");
+  if (!f)
+    return false;
+  static unsigned char chunk[65536];   // not on the (64 kB) wasm stack
+  size_t n;
+  buf.clear();
+  while ((n = std::fread(chunk, 1, sizeof(chunk), f)) > 0)
+    buf.insert(buf.end(), chunk, chunk + n);
+  std::fclose(f);
+  return true;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *ep_usb_list(const char *path)
+{
+  static std::string s;
+  s = TVC256kppFS::usbList(path);
+  return s.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE int ep_usb_put(const char *path, const char *src)
+{
+  std::vector<unsigned char> buf;
+  if (!readVfsFile(src, buf)) {
+    lastError = std::string("cannot open ") + src;
+    return -1;
+  }
+  if (!TVC256kppFS::putUsbFile(path, buf.empty() ? (const uint8_t *) "" : &buf[0], buf.size())) {
+    lastError = "the pendrive is full, or the name is not valid";
+    return -1;
+  }
+  return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int ep_usb_get(const char *path, const char *dst)
+{
+  std::vector<uint8_t> data;
+  if (!TVC256kppFS::usbGetFile(path, data)) {
+    lastError = std::string("cannot read ") + path;
+    return -1;
+  }
+  std::FILE *f = std::fopen(dst, "wb");
+  if (!f)
+    return -1;
+  bool ok = data.empty() || std::fwrite(&data[0], 1, data.size(), f) == data.size();
+  std::fclose(f);
+  return ok ? 0 : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int ep_usb_mkdir(const char *path)
+{
+  return TVC256kppFS::usbMkdirs(path) ? 0 : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int ep_usb_delete(const char *path)
+{
+  return TVC256kppFS::usbDelete(path) ? 0 : -1;
+}
+
+extern uint32_t card_usb_writes;        // card/diskio-emu.c
+
+// 0: size in kB, 1: free space in kB, 2: number of sector writes so far
+EMSCRIPTEN_KEEPALIVE double ep_usb_info(int which)
+{
+  if (which == 2)
+    return double(card_usb_writes);
+  uint32_t total = 0, freeKB = 0;
+  if (!TVC256kppFS::usbSpace(total, freeKB))
+    return -1;
+  return which == 0 ? double(total) : double(freeKB);
+}
+
 // Counters of the card's file system (0: files opened, 1: bytes read), for tests
 EMSCRIPTEN_KEEPALIVE int ep_tvc_card_fs_stat(int which)
 {

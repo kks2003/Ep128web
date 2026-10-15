@@ -248,14 +248,219 @@
     applyTvcUsb();
   }
 
-  // USB pendrive of the TVC256k++ card: plugged in (empty, 16 MB) when the
-  // option is on; it keeps its files until it is unplugged or the page reloads
-  let tvcUsb = false, tvcUsbPlugged = false;
-  try { tvcUsb = localStorage.getItem('ep128web.tvcUsb') === '1'; } catch (e) { }
+  // --------------------------------------------------------------------------
+  // USB pendrive of the TVC256k++ card: a FAT volume in the emulator; the
+  // page shows and edits its files, and keeps them in IndexedDB (key
+  // 'usbfiles': [{p: path, b: bytes} or {p: path, d: 1}])
+
+  let usbOn = false, usbSize = 128, usbPlugged = false, usbCwd = '';
+  let usbSaved = null;            // the stored files, read at start-up
+  let usbSavedWrites = -1;        // sector write count at the last save
+  try {
+    usbOn = localStorage.getItem('ep128web.usbOn') === '1';
+    usbSize = Number(localStorage.getItem('ep128web.usbSize')) || 128;
+  } catch (e) { }
+
   function applyTvcUsb() {
     if (!api || !api.cardUsb) return;
-    if (tvcUsb && !tvcUsbPlugged) tvcUsbPlugged = (api.cardUsb(16) === 0);
-    else if (!tvcUsb && tvcUsbPlugged) { api.cardUsb(0); tvcUsbPlugged = false; }
+    if (usbOn && !usbPlugged) {
+      usbPlugged = (api.cardUsb(usbSize) === 0);
+      if (usbPlugged && usbSaved) restoreUsb(usbSaved);
+      usbSavedWrites = api.usbInfo(2);
+    }
+    else if (!usbOn && usbPlugged) { api.cardUsb(0); usbPlugged = false; }
+    renderUsb();
+  }
+
+  function usbJoin(dir, name) { return dir ? dir + '/' + name : name; }
+
+  // every file and directory of the pendrive, depth first
+  function usbWalk(dir, out) {
+    const list = JSON.parse(api.usbList(dir) || 'null') || [];
+    for (const e of list) {
+      const p = usbJoin(dir, e.n);
+      if (e.d) { out.push({ p, d: 1 }); usbWalk(p, out); }
+      else if (api.usbGet(p, '/tmp/usbfile') === 0) out.push({ p, b: M.FS.readFile('/tmp/usbfile') });
+    }
+    return out;
+  }
+
+  function saveUsb() {
+    if (!usbPlugged) return;
+    try { M.FS.mkdir('/tmp'); } catch (e) { }
+    usbSaved = usbWalk('', []);
+    usbSavedWrites = api.usbInfo(2);
+    db.put('usbfiles', usbSaved);
+  }
+
+  function restoreUsb(entries) {
+    const failed = [];
+    for (const e of entries) {
+      if (e.d) api.usbMkdir(e.p);
+      else if (!usbPutBytes(e.p, e.b)) failed.push(e.p);
+    }
+    if (failed.length) setMessage('Nem fért a pendrive-ra: ' + failed.join(', '), true);
+  }
+
+  function usbPutBytes(path, bytes) {
+    try { M.FS.mkdir('/tmp'); } catch (e) { }
+    M.FS.writeFile('/tmp/usbput', bytes);
+    const ok = api.usbPut(path, '/tmp/usbput') === 0;
+    M.FS.unlink('/tmp/usbput');
+    return ok;
+  }
+
+  // adds files to the current directory; entries: {path (relative), bytes}
+  async function addUsbFiles(fileList, useRelativePath) {
+    if (!usbPlugged) { setMessage('Előbb dugd be a pendrive-ot (Bedugva)', true); return; }
+    const entries = [];
+    for (const file of Array.from(fileList)) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const rel = (useRelativePath && file.webkitRelativePath) || file.name;
+      if (extOf(file.name) === 'zip') {
+        for (const z of await unzip(bytes)) entries.push({ path: z.path || z.name, bytes: z.bytes });
+      } else {
+        entries.push({ path: rel, bytes });
+      }
+    }
+    const failed = entries.filter((e) => !usbPutBytes(usbJoin(usbCwd, e.path), e.bytes)).map((e) => e.path);
+    if (failed.length)
+      setMessage('Nem sikerült (megtelt, vagy a név nem megengedett): ' + failed.join(', '), true);
+    else
+      setMessage(entries.length + ' fájl a pendrive-ra került');
+    saveUsb();
+    renderUsb();
+  }
+
+  function fmtSize(n) {
+    if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+    if (n >= 1024) return (n / 1024).toFixed(1) + ' kB';
+    return n + ' B';
+  }
+
+  function renderUsb() {
+    const grp = $('usb-group');
+    if (!grp) return;
+    grp.hidden = !(machine && machine.type === 1);
+    $('usb-on').checked = usbOn;
+    $('usb-size').value = String(usbSize);
+    const list = $('usb-list'), path = $('usb-path');
+    list.textContent = '';
+    path.textContent = '';
+    $('usb-note').textContent = (usbOn && tvcSlotOf(SLOT_CARD256) < 0)
+      ? 'A TVC256k++ kártya nincs egyik portban sem (Bővítőportok).' : '';
+    if (!usbPlugged) {
+      $('usb-space').textContent = 'nincs bedugva';
+      return;
+    }
+    const total = api.usbInfo(0), free = api.usbInfo(1);
+    $('usb-space').textContent = 'szabad: ' + fmtSize(free * 1024) + ' / ' + fmtSize(total * 1024);
+    // path: clickable parts
+    const parts = usbCwd ? usbCwd.split('/') : [];
+    const link = (text, to) => {
+      const a = document.createElement('a');
+      a.textContent = text;
+      a.onclick = () => { usbCwd = to; renderUsb(); };
+      path.appendChild(a);
+    };
+    link('USB:/', '');
+    parts.forEach((p, i) => { link(p + '/', parts.slice(0, i + 1).join('/')); });
+    let entries = JSON.parse(api.usbList(usbCwd) || 'null');
+    if (!entries) { usbCwd = ''; entries = JSON.parse(api.usbList('') || '[]'); }
+    entries.sort((a, b) => (b.d - a.d) || a.n.localeCompare(b.n));
+    const row = (name, cls, size, onOpen, actions) => {
+      const li = document.createElement('li');
+      const n = document.createElement('span');
+      n.className = 'n' + (cls ? ' ' + cls : '');
+      n.textContent = name;
+      if (onOpen) n.onclick = onOpen;
+      li.appendChild(n);
+      const s = document.createElement('span');
+      s.className = 's';
+      s.textContent = size;
+      li.appendChild(s);
+      for (const [label, title, fn] of actions) {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.title = title;
+        b.onclick = fn;
+        li.appendChild(b);
+      }
+      list.appendChild(li);
+    };
+    if (usbCwd) row('..', 'dir', '', () => { usbCwd = parts.slice(0, -1).join('/'); renderUsb(); }, []);
+    for (const e of entries) {
+      const p = usbJoin(usbCwd, e.n);
+      const del = ['✕', 'Törlés', () => {
+        if (!confirm('Törlöd: ' + p + (e.d ? ' (a mappa teljes tartalmával)' : '') + '?')) return;
+        api.usbDelete(p);
+        saveUsb();
+        renderUsb();
+      }];
+      if (e.d) {
+        row(e.n + '/', 'dir', '', () => { usbCwd = p; renderUsb(); }, [del]);
+      } else {
+        row(e.n, '', fmtSize(e.s), null, [['⬇', 'Letöltés', () => {
+          try { M.FS.mkdir('/tmp'); } catch (err) { }
+          if (api.usbGet(p, '/tmp/usbfile') === 0) download(M.FS.readFile('/tmp/usbfile'), e.n);
+        }], del]);
+      }
+    }
+    if (!entries.length) row('(üres)', '', '', null, []);
+  }
+
+  function setupUsbUI() {
+    if (!$('usb-group')) return;
+    $('usb-on').onchange = () => {
+      usbOn = $('usb-on').checked;
+      try { localStorage.setItem('ep128web.usbOn', usbOn ? '1' : '0'); } catch (e) { }
+      if (!usbOn && usbPlugged) saveUsb();
+      applyTvcUsb();
+      setMessage(usbOn ? 'Pendrive bedugva' : 'Pendrive kihúzva (a tartalma megmarad)');
+    };
+    $('usb-size').onchange = () => {
+      const size = Number($('usb-size').value);
+      if (usbPlugged) {
+        saveUsb();
+        if (!confirm('A pendrive újraformázódik ' + size + ' MB-ra, a fájlok visszakerülnek rá. Mehet?')) {
+          $('usb-size').value = String(usbSize);
+          return;
+        }
+        api.cardUsb(0);
+        usbPlugged = false;
+      }
+      usbSize = size;
+      try { localStorage.setItem('ep128web.usbSize', String(usbSize)); } catch (e) { }
+      applyTvcUsb();
+    };
+    $('usb-add').onclick = () => $('usb-file').click();
+    $('usb-add-dir').onclick = () => $('usb-folder').click();
+    $('usb-file').onchange = (e) => { addUsbFiles(e.target.files, false); e.target.value = ''; };
+    $('usb-folder').onchange = (e) => { addUsbFiles(e.target.files, true); e.target.value = ''; };
+    $('usb-mkdir').onclick = () => {
+      if (!usbPlugged) return;
+      const name = prompt('Az új mappa neve:');
+      if (!name) return;
+      if (api.usbMkdir(usbJoin(usbCwd, name.replace(/[\\/]/g, '_'))) !== 0) setMessage('Nem sikerült a mappát létrehozni', true);
+      saveUsb();
+      renderUsb();
+    };
+    const box = $('usb-group');
+    box.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); $('usb-browser').classList.add('drag'); });
+    box.addEventListener('dragleave', () => $('usb-browser').classList.remove('drag'));
+    box.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      $('usb-browser').classList.remove('drag');
+      if (e.dataTransfer && e.dataTransfer.files.length) addUsbFiles(e.dataTransfer.files, false);
+    });
+    // what TVC programs write to the pendrive is saved too
+    setInterval(() => {
+      if (usbPlugged && ready && api.usbInfo(2) !== usbSavedWrites) {
+        saveUsb();
+        if (!$('usb-group').hidden) renderUsb();
+      }
+    }, 5000);
   }
 
   function setMessage(text, isError) {
@@ -386,6 +591,7 @@
   function updateTvcCardsUI() {
     const grp = $('tvc-cards-group');
     if (grp) grp.hidden = !(machine && machine.type === 1);
+    renderUsb();
   }
 
   function ejectCartridge() {
@@ -914,7 +1120,7 @@ registerProcessor('ep-output', EPOutput);
       } else {
         throw new Error('nem támogatott ZIP tömörítés: ' + name);
       }
-      out.push({ name: name.split('/').pop(), bytes: content });
+      out.push({ name: name.split('/').pop(), path: name, bytes: content });
     }
     return out;
   }
@@ -1616,15 +1822,11 @@ registerProcessor('ep-output', EPOutput);
   function setupTvcSlotsUI() {
     const selects = [0, 1, 2, 3].map((i) => $('tvc-slot' + i));
     if (selects.some((x) => !x)) return;
-    const usbBox = $('tvc-usb');
-    const show = () => {
-      selects.forEach((sel, i) => { sel.value = String(tvcSlots[i]); });
-      if (usbBox) usbBox.checked = tvcUsb;
-    };
+    const show = () => selects.forEach((sel, i) => { sel.value = String(tvcSlots[i]); });
     const pending = () => selects.map((sel) => Number(sel.value));
     const update = () => {
       const p = pending();
-      const changed = p.some((c, i) => c !== tvcSlots[i]) || (usbBox && usbBox.checked !== tvcUsb);
+      const changed = p.some((c, i) => c !== tvcSlots[i]);
       $('tvc-slots-apply').classList.toggle('on', changed);
       $('tvc-slots-note').textContent = !validTvcSlots(p)
         ? 'Egy kártya csak egy portban lehet.'
@@ -1639,17 +1841,12 @@ registerProcessor('ep-output', EPOutput);
       }
       sel.onchange = update;
     }
-    if (usbBox) usbBox.onchange = update;
     show();
     $('tvc-slots-apply').onclick = () => {
       const p = pending();
       if (!validTvcSlots(p)) { update(); return; }
       tvcSlots = p;
-      if (usbBox) tvcUsb = usbBox.checked;
-      try {
-        localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots));
-        localStorage.setItem('ep128web.tvcUsb', tvcUsb ? '1' : '0');
-      } catch (e) { }
+      try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots)); } catch (e) { }
       update();
       if (machine.type === 1) {
         autoTask = null;
@@ -1961,6 +2158,7 @@ registerProcessor('ep-output', EPOutput);
     };
     $('btn-full').onclick = () => { toggleFullscreen(); canvas.focus(); };
     setupMouse();
+    setupUsbUI();
     $('btn-snap').onclick = () => {
       if (!ready) return;
       check(api.saveSnapshot('/tmp/save.ep128s'), 'mentés');
@@ -2188,6 +2386,12 @@ registerProcessor('ep-output', EPOutput);
       cardPutFile: c('ep_tvc_card_put_file', 'number', ['string', 'string']),
       setMouse: c('ep_set_mouse', null, ['number', 'number', 'number', 'number']),
       cardUsb: c('ep_tvc_card_usb', 'number', ['number']),
+      usbList: c('ep_usb_list', 'string', ['string']),
+      usbPut: c('ep_usb_put', 'number', ['string', 'string']),
+      usbGet: c('ep_usb_get', 'number', ['string', 'string']),
+      usbMkdir: c('ep_usb_mkdir', 'number', ['string']),
+      usbDelete: c('ep_usb_delete', 'number', ['string']),
+      usbInfo: c('ep_usb_info', 'number', ['number']),
       setTvcExtJoy: c('ep_set_tvc_ext_joy', null, ['number', 'number'])
     };
     for (const d of ['/roms', '/files', '/tmp', '/disk', '/tape']) ensureDir(d);
@@ -2213,6 +2417,7 @@ registerProcessor('ep-output', EPOutput);
       try {
         if (key === 'pkg') installROMPackage(value);
         else if (key.startsWith('rom:')) M.FS.writeFile('/roms/' + key.slice(4), value);
+        else if (key === 'usbfiles') usbSaved = value;
         else if (key === 'cardflash') {
           try { M.FS.mkdir('/card'); } catch (e) { }
           M.FS.writeFile('/card/flash.bin', value);

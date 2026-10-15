@@ -12,6 +12,8 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <string>
+#include <vector>
 
 namespace TVC256kppFS {
   // the card's 256 kB fast RAM (shared with the vendored firmware code)
@@ -40,6 +42,12 @@ namespace TVC256kppFS {
   void usbDetach();
   bool usbPresent();
   bool putUsbFile(const char *name, const uint8_t *data, size_t size);
+  // file manager of the web page (paths relative to the pendrive's root)
+  std::string usbList(const char *path);        // JSON array, or "null"
+  bool usbGetFile(const char *path, std::vector<uint8_t> &data);
+  bool usbMkdirs(const char *path);
+  bool usbDelete(const char *path);             // files and whole directories
+  bool usbSpace(uint32_t &totalKB, uint32_t &freeKB);
   // the pendrive's sectors (e.g. to save them), nullptr if none
   const uint8_t *usbImage(size_t &size);
 

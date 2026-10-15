@@ -18,6 +18,7 @@ extern lfs_t *dsk_lfs_fs;
 /* the pendrive: sectors of 512 bytes, NULL if no pendrive is plugged in */
 uint8_t *card_usb_image = NULL;
 uint32_t card_usb_sectors = 0;
+uint32_t card_usb_writes = 0;       /* counts sector writes (the page saves the files) */
 
 DSTATUS disk_status(BYTE pdrv)
 {
@@ -104,6 +105,7 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
         if (sector + count > card_usb_sectors)
             return RES_PARERR;
         memcpy(card_usb_image + (size_t) sector * 512, buff, (size_t) count * 512);
+        card_usb_writes++;
         return RES_OK;
     }
     return RES_PARERR;

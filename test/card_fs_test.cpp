@@ -244,6 +244,24 @@ int main(int argc, char **argv)
     TVC256kppFS::usbDetach();
     TVC256kppFS::resetPsramDrive();
   }
+  // the web page's pendrive file manager
+  {
+    CHECK(TVC256kppFS::usbAttach(64));
+    uint32_t total = 0, freeKB = 0;
+    CHECK(TVC256kppFS::usbSpace(total, freeKB) && total > 60000 && freeKB > 60000);
+    CHECK(TVC256kppFS::putUsbFile("pics/tvc/kep.bmp", &expected[0], 1000));
+    CHECK(TVC256kppFS::usbList("/") == "[{\"n\":\"pics\",\"s\":0,\"d\":1}]");
+    CHECK(TVC256kppFS::usbList("pics/tvc") == "[{\"n\":\"kep.bmp\",\"s\":1000,\"d\":0}]");
+    std::vector<uint8_t> back;
+    CHECK(TVC256kppFS::usbGetFile("pics/tvc/kep.bmp", back) && back.size() == 1000
+          && std::memcmp(&back[0], &expected[0], 1000) == 0);
+    CHECK(TVC256kppFS::usbMkdirs("empty/dir"));
+    CHECK(TVC256kppFS::usbDelete("pics"));
+    CHECK(TVC256kppFS::usbList("") == "[{\"n\":\"empty\",\"s\":0,\"d\":1}]");
+    CHECK(TVC256kppFS::usbList("nope") == "null");
+    TVC256kppFS::usbDetach();
+  }
+
   // a file copied to the PSRAM drive by the web page (formats the drive)
   CHECK(TVC256kppFS::putPsramFile("Game.CAS", &expected[0], expected.size()));
   io[0x10] = 1;

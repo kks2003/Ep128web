@@ -9,6 +9,7 @@
 #include <strings.h>
 #include <string>
 #include <cctype>
+#include <cstdio>
 
 extern "C" {
 uint8_t TVC_ROM[0x2000];
@@ -206,7 +207,7 @@ void powerOn()
 bool usbAttach(uint32_t sizeMB)
 {
   usbDetach();
-  if (sizeMB < 1 || sizeMB > 64)
+  if (sizeMB < 1 || sizeMB > 512)
     return false;
   usbSectors.assign(size_t(sizeMB) << 20, 0);
   card_usb_image = &usbSectors[0];
@@ -241,11 +242,41 @@ const uint8_t *usbImage(size_t &size)
   return card_usb_image;
 }
 
+static std::string usbPath(const char *path)
+{
+  std::string p = path ? path : "";
+  while (!p.empty() && p[0] == '/')
+    p.erase(0, 1);
+  return "0:/" + p;
+}
+
+bool usbMkdirs(const char *path)
+{
+  if (!card_usb_image)
+    return false;
+  std::string p = usbPath(path);
+  // create every directory of the path (existing ones are fine)
+  for (size_t i = 3; i <= p.size(); i++) {
+    if (i == p.size() || p[i] == '/') {
+      std::string d = p.substr(0, i);
+      if (d.size() > 3) {
+        FRESULT r = f_mkdir(d.c_str());
+        if (r != FR_OK && r != FR_EXIST)
+          return false;
+      }
+    }
+  }
+  return true;
+}
+
 bool putUsbFile(const char *name, const uint8_t *data, size_t size)
 {
   if (!card_usb_image)
     return false;
-  std::string path = std::string("0:/") + name;
+  std::string path = usbPath(name);
+  size_t slash = path.rfind('/');
+  if (slash > 3 && !usbMkdirs(path.substr(3, slash - 3).c_str()))
+    return false;
   FIL f;
   if (f_open(&f, path.c_str(), FA_WRITE | FA_CREATE_ALWAYS) != FR_OK)
     return false;
@@ -253,6 +284,86 @@ bool putUsbFile(const char *name, const uint8_t *data, size_t size)
   bool ok = (f_write(&f, data, UINT(size), &n) == FR_OK && n == size);
   ok = (f_close(&f) == FR_OK) && ok;
   return ok;
+}
+
+// JSON list of a pendrive directory: [{"n":name,"s":size,"d":0/1},...]
+std::string usbList(const char *path)
+{
+  std::string out = "[";
+  DIR dir;
+  if (!card_usb_image || f_opendir(&dir, usbPath(path).c_str()) != FR_OK)
+    return "null";
+  FILINFO fi;
+  bool first = true;
+  while (f_readdir(&dir, &fi) == FR_OK && fi.fname[0]) {
+    std::string n;
+    for (const char *c = fi.fname; *c; c++) {
+      unsigned char ch = (unsigned char) *c;
+      if (ch == '"' || ch == '\\') { n += '\\'; n += char(ch); }
+      else if (ch < 0x20 || ch >= 0x80) { char b[8]; std::snprintf(b, sizeof b, "\\u%04x", ch); n += b; }
+      else n += char(ch);
+    }
+    char rest[64];
+    std::snprintf(rest, sizeof rest, "\",\"s\":%lu,\"d\":%d}",
+                  (unsigned long) fi.fsize, (fi.fattrib & AM_DIR) ? 1 : 0);
+    out += (first ? "{\"n\":\"" : ",{\"n\":\"") + n + rest;
+    first = false;
+  }
+  f_closedir(&dir);
+  return out + "]";
+}
+
+bool usbGetFile(const char *path, std::vector<uint8_t> &data)
+{
+  FIL f;
+  if (!card_usb_image || f_open(&f, usbPath(path).c_str(), FA_READ) != FR_OK)
+    return false;
+  data.resize(size_t(f_size(&f)));
+  UINT n = 0;
+  bool ok = data.empty() || (f_read(&f, &data[0], UINT(data.size()), &n) == FR_OK && n == data.size());
+  f_close(&f);
+  return ok;
+}
+
+static bool usbDeleteTree(const std::string &p)
+{
+  FILINFO fi;
+  if (f_stat(p.c_str(), &fi) != FR_OK)
+    return false;
+  if (fi.fattrib & AM_DIR) {
+    std::vector<std::string> names;
+    DIR dir;
+    if (f_opendir(&dir, p.c_str()) == FR_OK) {
+      while (f_readdir(&dir, &fi) == FR_OK && fi.fname[0])
+        names.push_back(fi.fname);
+      f_closedir(&dir);
+    }
+    for (size_t i = 0; i < names.size(); i++)
+      if (!usbDeleteTree(p + "/" + names[i]))
+        return false;
+  }
+  return f_unlink(p.c_str()) == FR_OK;
+}
+
+bool usbDelete(const char *path)
+{
+  if (!card_usb_image)
+    return false;
+  std::string p = usbPath(path);
+  if (p.size() <= 3)
+    return false;
+  return usbDeleteTree(p);
+}
+
+bool usbSpace(uint32_t &totalKB, uint32_t &freeKB)
+{
+  DWORD nclst = 0;
+  FATFS *fs = 0;
+  if (!card_usb_image || f_getfree("0:", &nclst, &fs) != FR_OK)
+    return false;
+  totalKB = uint32_t((uint64_t(fs->n_fatent - 2) * fs->csize * 512) >> 10);
+  freeKB = uint32_t((uint64_t(nclst) * fs->csize * 512) >> 10);
+  return true;
 }
 
 bool putPsramFile(const char *name, const uint8_t *data, size_t size)
