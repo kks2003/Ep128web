@@ -2267,6 +2267,7 @@ registerProcessor('ep-output', EPOutput);
   let lastTapePos = -1;
   let tapeFast = true;
   let speedAccUs = 0, speedAccMs = 0;
+  let audioLevelSmooth = -1;      // seconds of audio buffered, smoothed
 
   function frame(now) {
     requestAnimationFrame(frame);
@@ -2278,10 +2279,14 @@ registerProcessor('ep-output', EPOutput);
 
     let us = dt * 1000;
     if (audioRunning && !turbo) {
-      // keep about 60 ms of audio buffered: run slightly faster or slower
+      // keep about 60 ms of audio buffered. The speed is only nudged (at most
+      // 0.5 %, from a smoothed buffer level): bigger steps change the pitch
+      // audibly, like a dragging tape. Only an almost empty buffer (e.g.
+      // after the tab was in the background) gets a faster catch-up.
       const buffered = audioLevel / sampleRate;
-      if (buffered < 0.04) us *= 1.1;
-      else if (buffered > 0.1) us *= 0.9;
+      audioLevelSmooth = audioLevelSmooth < 0 ? buffered : audioLevelSmooth * 0.95 + buffered * 0.05;
+      if (buffered < 0.01) us *= 1.03;
+      else us *= 1 + Math.max(-0.005, Math.min(0.005, (0.06 - audioLevelSmooth) * 0.1));
     }
     us = Math.round(us);
 
