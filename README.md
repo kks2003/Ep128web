@@ -30,7 +30,7 @@ letöltését külön kell betölteni.
 | `.cas` (TVC) | TVC módban: FILE eszköz, automatikus `LOAD` + `RUN` |
 | `.com`, `.bas`, egyéb | a `FILE:` eszközre kerül, a gép újraindul és automatikusan kiadja a `LOAD "FILE:név"` (BASIC-nél `RUN`) parancsot |
 | `.tap`, `.wav` | magnóba kerül, automatikus `LOAD "TAPE:"` + lejátszás, betöltés közben turbó |
-| `.img`, `.dsk` | A: lemezmeghajtó; TVC-n a 360 KiB és 720 KiB (nyers, 512 bájtos szektoros) képek is támogatottak; szükség esetén EXDOS-os Enterprise-ra / VT-DOS-os TVC-re vált, és kilistázza a lemezt (`:DIR`, ill. `EXT 2` + `DIR`) |
+| `.img`, `.dsk` | A: lemezmeghajtó; TVC-n a 360 KiB és 720 KiB (nyers, 512 bájtos szektoros) képek is támogatottak; Enterprise-on szükség esetén EXDOS-os gépre vált; TVC-n VT-DOS kártya kell valamelyik portba; kilistázza a lemezt (`:DIR`, ill. `EXT 2` + `DIR`) |
 | `.zip`, több fájl | minden fájl a `FILE:` eszközre kerül; ha több indítható program van, választani lehet |
 | `.ep128s` / `.ep128d` | ep128emu pillanatkép / demó |
 | `.bin` (ROM-csomag), `.rom` | ROM-ok telepítése |
@@ -50,12 +50,34 @@ Gépkonfigurációk:
 - **Enterprise**: EP128 (UK/magyar) EXDOS-szal vagy csak magnóval, EP 640K
   EXOS 2.32-vel (UK/magyar), EP 2048K EXOS 2.4-gyel. Mindegyikben benne van az
   ep128emu `epfileio.rom` bővítése (`FILE:` eszköz).
-- **Videoton TVC**: TVC 64k+ BASIC 2.2 (VT-DOS-szal is), TVC 64k és 32k
-  BASIC 1.2. A `.cas` programok a `tvcfileio.rom` FILE eszközére kerülnek és
-  automatikusan elindulnak (`LOAD "név"` + `RUN`). Mivel a TVC-n ez a bővítés
-  helyettesíti a magnót (és ütközik a VT-DOS-szal), kazetta vagy lemezkép
-  betöltésekor kikapcsol, `.cas` betöltésekor visszakapcsol. A billentyűzet a magyar PC-kiosztást
-  követi (QWERTZ, `0` az `1` bal oldalán, `ö ü ó` a 9 után).
+- **Videoton TVC**: TVC 64k+ BASIC 2.2, TVC 64k és 32k BASIC 1.2. A négy
+  bővítőport mindegyikébe választható kártya (lásd lent). A `.cas` programok a
+  FILE: kártya (`tvcfileio.rom`) eszközére kerülnek és automatikusan betöltődnek
+  (`LOAD "név"`). A billentyűzet a magyar PC-kiosztást követi (QWERTZ, `0` az
+  `1` bal oldalán, `ö ü ó` a 9 után).
+
+### TVC bővítőportok
+
+A „TVC bővítőportok” panelen mind a négy porthoz (0–3) kiválasztható a kártya:
+üres, VT-DOS (lemez), FILE: (`.cas` fájlok), GameCard (SN76489 + 3–4. joystick),
+Multichip Soundcard (SN76489, SAA1099, OPL2) vagy TVC256k++. Egy kártya csak egy
+portban lehet. A választás csak a **Portok betöltése, újraindítás** gombbal lép
+életbe (a kártyák ROM-jai betöltődnek, a gép hidegen újraindul); a beállítást a
+böngésző megjegyzi.
+
+Minden kártya a saját portjának címein jelenik meg: I/O portok `$10 + $10·n`-től,
+IOMEM-lap `n` (a `$03` port 6–7. bitje), a `$5A` porton a kártyaazonosító (a
+VT-DOS 2-es, „DISK”, minden más 3-as, „MOPS” fejléces ROM-mal). A TVC IOS a
+bootoláskor portonként felismeri és inicializálja őket.
+
+A VT-DOS, a FILE: és a TVC256k++ is magára állítja az alapértelmezett tárolót
+(kazetta-átirányítás, `$0B05`/`$0B0D`); a legnagyobb sorszámú portban lévő nyer.
+A VT-DOS (`EXT 2`) és a TVC256k++ (`EXT` + a port száma) parancssora csak akkor
+működik, ha az alapértelmezett tároló rájuk mutat. Ezért az alapbeállítás:
+**0: FILE:, 1: VT-DOS, 2: GameCard, 3: üres** – így bootolás után a VT-DOS az
+alapértelmezett. Lemezkép betöltésekor az oldal a VT-DOS-ra, `.cas` program
+indításakor a FILE:-ra, kazettánál a magnóra állítja át az átirányítást; a
+portokat viszont sosem cseréli magától (ha hiányzik a szükséges kártya, szól).
 
 A pillanatképek (`.ep128s`) betöltésekor az oldal automatikusan a mentéskori
 géptípusra (Enterprise/TVC) vált.
@@ -90,13 +112,12 @@ betölti.
 
 ### TVC256k++ kártya (kísérleti)
 
-A TVC bővítőkártyák között bekapcsolható a [TVC256k++](https://github.com/dikdom/tvc256kplusplus)
-kártya emulációja a 2-es slotban (BASIC-ből `EXT 2`; a 0-s slotot az ep128emu a VT-DOS-nak,
-az 1-est a `FILE:` eszköznek használja). Bekapcsoláskor a gép hideg újraindul, hogy a TVC OS
-felismerje a kártyát. A kártya bootoláskor magára állítja a kazetta-átirányítást, így a `LOAD`
-és a CLI fájlparancsai a kártya meghajtóit használják. Egy `.cas` program automatikus indítása
-viszont a `FILE:` eszközre állítja át (hogy az utántöltés is onnan jöjjön); utána a kártya
-fájlparancsai („IO operation failed”) csak hideg reset után működnek újra.
+A [TVC256k++](https://github.com/dikdom/tvc256kplusplus) kártya bármelyik bővítőportba
+tehető; a parancssora BASIC-ből `EXT` + a port száma (pl. a 3-as portban `EXT 3`). Ha a
+legnagyobb sorszámú tároló-kártya, bootoláskor magára állítja a kazetta-átirányítást, így a
+`LOAD` és a CLI fájlparancsai a kártya meghajtóit használják. Egy `.cas` program automatikus
+indítása viszont a `FILE:` eszközre állítja át (hogy az utántöltés is onnan jöjjön); utána a
+kártya fájlparancsai („IO operation failed”) csak hideg reset után működnek újra.
 
 Állapot (2. lépés):
 
@@ -108,7 +129,7 @@ fájlparancsai („IO operation failed”) csak hideg reset után működnek új
   az emulátorban (`web/src/card/`), így a `REG_USB_MSC_CMD` fájlparancsok (megnyitás,
   olvasás, könyvtárlistázás, `CD`, `LOAD`) pontosan úgy működnek, mint a valódi kártyán.
   A flash drive képét (`flash-root-*.bin`, vagy a `flash-root-*-bin.zip`) ráejtheted az
-  oldalra; a böngésző megjegyzi. Utána `EXT 2` → `DS`, `DIR`, `CD games`, `X`, majd
+  oldalra; a böngésző megjegyzi. Utána `EXT <port>` → `DS`, `DIR`, `CD games`, `X`, majd
   `LOAD "aircraft"`, `RUN`;
 - a PSRAM drive alapja is megvan (littlefs a PSRAM-ban), de formázni egyelőre nem lehet
   (`LCDSR` USB-t igényel);

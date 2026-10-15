@@ -5,8 +5,8 @@
 #include <cstring>
 
 TVCSoundCards::TVCSoundCards()
-  : m_gameCardEnabled(false),
-    m_multiSoundEnabled(false),
+  : m_gameCardSlot(-1),
+    m_multiSoundSlot(-1),
     m_joy3State(0xFF),
     m_joy4State(0xFF),
     m_sng(nullptr),
@@ -37,14 +37,14 @@ TVCSoundCards::~TVCSoundCards()
   }
 }
 
-void TVCSoundCards::setGameCardEnabled(bool enabled)
+void TVCSoundCards::setGameCardSlot(int slot)
 {
-  m_gameCardEnabled = enabled;
+  m_gameCardSlot = (slot >= 0 && slot <= 3) ? slot : -1;
 }
 
-void TVCSoundCards::setMultiSoundEnabled(bool enabled)
+void TVCSoundCards::setMultiSoundSlot(int slot)
 {
-  m_multiSoundEnabled = enabled;
+  m_multiSoundSlot = (slot >= 0 && slot <= 3) ? slot : -1;
 }
 
 void TVCSoundCards::setExtJoyState(int joyIndex, uint8_t state)
@@ -66,20 +66,16 @@ void TVCSoundCards::reset()
 }
 
 // I/O ports of extension slot n are 0x10 + 0x10 * n .. 0x1F + 0x10 * n.
-// The GameCard is in slot 2 (0x30), the Multichip Soundcard is in slot 3
-// (0x40) if the GameCard is also enabled, otherwise in slot 2.
 // GameCard:  +0: SN76489, +2/+3: joystick 3/4 (read)
 // MultiSound: +0: SN76489, +2/+3: SAA1099 data/address, +4/+5: OPL2
 int TVCSoundCards::gameCardPort() const
 {
-  return m_gameCardEnabled ? 0x30 : -1;
+  return m_gameCardSlot >= 0 ? 0x10 + 0x10 * m_gameCardSlot : -1;
 }
 
 int TVCSoundCards::multiSoundPort() const
 {
-  if (!m_multiSoundEnabled)
-    return -1;
-  return m_gameCardEnabled ? 0x40 : 0x30;
+  return m_multiSoundSlot >= 0 ? 0x10 + 0x10 * m_multiSoundSlot : -1;
 }
 
 bool TVCSoundCards::handleWrite(uint16_t addr, uint8_t val)
@@ -193,40 +189,16 @@ static uint8_t makeROMByte(const char *name, int len, uint16_t offset)
 
 bool TVCSoundCards::handleSlotROMRead(uint16_t addr, uint16_t slotPaging, uint8_t &val)
 {
-  if (!m_gameCardEnabled && !m_multiSoundEnabled)
-    return false;
-
+  int slot = int(slotPaging >> 14);
   uint16_t offset = addr & 0x3FFF;
-
-  // Never touch Slot 0 (0x0000) or Slot 1 (0x4000) - Slot 1 belongs to tvcfileio.rom!
-  if (m_gameCardEnabled && m_multiSoundEnabled) {
-    if (slotPaging == 0x8000) { // Slot 2: GameCard
-      val = makeROMByte("JOY+SN", 6, offset);
-      return true;
-    }
-    if (slotPaging == 0xC000) { // Slot 3: MultiSound
-      val = makeROMByte("SndMx", 5, offset);
-      return true;
-    }
-    return false;
+  if (slot == m_gameCardSlot) {
+    val = makeROMByte("JOY+SN", 6, offset);
+    return true;
   }
-
-  if (m_gameCardEnabled) {
-    if (slotPaging == 0x8000) { // Slot 2: GameCard
-      val = makeROMByte("JOY+SN", 6, offset);
-      return true;
-    }
-    return false;
+  if (slot == m_multiSoundSlot) {
+    val = makeROMByte("SndMx", 5, offset);
+    return true;
   }
-
-  if (m_multiSoundEnabled) {
-    if (slotPaging == 0x8000) { // Slot 2: MultiSound
-      val = makeROMByte("SndMx", 5, offset);
-      return true;
-    }
-    return false;
-  }
-
   return false;
 }
 
@@ -234,7 +206,7 @@ void TVCSoundCards::renderAudio(int32_t &outLeft, int32_t &outRight)
 {
   outLeft = 0;
   outRight = 0;
-  if (!m_gameCardEnabled && !m_multiSoundEnabled)
+  if (m_gameCardSlot < 0 && m_multiSoundSlot < 0)
     return;
 
   // SN76489 (used by GameCard and Multichip Soundcard)
@@ -246,7 +218,7 @@ void TVCSoundCards::renderAudio(int32_t &outLeft, int32_t &outRight)
   }
 
   // SAA1099 & OPL2 (Multichip Soundcard)
-  if (m_multiSoundEnabled) {
+  if (m_multiSoundSlot >= 0) {
     if (m_saa) {
       int32_t saaL = 0, saaR = 0;
       ((SAA1099*)m_saa)->render(saaL, saaR);

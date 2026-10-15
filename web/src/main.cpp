@@ -253,10 +253,12 @@ namespace {
   Ep128Emu::VirtualMachine  *vm = (Ep128Emu::VirtualMachine *) 0;
   int             machineType = -1;
   std::string     lastError;
-  bool            tvcGameCardEnabled = false;
-  bool            tvcMultiSoundEnabled = false;
-  bool            tvcCard256Enabled = false;   // TVC256k++ IO card
-  int             tvcCard256Slot = 2;          // 1..3; slot 0 is VT-DOS, slot 1 is used by FILE:
+  // TVC: card in each expansion slot (TVC64VM::SLOT_*), as in ep128emu by
+  // default: VT-DOS in slot 0, FILE: in slot 1
+  int             tvcSlotCards[4] = {
+    TVC64::TVC64VM::SLOT_VTDOS, TVC64::TVC64VM::SLOT_FILEIO,
+    TVC64::TVC64VM::SLOT_EMPTY, TVC64::TVC64VM::SLOT_EMPTY
+  };
   uint8_t         tvcJoy3State = 0xFF;
   uint8_t         tvcJoy4State = 0xFF;
 
@@ -304,10 +306,8 @@ EMSCRIPTEN_KEEPALIVE int ep_set_machine_type(int type)
       tvc->setCPUFrequency(3125000);
       tvc->setVideoFrequency(1562500);
       tvc->setSoundClockFrequency(390625);
-      tvc->setGameCardEnabled(tvcGameCardEnabled);
-      tvc->setMultiSoundEnabled(tvcMultiSoundEnabled);
-      tvc->setCard256Slot(tvcCard256Slot);
-      tvc->setCard256Enabled(tvcCard256Enabled);
+      for (int i = 0; i < 4; i++)
+        tvc->setSlotCard(i, tvcSlotCards[i]);
       tvc->setExtJoyState(0, tvcJoy3State);
       tvc->setExtJoyState(1, tvcJoy4State);
       vm = tvc;
@@ -702,21 +702,27 @@ EMSCRIPTEN_KEEPALIVE int ep_unpack_rom_package(const char *pkgName,
   }
 }
 
-EMSCRIPTEN_KEEPALIVE void ep_set_tvc_gamecard(int enabled)
+// TVC: installs a card in an expansion slot (0..3). card: 0 empty,
+// 1 VT-DOS, 2 FILE:, 3 GameCard, 4 Multichip Soundcard, 5 TVC256k++. A card
+// type can only be in one slot (it is removed from the others). The TVC has
+// to be reset (cold) afterwards so that its OS detects the cards.
+EMSCRIPTEN_KEEPALIVE void ep_set_tvc_slot(int slot, int card)
 {
-  tvcGameCardEnabled = (enabled != 0);
-  if (vm && machineType == 1) {
-    TVC64::TVC64VM *tvc = static_cast<TVC64::TVC64VM *>(vm);
-    tvc->setGameCardEnabled(tvcGameCardEnabled);
+  if (slot < 0 || slot > 3)
+    return;
+  if (card < TVC64::TVC64VM::SLOT_EMPTY || card > TVC64::TVC64VM::SLOT_CARD256)
+    card = TVC64::TVC64VM::SLOT_EMPTY;
+  if (card != TVC64::TVC64VM::SLOT_EMPTY) {
+    for (int i = 0; i < 4; i++) {
+      if (tvcSlotCards[i] == card)
+        tvcSlotCards[i] = TVC64::TVC64VM::SLOT_EMPTY;
+    }
   }
-}
-
-EMSCRIPTEN_KEEPALIVE void ep_set_tvc_multisound(int enabled)
-{
-  tvcMultiSoundEnabled = (enabled != 0);
+  tvcSlotCards[slot] = card;
   if (vm && machineType == 1) {
     TVC64::TVC64VM *tvc = static_cast<TVC64::TVC64VM *>(vm);
-    tvc->setMultiSoundEnabled(tvcMultiSoundEnabled);
+    for (int i = 0; i < 4; i++)
+      tvc->setSlotCard(i, tvcSlotCards[i]);
   }
 }
 
@@ -749,17 +755,18 @@ EMSCRIPTEN_KEEPALIVE int ep_tvc_card_fs_stat(int which)
   return int(TVC256kpp::fsStat(which));
 }
 
-// Enables the TVC256k++ card in the given slot (1..3). The change takes
-// effect for the running machine immediately, but the TVC should be reset
-// afterwards so that its OS detects the card.
+// Enables (in the given slot, 0..3) or removes the TVC256k++ card; kept for
+// the native tests, the web page uses ep_set_tvc_slot().
 EMSCRIPTEN_KEEPALIVE void ep_set_tvc_card256(int enabled, int slot)
 {
-  tvcCard256Enabled = (enabled != 0);
-  tvcCard256Slot = (slot < 1 ? 1 : (slot > 3 ? 3 : slot));
-  if (vm && machineType == 1) {
-    TVC64::TVC64VM *tvc = static_cast<TVC64::TVC64VM *>(vm);
-    tvc->setCard256Slot(tvcCard256Slot);
-    tvc->setCard256Enabled(tvcCard256Enabled);
+  if (enabled) {
+    ep_set_tvc_slot(slot, TVC64::TVC64VM::SLOT_CARD256);
+  }
+  else {
+    for (int i = 0; i < 4; i++) {
+      if (tvcSlotCards[i] == TVC64::TVC64VM::SLOT_CARD256)
+        ep_set_tvc_slot(i, TVC64::TVC64VM::SLOT_EMPTY);
+    }
   }
 }
 

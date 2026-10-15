@@ -1,0 +1,324 @@
+diff --git a/src/tvc64vm.cpp b/src/tvc64vm.cpp
+index 01099bb..ab06f25 100644
+--- a/src/tvc64vm.cpp
++++ b/src/tvc64vm.cpp
+@@ -564,27 +564,35 @@ namespace TVC64 {
+     }
+   }
+ 
+-  EP128EMU_REGPARM2 uint8_t TVC64VM::Memory_::extensionRead(uint16_t addr)
++  uint8_t TVC64VM::Memory_::iomemRead(uint16_t addr) const
+   {
+-    if (getPage(uint8_t(addr >> 14)) == 0x02) { // EXT
+-      if (EP128EMU_UNLIKELY(getPaging() & 0xC000)) {
+-        if (vm.card256) {
+-          uint8_t cardVal = 0xFF;
+-          if (vm.card256->handleSlotROMRead(addr, getPaging() & 0xC000, cardVal))
+-            return cardVal;
+-        }
+-        if (vm.soundCards) {
+-          uint8_t romVal = 0xFF;
+-          if (vm.soundCards->handleSlotROMRead(addr, getPaging() & 0xC000, romVal))
+-            return romVal;
+-        }
+-        return readRaw((0x0000C000U | addr) + (getPaging() & 0xC000));
+-      }
++    uint16_t  slotPaging = getPaging() & 0xC000;
++    uint8_t   val = 0xFF;
++    switch (vm.effectiveSlotCard(slotPaging >> 14)) {
++    case SLOT_VTDOS:
+       if (addr & 0x1000)
+         return extensionRAM[addr & 0x0FFF];
+       return readRaw(0x0000C000U | (uint32_t(vm.vtdosROMPage) << 12)
+                      | uint32_t(addr & 0x0FFF));
++    case SLOT_FILEIO:
++      return readRaw(0x00010000U | uint32_t(addr & 0x1FFF));
++    case SLOT_GAMECARD:
++    case SLOT_MULTISOUND:
++      if (vm.soundCards)
++        (void) vm.soundCards->handleSlotROMRead(addr, slotPaging, val);
++      break;
++    case SLOT_CARD256:
++      if (vm.card256)
++        (void) vm.card256->handleSlotROMRead(addr, slotPaging, val);
++      break;
+     }
++    return val;
++  }
++
++  EP128EMU_REGPARM2 uint8_t TVC64VM::Memory_::extensionRead(uint16_t addr)
++  {
++    if (getPage(uint8_t(addr >> 14)) == 0x02)   // EXT
++      return iomemRead(addr);
+     vm.runDevices();
+     return vm.sdext.readCartP3(addr);
+   }
+@@ -592,25 +600,8 @@ namespace TVC64 {
+   EP128EMU_REGPARM2 uint8_t TVC64VM::Memory_::extensionReadNoDebug(
+                                                   uint16_t addr) const
+   {
+-    if (getPage(uint8_t(addr >> 14)) == 0x02) { // EXT
+-      if (EP128EMU_UNLIKELY(getPaging() & 0xC000)) {
+-        if (vm.card256) {
+-          uint8_t cardVal = 0xFF;
+-          if (vm.card256->handleSlotROMRead(addr, getPaging() & 0xC000, cardVal))
+-            return cardVal;
+-        }
+-        if (vm.soundCards) {
+-          uint8_t romVal = 0xFF;
+-          if (vm.soundCards->handleSlotROMRead(addr, getPaging() & 0xC000, romVal))
+-            return romVal;
+-        }
+-        return readRaw((0x0000C000U | addr) + (getPaging() & 0xC000));
+-      }
+-      if (addr & 0x1000)
+-        return extensionRAM[addr & 0x0FFF];
+-      return readRaw(0x0000C000U | (uint32_t(vm.vtdosROMPage) << 12)
+-                     | uint32_t(addr & 0x0FFF));
+-    }
++    if (getPage(uint8_t(addr >> 14)) == 0x02)   // EXT
++      return iomemRead(addr);
+     return vm.sdext.readCartP3Debug(addr);
+   }
+ 
+@@ -618,13 +609,19 @@ namespace TVC64 {
+                                                           uint8_t value)
+   {
+     if (getPage(uint8_t(addr >> 14)) == 0x02) { // EXT
+-      if (EP128EMU_UNLIKELY(getPaging() & 0xC000)) {
++      uint16_t  slotPaging = getPaging() & 0xC000;
++      switch (vm.effectiveSlotCard(slotPaging >> 14)) {
++      case SLOT_VTDOS:
++        if (EP128EMU_EXPECT((addr & 0x1000) != 0))
++          extensionRAM[addr & 0x0FFF] = value;
++        break;
++      case SLOT_CARD256:
+         if (vm.card256)
+-          vm.card256->handleSlotROMWrite(addr, getPaging() & 0xC000, value);
+-        return;                         // IOMEM 0 is not paged in
++          vm.card256->handleSlotROMWrite(addr, slotPaging, value);
++        return;
++      default:
++        return;
+       }
+-      if (EP128EMU_EXPECT((addr & 0x1000) != 0))
+-        extensionRAM[addr & 0x0FFF] = value;
+     }
+     vm.runDevices();
+     vm.sdext.writeCartP3(addr, value);
+@@ -736,6 +733,12 @@ namespace TVC64 {
+       if (vm.soundCards->handleRead(addr, scVal))
+         return scVal;
+     }
++    if (addr >= 0x10 && addr < 0x50) {  // expansion slots
++      int     vtdosPort = vm.mapSlotPort(addr);
++      if (vtdosPort < 0)
++        return 0xFF;
++      addr = uint16_t(vtdosPort);
++    }
+     uint8_t   retval = 0xFF;
+     switch (addr) {
+     // 0x00-0x0F: unused (write only)
+@@ -804,9 +807,8 @@ namespace TVC64 {
+       break;
+     case 0x5A:                          // extension card ID byte
+     case 0x5E:
+-      // extensions 0 and 1 are floppy drives, the others are unused
+-      retval = 0xFA | uint8_t(vm.memory.readRaw(0x0000C000U) == 0xFF)
+-               | (uint8_t(vm.memory.readRaw(0x00010000U) == 0xFF) << 2);
++      // 2 bits per slot: 2 = "DISK" (VT-DOS), 3 = card with a "MOPS" ROM
++      retval = vm.cardIDByte();
+       break;
+     case 0x5B:                          // reset tone generator (repeated twice)
+     case 0x5F:
+@@ -846,6 +848,12 @@ namespace TVC64 {
+       return;
+     if (vm.soundCards && vm.soundCards->handleWrite(addr, value))
+       return;
++    if (addr >= 0x10 && addr < 0x50) {  // expansion slots
++      int     vtdosPort = vm.mapSlotPort(addr);
++      if (vtdosPort < 0)
++        return;
++      addr = uint16_t(vtdosPort);
++    }
+     switch (addr) {
+     case 0x00:                          // border color
+       vm.videoRenderer.setColor(4, value);
+@@ -1030,6 +1038,12 @@ namespace TVC64 {
+   {
+     TVC64VM&  vm = *(reinterpret_cast<TVC64VM *>(userData));
+     addr = addr & 0x7F;
++    if (addr >= 0x10 && addr < 0x50) {  // expansion slots
++      int     vtdosPort = vm.mapSlotPort(addr);
++      if (vtdosPort < 0)
++        return 0xFF;
++      addr = uint16_t(vtdosPort);
++    }
+     if (addr >= 0x70)
+       addr = addr & 0x71;
+     else if (addr >= 0x60)
+@@ -1075,9 +1089,8 @@ namespace TVC64 {
+       retval = (~vm.irqState & 0x1F) | ((vm.tapeInputSignal & 1) << 5) | 0xC0;
+       break;
+     case 0x5A:                          // extension card ID byte
+-      // extensions 0 and 1 are floppy drives, the others are unused
+-      retval = 0xFA | uint8_t(vm.memory.readRaw(0x0000C000U) == 0xFF)
+-               | (uint8_t(vm.memory.readRaw(0x00010000U) == 0xFF) << 2);
++      // 2 bits per slot: 2 = "DISK" (VT-DOS), 3 = card with a "MOPS" ROM
++      retval = vm.cardIDByte();
+       break;
+     case 0x71:                          // CRTC registers
+       retval = vm.crtc.readRegister(vm.crtcRegisterSelected);
+@@ -1385,6 +1398,11 @@ namespace TVC64 {
+       card256(new TVC256kpp())
+   {
+     card256->setPagingCallback(&TVC64VM::card256PagingChanged, this);
++    // default expansion cards, as in ep128emu: VT-DOS in slot 0, FILE: in 1
++    slotCards[0] = SLOT_VTDOS;
++    slotCards[1] = SLOT_FILEIO;
++    slotCards[2] = SLOT_EMPTY;
++    slotCards[3] = SLOT_EMPTY;
+     for (size_t i = 0;
+          i < (sizeof(callbacks) / sizeof(TVC64VMCallback));
+          i++) {
+@@ -2036,28 +2054,77 @@ namespace TVC64 {
+                                 vm.card256->getPage(1));
+   }
+ 
+-  void TVC64VM::setCard256Enabled(bool enabled)
++  void TVC64VM::setSlotCard(int slot, int card)
+   {
+-    if (card256)
+-      card256->setEnabled(enabled);
++    if (slot < 0 || slot > 3)
++      return;
++    if (card < SLOT_EMPTY || card > SLOT_CARD256)
++      card = SLOT_EMPTY;
++    if (card != SLOT_EMPTY) {
++      for (int i = 0; i < 4; i++) {     // a card can only be in one slot
++        if (slotCards[i] == card)
++          slotCards[i] = SLOT_EMPTY;
++      }
++    }
++    slotCards[slot] = uint8_t(card);
++    int     gameCardSlot = -1;
++    int     multiSoundSlot = -1;
++    int     card256Slot = -1;
++    for (int i = 0; i < 4; i++) {
++      if (slotCards[i] == SLOT_GAMECARD)
++        gameCardSlot = i;
++      else if (slotCards[i] == SLOT_MULTISOUND)
++        multiSoundSlot = i;
++      else if (slotCards[i] == SLOT_CARD256)
++        card256Slot = i;
++    }
++    if (soundCards) {
++      soundCards->setGameCardSlot(gameCardSlot);
++      soundCards->setMultiSoundSlot(multiSoundSlot);
++    }
++    if (card256) {
++      if (card256Slot >= 0)
++        card256->setSlot(card256Slot);
++      card256->setEnabled(card256Slot >= 0);
++    }
+   }
+ 
+-  void TVC64VM::setCard256Slot(int slot)
++  int TVC64VM::getSlotCard(int slot) const
+   {
+-    if (card256)
+-      card256->setSlot(slot);
++    if (slot < 0 || slot > 3)
++      return SLOT_EMPTY;
++    return slotCards[slot];
+   }
+ 
+-  void TVC64VM::setGameCardEnabled(bool enabled)
++  int TVC64VM::effectiveSlotCard(int slot) const
+   {
+-    if (soundCards)
+-      soundCards->setGameCardEnabled(enabled);
++    int     card = slotCards[slot & 3];
++    // the ROM based cards are only present if their ROM is loaded
++    if (card == SLOT_VTDOS && memory.readRaw(0x0000C000U) == 0xFF)
++      return SLOT_EMPTY;
++    if (card == SLOT_FILEIO && memory.readRaw(0x00010000U) == 0xFF)
++      return SLOT_EMPTY;
++    return card;
+   }
+ 
+-  void TVC64VM::setMultiSoundEnabled(bool enabled)
++  uint8_t TVC64VM::cardIDByte() const
+   {
+-    if (soundCards)
+-      soundCards->setMultiSoundEnabled(enabled);
++    uint8_t retval = 0x00;
++    for (int i = 3; i >= 0; i--) {
++      // the IOS gives the name "DISK" to a card with ID 2, and initializes
++      // cards with ID 3 from the "MOPS" header of their ROM
++      retval = uint8_t(retval << 2)
++               | uint8_t(effectiveSlotCard(i) == SLOT_VTDOS ? 2 : 3);
++    }
++    return retval;
++  }
++
++  int TVC64VM::mapSlotPort(uint16_t addr) const
++  {
++    int     slot = int((addr >> 4) & 7) - 1;
++    if (slot < 0 || slot > 3 || effectiveSlotCard(slot) != SLOT_VTDOS)
++      return -1;
++    return 0x10 | int(addr & 0x0F);
+   }
+ 
+   void TVC64VM::setExtJoyState(int joyIndex, uint8_t state)
+diff --git a/src/tvc64vm.hpp b/src/tvc64vm.hpp
+index 69d72e1..17cf4bf 100644
+--- a/src/tvc64vm.hpp
++++ b/src/tvc64vm.hpp
+@@ -92,6 +92,9 @@ namespace TVC64 {
+                                             uint16_t addr) const;
+       virtual EP128EMU_REGPARM3 void extensionWrite(uint16_t addr,
+                                                     uint8_t value);
++     private:
++      // IOMEM ($C000-$DFFF) of the expansion slot selected by port 03h
++      uint8_t iomemRead(uint16_t addr) const;
+     };
+     class IOPorts_ : public Ep128::IOPorts {
+      private:
+@@ -217,14 +220,32 @@ namespace TVC64 {
+     // in the order of being registered; up to 16 callbacks can be set.
+     void setCallback(void (*func)(void *userData), void *userData_,
+                      bool isEnabled);
++   public:
++    // cards that can be installed in the four expansion slots
++    enum {
++      SLOT_EMPTY = 0,
++      SLOT_VTDOS = 1,           // floppy controller, ROM in segment 3
++      SLOT_FILEIO = 2,          // ep128emu FILE: device, ROM in segment 4
++      SLOT_GAMECARD = 3,
++      SLOT_MULTISOUND = 4,
++      SLOT_CARD256 = 5
++    };
++   private:
++    uint8_t   slotCards[4];
++    // card type in slot 0..3, SLOT_EMPTY if a ROM based card has no ROM
++    int effectiveSlotCard(int slot) const;
++    uint8_t cardIDByte() const;
++    // port number as seen by the VT-DOS emulation (0x10..0x1F), or -1 if
++    // the port belongs to an expansion slot without a VT-DOS card
++    int mapSlotPort(uint16_t addr) const;
+    public:
+     TVCSoundCards *soundCards;
+     TVC256kpp *card256;         // TVC256k++ IO card (RAM expansion, ...)
+     static void card256PagingChanged(void *userData);
+-    void setCard256Enabled(bool enabled);
+-    void setCard256Slot(int slot);
+-    void setGameCardEnabled(bool enabled);
+-    void setMultiSoundEnabled(bool enabled);
++    // installs a card (SLOT_*) in an expansion slot (0..3); a card type can
++    // only be in one slot at a time. Takes effect at the next reset.
++    void setSlotCard(int slot, int card);
++    int getSlotCard(int slot) const;
+     void setExtJoyState(int joyIndex, uint8_t state);
+     TVC64VM(Ep128Emu::VideoDisplay&, Ep128Emu::AudioOutput&);
+     virtual ~TVC64VM();
