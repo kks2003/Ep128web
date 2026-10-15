@@ -67,6 +67,8 @@ button.on { background: var(--accent); color: var(--accent-text); border-color: 
 .sel { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
 .vol { display: inline-flex; align-items: center; gap: 4px; }
 .vol input { width: 90px; }
+.vol .mute { padding: 2px 6px; min-height: 28px; background: transparent; border-color: transparent; font-size: 16px; }
+.vol .mute[aria-pressed="true"] { border-color: var(--accent); }
 
 main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 
