@@ -104,11 +104,31 @@ Majd `http://localhost:8000`. Smoke teszt (Node.js, a ROM-csomaggal):
 node test/smoke.js ep128emu_roms-2.0.11.bin
 ```
 
-### GitHub Pages
+### Kitelepítés és tesztelés
 
-A `.github/workflows/pages.yml` minden `main`/`master` push után lefordítja és
-kiteszi az oldalt. Ehhez a repó *Settings → Pages* oldalán a *Source* legyen
-**GitHub Actions**.
+- **Éles oldal:** a `.github/workflows/pages.yml` minden `main` push után
+  lefordítja az oldalt, és kiteszi a `gh-pages` ág gyökerébe:
+  https://kks2003.github.io/Ep128web/
+- **Teszt-előnézet:** minden pull request lefordul
+  (`.github/workflows/preview.yml`), és saját címre kerül:
+  `https://kks2003.github.io/Ep128web/pr-preview/pr-<szám>/`. A címet egy
+  automatikus megjegyzés írja be a PR-be, minden új commit után frissül, a PR
+  lezárásakor törlődik. Az előnézet tetején narancs sáv jelzi, hogy nem az éles
+  oldal, és a keresők nem indexelik.
+- **Menet:** módosítás egy külön ágon → pull request → kipróbálás az előnézeti
+  címen → ha minden rendben, beolvasztás a `main`-be → kikerül az éles oldalra.
+
+Az előnézet ugyanazon a címen (kks2003.github.io) fut, mint az éles oldal,
+ezért a böngészőben tárolt ROM-ok és beállítások közösek: a ROM-csomagot nem
+kell újra feltölteni.
+
+Egyszeri beállítás a repóban:
+
+1. *Settings → Pages → Build and deployment → Source*: **Deploy from a branch**,
+   ág: **`gh-pages`**, mappa: **`/ (root)`**.
+2. Ajánlott: *Settings → Rules → Rulesets* (vagy *Branches*) alatt védelem a
+   `main` ágra: csak pull requesttel lehessen módosítani, és a „Build and
+   preview” ellenőrzésnek sikeresnek kell lennie.
 
 ## Felépítés
 

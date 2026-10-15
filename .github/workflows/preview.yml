@@ -1,0 +1,47 @@
+# Teszt-előnézet: minden pull request lefordul, és kikerül a saját címére:
+#   https://kks2003.github.io/Ep128web/pr-preview/pr-<szám>/
+# A PR-be egy megjegyzés kerül a címmel; a PR lezárásakor az előnézet törlődik.
+# Az éles oldalt (a gh-pages ág gyökerét) nem érinti.
+name: PR preview
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: gh-pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    name: Build and preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: mymindstorm/setup-emsdk@v14
+        if: github.event.action != 'closed'
+        with:
+          version: 6.0.11
+      - name: Build
+        if: github.event.action != 'closed'
+        run: ./build.sh
+      - name: Mark as test version
+        if: github.event.action != 'closed'
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          # keep search engines away, and show clearly that this is not the live site
+          sed -i 's|<head>|<head>\n<meta name="robots" content="noindex, nofollow">|' dist/index.html
+          sed -i "s|<body>|<body>\n<div style=\"background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif\">TESZT – PR #${PR_NUMBER} előnézete, nem az éles oldal · <a style=\"color:#fff\" href=\"/Ep128web/\">éles oldal</a></div>|" dist/index.html
+          grep -c 'TESZT – PR' dist/index.html
+      - uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: dist
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
