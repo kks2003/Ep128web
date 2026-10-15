@@ -267,6 +267,21 @@ int main(int argc, char **argv)
   io[0x10] = 1;
   std::vector<std::string> pf = list("/");
   CHECK(pf.size() == 1 && pf[0] == "game.cas");
+  // MSC_FRENAME on the PSRAM drive (two length-prefixed names)
+  io[0x10] = 1;
+  std::memset(&io[0x100], 0, 0x600);
+  putStr(0x100, "game.cas");
+  putStr(0x109, "new.cas");
+  CHECK(TVC256kppFS::mscCommand(RENAME, io) == 0);
+  pf = list("/");
+  CHECK(pf.size() == 1 && pf[0] == "new.cas");
+  // the flash drive is read-only for the TVC
+  io[0x10] = 2;
+  std::memset(&io[0x100], 0, 0x600);
+  putStr(0x100, "x.cas");
+  putStr(0x106, "y.cas");
+  CHECK(TVC256kppFS::mscCommand(RENAME, io) == (40 | 0x80));       // LFS_ERR_READONLY_FS
+
   // the card reboots (cold reset): flash drive back in the root directory
   io[0x10] = 2;
   std::memset(&io[0x100], 0, 0x600);

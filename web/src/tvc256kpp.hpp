@@ -90,11 +90,8 @@ class TVC256kpp {
   static bool putPsramFile(const char *name, const uint8_t *data, size_t size);
   // USB pendrive: plug in an empty FAT pendrive (sizeMB > 0) or unplug it
   // (0); copy a file to it and make it the current drive
-  static bool setUsbPendrive(uint32_t sizeMB)
-  {
-    if (!sizeMB) { TVC256kppFS::usbDetach(); return true; }
-    return TVC256kppFS::usbAttach(sizeMB);
-  }
+  // (the card has one USB port: the pendrive and the mouse exclude each other)
+  static bool setUsbPendrive(uint32_t sizeMB);
   static bool usbPendrivePresent() { return TVC256kppFS::usbPresent(); }
   static void selectDrive(int drive);   // $D810 / REG_DRIVE_SELECT
   static bool putUsbFile(const char *name, const uint8_t *data, size_t size);
@@ -116,6 +113,7 @@ class TVC256kpp {
   std::vector<uint8_t> psram_;
   uint8_t *buf_[2];                // internal pages 16 / 17 (PSRAM windows)
   uint8_t overlay_[768];
+  int32_t framesSinceStart_;       // frames since the card's (re)start
   static const uint8_t *currentOverlay_;
   void (*pagingCb_)(void *);
   void *pagingCbData_;

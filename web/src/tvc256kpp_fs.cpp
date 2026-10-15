@@ -441,7 +441,13 @@ uint8_t driveCommand(uint8_t drive, uint8_t cmd)
   Drive *d = (drive == 1 ? &psramDrive : (drive == 2 ? &flashDrive : (Drive *) 0));
   const bool isFlash = (d == &flashDrive);
   uint8_t fres = 0xFF;
-  if (!d || !d->ok) {
+  if (d == &flashDrive && (cmd == 0x04 || cmd == 0x08 || cmd == 0x0D
+                           || cmd == 0x0E || cmd == 0x0F)) {
+    // tvc-lfs-flash.c: the flash drive is read-only for the TVC; these
+    // answer so even without a flash image
+    fres = (cmd == 0x04 ? uint8_t(FR_WRITE_PROTECTED) : uint8_t(LFS_ERR_READONLY_FS));
+  }
+  else if (!d || !d->ok) {
     // an unformatted PSRAM drive and an unmounted flash drive
     fres = FR_NOT_READY;
   }
@@ -462,7 +468,7 @@ uint8_t driveCommand(uint8_t drive, uint8_t cmd)
     case 0x0C: fres = tvc_lfs_chdir(l, d->wd); break;
     case 0x0D: fres = isFlash ? uint8_t(LFS_ERR_READONLY_FS) : tvc_lfs_mkdir(l, d->wd); break;
     case 0x0E: fres = isFlash ? uint8_t(LFS_ERR_READONLY_FS) : tvc_lfs_delete(l, d->wd); break;
-    case 0x0F: fres = uint8_t(LFS_ERR_READONLY_FS); break;                // rename: not implemented
+    case 0x0F: fres = tvc_lfs_file_rename(l, d->wd); break;              // MSC_FRENAME
     case 0x10: fres = tvc_lfs_getstat(l, d->wd); break;
     case 0x11: fres = isFlash ? uint8_t(0) : tvc_lfs_sync(l); break;
     case 0x12: fres = tvc_lfs_mount_dsk(l, isFlash ? 3 : 2); break;
