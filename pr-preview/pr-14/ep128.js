@@ -1404,11 +1404,6 @@ registerProcessor('ep-output', EPOutput);
     const btn = $('btn-mouse');
     if (!btn) return;
     btn.hidden = !(machine && machine.type === 1 && tvcSlotOf(SLOT_CARD256) >= 0);
-    // the card has one USB port: with the pendrive plugged in, no mouse
-    btn.disabled = usbPlugged;
-    btn.title = usbPlugged ? 'A kártya egyetlen USB-portjában a pendrive van (húzd ki az egérhez)'
-                           : 'Egér a TVC256k++ kártyának (kilépés: Esc)';
-    if (usbPlugged && document.pointerLockElement === canvas) document.exitPointerLock();
   }
 
   function startProgram(name) {
