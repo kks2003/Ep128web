@@ -51,6 +51,7 @@ header {
 }
 h1 { font-size: 17px; margin: 0; white-space: nowrap; }
 h1 span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 6px; }
+h1 small { color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 6px; }
 
 #toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 button, .file, select {
