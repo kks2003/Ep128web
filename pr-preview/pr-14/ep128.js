@@ -1289,6 +1289,21 @@ registerProcessor('ep-output', EPOutput);
       M.FS.writeFile('/files/' + base + '.cas', M.FS.readFile('/files/' + name));
       listFiles();
     }
+    // as on the real card: the files go to the USB pendrive (plugged in now if
+    // needed); the PSRAM is left to the programs, which often use it as memory
+    if (!usbPlugged) {
+      usbOn = true;
+      try { localStorage.setItem('ep128web.usbOn', '1'); } catch (e) { }
+      applyTvcUsb();
+    }
+    if (usbPlugged) {
+      const failed = files.filter((f) => !usbPutBytes(f, M.FS.readFile('/files/' + f)));
+      if (failed.length) setMessage('Nem fért a pendrive-ra: ' + failed.join(', '), true);
+      saveUsb();
+      renderUsb();
+      startAutostart('load "' + base + '"\n', null, false, tvcRedirectFor(SLOT_CARD256), () => api.cardSelectDrive(0));
+      return;
+    }
     const prepare = () => {
       const failed = files.filter((f) => api.cardPutFile(f, '/files/' + f) !== 0);
       if (failed.length)
@@ -2293,9 +2308,13 @@ registerProcessor('ep-output', EPOutput);
         check(api.run(us), 'emuláció');
       }
     } catch (e) {
+      // a WebAssembly error stops the emulator for good: say so
       console.error(e);
       paused = true;
+      ready = false;
       $('btn-pause').classList.add('on');
+      setMessage('Az emulátor hibára futott (' + String(e.message || e).slice(0, 80) +
+                 ') – töltsd újra az oldalt. A pendrive tartalma megmarad.', true);
       return;
     }
     emulatedUs += us;
@@ -2386,6 +2405,7 @@ registerProcessor('ep-output', EPOutput);
       cardPutFile: c('ep_tvc_card_put_file', 'number', ['string', 'string']),
       setMouse: c('ep_set_mouse', null, ['number', 'number', 'number', 'number']),
       cardUsb: c('ep_tvc_card_usb', 'number', ['number']),
+      cardSelectDrive: c('ep_tvc_card_select_drive', null, ['number']),
       usbList: c('ep_usb_list', 'string', ['string']),
       usbPut: c('ep_usb_put', 'number', ['string', 'string']),
       usbGet: c('ep_usb_get', 'number', ['string', 'string']),
