@@ -47,18 +47,8 @@
       roms: [['tvc22_sys.rom', [0x00]], ['tvc22_ext.rom', [0x02]]]
     },
     {
-      id: 'tvc64p-22-vtdos', type: 1, name: 'TVC 64k+ · BASIC 2.2 · VT-DOS', ram: 128,
-      roms: [['tvc22_sys.rom', [0x00]], ['tvc22_ext.rom', [0x02]],
-             ['tvc_dos12d.rom', [0x03]]]
-    },
-    {
       id: 'tvc64-12', type: 1, name: 'TVC 64k · BASIC 1.2', ram: 80,
       roms: [['tvc12_sys.rom', [0x00]], ['tvc12_ext.rom', [0x02]]]
-    },
-    {
-      id: 'tvc64-12-vtdos', type: 1, name: 'TVC 64k · BASIC 1.2 · VT-DOS', ram: 80,
-      roms: [['tvc12_sys.rom', [0x00]], ['tvc12_ext.rom', [0x02]],
-             ['tvc_dos12d.rom', [0x03]]]
     },
     {
       id: 'tvc32-12', type: 1, name: 'TVC 32k · BASIC 1.2', ram: 48,
@@ -66,6 +56,22 @@
     }
   ];
   for (const m of MACHINES) m.type = m.type || 0;
+  // machine ids of earlier versions (VT-DOS is a card in a slot now)
+  const MACHINE_ALIASES = { 'tvc64p-22-vtdos': 'tvc64p-22', 'tvc64-12-vtdos': 'tvc64-12' };
+
+  // TVC expansion cards; the ids are those of ep_set_tvc_slot()
+  const SLOT_EMPTY = 0, SLOT_VTDOS = 1, SLOT_FILEIO = 2, SLOT_CARD256 = 5;
+  const TVC_CARDS = [
+    { id: SLOT_EMPTY, name: '— üres —' },
+    { id: SLOT_VTDOS, name: 'VT-DOS (lemez)', rom: 'tvc_dos12d.rom', seg: 0x03 },
+    { id: SLOT_FILEIO, name: 'FILE: (.cas fájlok)', rom: 'tvcfileio.rom', seg: 0x04 },
+    { id: 3, name: 'GameCard (SN76489 + Joy 3-4)' },
+    { id: 4, name: 'Multichip Soundcard (SN, SAA, OPL2)' },
+    { id: SLOT_CARD256, name: 'TVC256k++' }
+  ];
+  // the card initialized last (highest slot) of VT-DOS, FILE: and TVC256k++
+  // becomes the default storage device, so VT-DOS comes after FILE:
+  const TVC_DEFAULT_SLOTS = [SLOT_FILEIO, SLOT_VTDOS, 3, SLOT_EMPTY];
 
   // KeyboardEvent.code -> Enterprise keyboard matrix position (row * 8 + col),
   // following ep128emu's default config/ep_keys.cfg
@@ -199,28 +205,39 @@
   let tapeName = '';
   let diskName = '';
   let autoTask = null;          // automatic typing / autostart state
-  let tvcFileIO = true;         // TVC: FILE: device instead of cassette
+  let tvcSlots = TVC_DEFAULT_SLOTS.slice();   // TVC: card in expansion slots 0..3
   let cartridgeName = '';       // TVC: cartridge ROM image name
-  let tvcGameCard = true;       // TVC: GameCard (SN76489 + Joy 3-4)
-  let tvcMultiSound = false;    // TVC: Multichip Soundcard (SN, SAA, OPL2)
-  let tvcCard256 = false;       // TVC: TVC256k++ IO card (256 kB RAM, 8 MB PSRAM)
   try {
-    const gc = localStorage.getItem('ep128web.tvcGameCard');
-    if (gc !== null) tvcGameCard = (gc === '1');
-    const ms = localStorage.getItem('ep128web.tvcMultiSound');
-    if (ms !== null) tvcMultiSound = (ms === '1');
-    const c256 = localStorage.getItem('ep128web.tvcCard256');
-    if (c256 !== null) tvcCard256 = (c256 === '1');
+    const v = JSON.parse(localStorage.getItem('ep128web.tvcSlots'));
+    if (validTvcSlots(v)) tvcSlots = v;
   } catch (e) {}
 
-  function applyTvcCard256() {
-    // slot 2 (EXT 2): slot 0 is the VT-DOS in ep128emu, slot 1 is used by the FILE: device
-    if (api && api.setTvcCard256) api.setTvcCard256(tvcCard256 ? 1 : 0, 2);
+  function validTvcSlots(v) {
+    if (!Array.isArray(v) || v.length !== 4) return false;
+    if (!v.every((c) => TVC_CARDS.some((x) => x.id === c))) return false;
+    // a card can only be in one slot
+    return v.every((c, i) => c === SLOT_EMPTY || v.indexOf(c) === i);
   }
 
-  function applyTvcSoundCards() {
-    if (api && api.setTvcGameCard) api.setTvcGameCard(tvcGameCard ? 1 : 0);
-    if (api && api.setTvcMultiSound) api.setTvcMultiSound(tvcMultiSound ? 1 : 0);
+  function tvcSlotOf(card) {
+    return tvcSlots.indexOf(card);
+  }
+
+  // value of the cassette device redirect ($0B05/$0B0D) that points at the
+  // slot of a card, or 0 if the card is not installed
+  function tvcRedirectFor(card) {
+    const slot = tvcSlotOf(card);
+    return slot >= 0 ? (0x80 | slot) : 0;
+  }
+
+  function setTvcRedirect(value) {
+    if (machine.type !== 1 || !value) return;
+    writeMemory(2821, value);
+    writeMemory(2829, value);
+  }
+
+  function applyTvcSlots() {
+    if (api && api.setTvcSlot) tvcSlots.forEach((card, slot) => api.setTvcSlot(slot, card));
   }
 
   function setMessage(text, isError) {
@@ -313,8 +330,12 @@
 
   function machineROMs(m) {
     let roms = m.roms;
-    if (m.type === 1 && tvcFileIO)
-      roms = roms.concat([['tvcfileio.rom', [0x04]]]);
+    if (m.type === 1) {
+      for (const card of TVC_CARDS) {
+        if (card.rom && tvcSlots.includes(card.id))
+          roms = roms.concat([[card.rom, [card.seg]]]);
+      }
+    }
     if (m.type === 1 && cartridgeName && fileExists('/roms/' + cartridgeName))
       roms = roms.concat([[cartridgeName, [0x01]]]);
     return roms;
@@ -411,17 +432,10 @@
     }
     if (diskName)
       api.setDisk(0, '/disk/' + diskName);
-    if (m.type === 1) applyTvcCard256();   // before the reset: the TVC OS detects the card at boot
+    if (m.type === 1) applyTvcSlots();   // before the reset: the TVC OS detects the cards at boot
     if (coldReset !== false) {
       api.reset(1);
       keyedSinceReset = false;
-    }
-    if (m.type === 1) {
-      applyTvcSoundCards();
-      if (tvcFileIO) {
-        writeMemory(2821, 129);
-        writeMemory(2829, 129);
-      }
     }
     ready = true;
     try { localStorage.setItem('ep128web.machine', m.id); } catch (e) { }
@@ -591,6 +605,11 @@ registerProcessor('ep-output', EPOutput);
       return;
     }
     if (e.metaKey) return;      // leave Cmd+... shortcuts to the browser
+    // not emulated keys that would scroll the page away from the screen
+    if (e.code === 'PageUp' || e.code === 'PageDown') {
+      e.preventDefault();
+      return;
+    }
     const code = mapKey(e);
     if (code === undefined) return;
     e.preventDefault();
@@ -708,7 +727,7 @@ registerProcessor('ep-output', EPOutput);
     return ev;
   }
 
-  function startAutostart(command, onTyped, isTvcTape = false) {
+  function startAutostart(command, onTyped, isTvcTape = false, tvcRedirect) {
     releaseAllKeys();
     api.reset(1);
     keyedSinceReset = false;
@@ -720,7 +739,8 @@ registerProcessor('ep-output', EPOutput);
       isTvcTape: !!isTvcTape,
       // TVC: the cassette device redirect the loading command must use
       // (5: TAPE, 129: FILE: in slot 1), forced while the task types
-      tvcRedirect: isTvcTape ? 5 : (tvcFileIO ? 129 : 0)
+      tvcRedirect: tvcRedirect !== undefined ? tvcRedirect
+        : (isTvcTape ? 5 : tvcRedirectFor(SLOT_FILEIO))
     };
     setMessage('Indítás…');
   }
@@ -914,7 +934,7 @@ registerProcessor('ep-output', EPOutput);
     M.FS.writeFile('/card/flash.bin', f.bytes);
     check(api.loadTvcCardFlash('/card/flash.bin'), 'TVC256k++ flash drive kép');
     db.put('cardflash', f.bytes);
-    setMessage('TVC256k++ flash drive kép betöltve' + (tvcCard256 ? '' : ' – kapcsold be a kártyát'));
+    setMessage('TVC256k++ flash drive kép betöltve' + (tvcSlotOf(SLOT_CARD256) >= 0 ? '' : ' – tedd a kártyát egy bővítőportba'));
   }
 
   function loadROMFile(f) {
@@ -955,25 +975,11 @@ registerProcessor('ep-output', EPOutput);
     setMessage((ext === 'ep128d' ? 'Demó: ' : 'Pillanatkép: ') + f.name);
   }
 
-  // switch the TVC FILE: extension on or off (it replaces the cassette
-  // device and conflicts with VT-DOS)
-  function setTVCFileIO(enabled, m) {
-    if (tvcFileIO !== enabled || m !== machine) {
-      tvcFileIO = enabled;
-      applyMachine(m || machine);
-      $('machine').value = machine.id;
-    }
-  }
-
   function loadTapeFile(f) {
     ensureDir('/tape');
     tapeName = sanitizeName(f.name);
     M.FS.writeFile('/tape/' + tapeName, f.bytes);
-    if (machine.type === 1) {
-      setTVCFileIO(false);
-      writeMemory(2821, 5);
-      writeMemory(2829, 5);
-    }
+    setTvcRedirect(5);
     check(api.setTape('/tape/' + tapeName), 'kazetta');
     $('tape-name').textContent = f.name;
     setMessage('Kazetta betöltve – indítás…');
@@ -1001,14 +1007,15 @@ registerProcessor('ep-output', EPOutput);
         tapeName = '';
         $('tape-name').textContent = 'nincs kazetta';
       }
-      // VT-DOS is needed, and tvcfileio.rom must be removed
-      const m = machine.roms.some((r) => r[0].startsWith('tvc_dos'))
-        ? machine
-        : (MACHINES.find((x) => x.id === 'tvc64-12-vtdos') || MACHINES.find((x) => x.id === 'tvc64p-22-vtdos'));
-      setTVCFileIO(false, m);
       check(api.setDisk(0, '/disk/' + diskName), 'lemez');
+      if (tvcSlotOf(SLOT_VTDOS) < 0) {
+        setMessage('A lemezhez tegyél VT-DOS kártyát egy bővítőportba (Bővítőportok)', true);
+        return;
+      }
       setMessage('Lemez az A: meghajtóban – VT-DOS indítása…');
-      startAutostart('ext 2\n' + PAUSE + 'dir\n' + PAUSE + PRESS_ESC, null);
+      // the VT-DOS commands (EXT 2) need the default device to be the DOS
+      startAutostart('ext 2\n' + PAUSE + 'dir\n' + PAUSE + PRESS_ESC, null, false,
+                     tvcRedirectFor(SLOT_VTDOS));
     } else {
       if (!machine.roms.some((r) => r[0].startsWith('exdos'))) {
         applyMachine(MACHINES.find((x) => x.id === 'ep128uk-exdos'));
@@ -1040,17 +1047,16 @@ registerProcessor('ep-output', EPOutput);
   function startProgram(name) {
     let cmd;
     if (machine.type === 1) {
-      const m = machine.roms.some((r) => r[0].startsWith('tvc_dos'))
-        ? (MACHINES.find((x) => x.id === 'tvc64p-22') || MACHINES.find((x) => x.id === 'tvc64-12'))
-        : machine;
-      setTVCFileIO(true, m);
+      if (tvcSlotOf(SLOT_FILEIO) < 0) {
+        setMessage('A .cas programokhoz tegyél FILE: kártyát egy bővítőportba (Bővítőportok)', true);
+        return;
+      }
       if (tapeName) {
         api.setTape('');
         tapeName = '';
         $('tape-name').textContent = 'nincs kazetta';
       }
-      writeMemory(2821, 129);
-      writeMemory(2829, 129);
+      setTvcRedirect(tvcRedirectFor(SLOT_FILEIO));
       let base = name.replace(/\.cas$/i, '');
       if (!isTypable(base, 1)) {
         // the name cannot be typed: start it through a copy with a simple name
@@ -1507,6 +1513,51 @@ registerProcessor('ep-output', EPOutput);
   // --------------------------------------------------------------------------
   // UI
 
+  // TVC expansion slots: the selection only takes effect with the button,
+  // which installs the cards and restarts the machine
+  function setupTvcSlotsUI() {
+    const selects = [0, 1, 2, 3].map((i) => $('tvc-slot' + i));
+    if (selects.some((x) => !x)) return;
+    const show = () => selects.forEach((sel, i) => { sel.value = String(tvcSlots[i]); });
+    const pending = () => selects.map((sel) => Number(sel.value));
+    const update = () => {
+      const p = pending();
+      const changed = p.some((c, i) => c !== tvcSlots[i]);
+      $('tvc-slots-apply').classList.toggle('on', changed);
+      $('tvc-slots-note').textContent = !validTvcSlots(p)
+        ? 'Egy kártya csak egy portban lehet.'
+        : (changed ? 'Módosítva – a betöltés gombbal lép életbe.' : '');
+    };
+    for (const sel of selects) {
+      for (const card of TVC_CARDS) {
+        const o = document.createElement('option');
+        o.value = String(card.id);
+        o.textContent = card.name;
+        sel.appendChild(o);
+      }
+      sel.onchange = update;
+    }
+    show();
+    $('tvc-slots-apply').onclick = () => {
+      const p = pending();
+      if (!validTvcSlots(p)) { update(); return; }
+      tvcSlots = p;
+      try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots)); } catch (e) { }
+      update();
+      if (machine.type === 1) {
+        autoTask = null;
+        releaseAllKeys();
+        applyMachine(machine);        // loads the card ROMs, cold reset
+      }
+      canvas.focus();
+    };
+    $('tvc-slots-default').onclick = () => {
+      selects.forEach((sel, i) => { sel.value = String(TVC_DEFAULT_SLOTS[i]); });
+      update();
+    };
+    update();
+  }
+
   function applyVolume() {
     const v = Number($('volume').value) / 100;
     api.setVolume(v * v);
@@ -1774,29 +1825,15 @@ registerProcessor('ep-output', EPOutput);
     };
     $('btn-turbo').onclick = toggleTurbo;
     $('btn-load').onclick = () => {
-      if (machine.type === 1) {
-        if (tapeName) {
-          writeMemory(2821, 5);
-          writeMemory(2829, 5);
-        } else if (tvcFileIO) {
-          writeMemory(2821, 129);
-          writeMemory(2829, 129);
-        }
-      }
+      if (machine.type === 1)
+        setTvcRedirect(tapeName ? 5 : tvcRedirectFor(SLOT_FILEIO));
       typeText('load"*"\n');
       canvas.focus();
     };
     const btnRun = $('btn-run');
     if (btnRun) btnRun.onclick = () => {
-      if (machine.type === 1) {
-        if (tapeName) {
-          writeMemory(2821, 5);
-          writeMemory(2829, 5);
-        } else if (tvcFileIO) {
-          writeMemory(2821, 129);
-          writeMemory(2829, 129);
-        }
-      }
+      if (machine.type === 1)
+        setTvcRedirect(tapeName ? 5 : tvcRedirectFor(SLOT_FILEIO));
       typeText('run\n');
       canvas.focus();
     };
@@ -1871,37 +1908,7 @@ registerProcessor('ep-output', EPOutput);
       arrowsAsJoystick = e.target.checked;
       canvas.focus();
     };
-    const gcBox = $('tvc-gamecard');
-    if (gcBox) {
-      gcBox.checked = tvcGameCard;
-      gcBox.onchange = (e) => {
-        tvcGameCard = e.target.checked;
-        try { localStorage.setItem('ep128web.tvcGameCard', tvcGameCard ? '1' : '0'); } catch (err) {}
-        applyTvcSoundCards();
-        canvas.focus();
-      };
-    }
-    const msBox = $('tvc-multisound');
-    if (msBox) {
-      msBox.checked = tvcMultiSound;
-      msBox.onchange = (e) => {
-        tvcMultiSound = e.target.checked;
-        try { localStorage.setItem('ep128web.tvcMultiSound', tvcMultiSound ? '1' : '0'); } catch (err) {}
-        applyTvcSoundCards();
-        canvas.focus();
-      };
-    }
-
-    const c256Box = $('tvc-card256');
-    if (c256Box) {
-      c256Box.checked = tvcCard256;
-      c256Box.onchange = (e) => {
-        tvcCard256 = e.target.checked;
-        try { localStorage.setItem('ep128web.tvcCard256', tvcCard256 ? '1' : '0'); } catch (err) {}
-        applyTvcCard256();
-        reset(true);          // the TVC OS detects the card at boot
-      };
-    }
+    setupTvcSlotsUI();
 
     const wrap = $('screen-wrap');
     wrap.addEventListener('dragover', (e) => { e.preventDefault(); wrap.classList.add('drag'); });
@@ -2048,9 +2055,7 @@ registerProcessor('ep-output', EPOutput);
       readMemory: c('ep_read_memory', 'number', ['number']),
       writeMemory: c('ep_write_memory', null, ['number', 'number']),
       unpackRoms: c('ep_unpack_rom_package', 'number', ['string', 'string']),
-      setTvcGameCard: c('ep_set_tvc_gamecard', null, ['number']),
-      setTvcMultiSound: c('ep_set_tvc_multisound', null, ['number']),
-      setTvcCard256: c('ep_set_tvc_card256', null, ['number', 'number']),
+      setTvcSlot: c('ep_set_tvc_slot', null, ['number', 'number']),
       loadTvcCardFlash: c('ep_load_tvc_card_flash', 'number', ['string']),
       setTvcExtJoy: c('ep_set_tvc_ext_joy', null, ['number', 'number'])
     };
@@ -2104,6 +2109,7 @@ registerProcessor('ep-output', EPOutput);
 
     let id = null;
     try { id = localStorage.getItem('ep128web.machine'); } catch (e) { }
+    id = MACHINE_ALIASES[id] || id;
     machine = MACHINES.find((m) => m.id === id) || MACHINES.find((m) => m.id === 'tvc64p-22');
     setupUI();
     listFiles();
