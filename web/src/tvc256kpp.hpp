@@ -90,7 +90,6 @@ class TVC256kpp {
   static bool putPsramFile(const char *name, const uint8_t *data, size_t size);
   // USB pendrive: plug in an empty FAT pendrive (sizeMB > 0) or unplug it
   // (0); copy a file to it and make it the current drive
-  // (the card has one USB port: the pendrive and the mouse exclude each other)
   static bool setUsbPendrive(uint32_t sizeMB);
   static bool usbPendrivePresent() { return TVC256kppFS::usbPresent(); }
   static void selectDrive(int drive);   // $D810 / REG_DRIVE_SELECT

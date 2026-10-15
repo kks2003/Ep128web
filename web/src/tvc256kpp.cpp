@@ -78,15 +78,11 @@ bool TVC256kpp::setUsbPendrive(uint32_t sizeMB)
     TVC256kppFS::usbDetach();
     return true;
   }
-  mouse.connected = false;                 // one USB port: the mouse is out
-  mouse.buttons = 0;
   return TVC256kppFS::usbAttach(sizeMB);
 }
 
 void TVC256kpp::mouseInput(int dx, int dy, int buttons)
 {
-  if (TVC256kppFS::usbPresent())           // the USB port holds the pendrive
-    return;
   mouse.connected = true;
   mouse.buttons = uint8_t(buttons & 7);      // left 1, middle 2, right 4
   if (mouse.restartX) { mouse.sumX = 0; mouse.restartX = false; }

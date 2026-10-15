@@ -154,14 +154,6 @@ static void graphicsChecks(TVC256kpp &c)
   TVC256kpp::mouseInput(7, 0, 0);
   CHECK(rd(c, 0x20, 0xD5) == 0x20 && rd(c, 0x20, 0xD2) == 7);
   wr(c, 0x20, 0xD5, 0x10);
-  // one USB port: with the pendrive plugged in, the mouse is not there
-  CHECK(TVC256kpp::setUsbPendrive(2));
-  CHECK(rd(c, 0x20, 0xD0) == 0x02);
-  TVC256kpp::mouseInput(5, 5, 1);
-  CHECK(rd(c, 0x20, 0xD0) == 0x02 && rd(c, 0x20, 0xD1) == 0);
-  TVC256kpp::setUsbPendrive(0);
-  TVC256kpp::mouseInput(0, 0, 0);
-  CHECK(rd(c, 0x20, 0xD0) == 0x01);
   // warm reset switches the overlay off
   c.reset(false);
   CHECK(rd(c, 0x20, 0x90) == 0 && overlayLine(c, 1) == 0);
