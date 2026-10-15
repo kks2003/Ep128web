@@ -94,7 +94,7 @@ for src in $SOURCES; do
   if [ ! -f "$obj" ] || [ "$src" -nt "$obj" ]; then
     echo "CXX $src"
     case "$src" in
-      web/src/card/*.c|web/src/card/*/*.c) emcc -O3 -w -DHAVE_STDINT_H -Iweb/src -c "$src" -o "$obj" ;;  # vendored C code
+      web/src/card/*.c|web/src/card/*/*.c) emcc -O3 -w -DHAVE_STDINT_H -DLFS_NO_ASSERT -Iweb/src -c "$src" -o "$obj" ;;  # vendored C code
       *) em++ $CFLAGS -c "$src" -o "$obj" ;;
     esac
   fi

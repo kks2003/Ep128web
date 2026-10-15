@@ -96,6 +96,7 @@ class TVC256kpp {
     return TVC256kppFS::usbAttach(sizeMB);
   }
   static bool usbPendrivePresent() { return TVC256kppFS::usbPresent(); }
+  static void selectDrive(int drive);   // $D810 / REG_DRIVE_SELECT
   static bool putUsbFile(const char *name, const uint8_t *data, size_t size);
   uint8_t  baseRegister(int set) const { return sel_[set & 1]; }
 

@@ -115,12 +115,12 @@ betölti.
 A [TVC256k++](https://github.com/dikdom/tvc256kplusplus) kártya bármelyik bővítőportba
 tehető; a parancssora BASIC-ből `EXT` + a port száma (pl. a 3-as portban `EXT 3`). Ha a
 legnagyobb sorszámú tároló-kártya, bootoláskor magára állítja a kazetta-átirányítást, így a
-`LOAD` és a CLI fájlparancsai a kártya meghajtóit használják (USB nincs, ezért bootoláskor a
-flash drive lesz az aktív, mint a valódi kártyán). Ha a kártya be van dugva, a ráhúzott `.cas`
-fájlok (egy ZIP összes fájlja is) a kártya PSRAM drive-jára kerülnek (ha még nincs, 4 MB-os
-drive-ot formáz neki), az lesz az aktív meghajtó, és a `LOAD` a kártyán keresztül fut, így a
-program látja a kártyát, és a többi fájlt is onnan töltheti be. Hideg resetkor a kártya
-újraindul: a PSRAM drive megszűnik, a flash drive útvonala visszaáll a gyökérre.
+`LOAD` és a CLI fájlparancsai a kártya meghajtóit használják (USB nélkül bootoláskor a
+flash drive lesz az aktív, mint a valódi kártyán). Ha a kártya be van dugva, a képre húzott
+`.cas` programok (egy ZIP összes fájljával) az USB pendrive-ra kerülnek – ha nincs bedugva,
+az oldal bedugja –, és a `LOAD` a kártyán keresztül fut. A PSRAM így a programoké marad (sok
+program memóriának használja, pl. a Bad Apple lejátszó). Hideg resetkor a kártya újraindul:
+a PSRAM drive megszűnik, a flash drive útvonala visszaáll a gyökérre.
 
 Állapot (3. lépés):
 

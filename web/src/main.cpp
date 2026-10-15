@@ -795,6 +795,12 @@ EMSCRIPTEN_KEEPALIVE int ep_tvc_card_put_file(const char *name, const char *path
   return 0;
 }
 
+// Selects the TVC256k++ card's current drive (0 USB, 1 PSRAM, 2 flash, 3 DSK)
+EMSCRIPTEN_KEEPALIVE void ep_tvc_card_select_drive(int drive)
+{
+  TVC256kpp::selectDrive(drive);
+}
+
 // Plugs an empty USB pendrive of sizeMB megabytes into the TVC256k++ card
 // (formatted FAT), or unplugs it (0). Returns 0 on success.
 EMSCRIPTEN_KEEPALIVE int ep_tvc_card_usb(int sizeMB)

@@ -512,6 +512,11 @@ bool TVC256kpp::putPsramFile(const char *name, const uint8_t *data, size_t size)
   return true;
 }
 
+void TVC256kpp::selectDrive(int drive)
+{
+  TVC_ROM[kDriveSelectOffset] = uint8_t(drive & 3);
+}
+
 bool TVC256kpp::putUsbFile(const char *name, const uint8_t *data, size_t size)
 {
   if (!TVC256kppFS::putUsbFile(name, data, size))

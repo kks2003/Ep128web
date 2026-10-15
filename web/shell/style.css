@@ -392,4 +392,5 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 #usb-list li .s { color: var(--muted); font-variant-numeric: tabular-nums; }
 #usb-list li button { padding: 0 6px; min-height: 0; }
 #usb-drop { color: var(--muted); font-size: 12px; margin-top: 4px; }
-#usb-group { flex: 1 1 380px; min-width: 300px; }
+#usb-group { grid-column: span 2; min-width: 0; }
+@media (max-width: 560px) { #usb-group { grid-column: auto; } }
