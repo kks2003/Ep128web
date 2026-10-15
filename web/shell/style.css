@@ -389,6 +389,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 #usb-list li { display: flex; align-items: center; gap: 6px; padding: 2px 0; border-bottom: 1px solid rgba(128,128,128,0.15); }
 #usb-list li .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #usb-list li .n.dir { cursor: pointer; font-weight: 600; }
+#usb-list li .n.run { cursor: pointer; color: var(--accent); }
 #usb-list li .s { color: var(--muted); font-variant-numeric: tabular-nums; }
 #usb-list li button { padding: 0 6px; min-height: 0; }
 #usb-drop { color: var(--muted); font-size: 12px; margin-top: 4px; }

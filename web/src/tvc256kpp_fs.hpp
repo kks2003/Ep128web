@@ -47,6 +47,7 @@ namespace TVC256kppFS {
   bool usbGetFile(const char *path, std::vector<uint8_t> &data);
   bool usbMkdirs(const char *path);
   bool usbDelete(const char *path);             // files and whole directories
+  bool usbChdir(const char *path);              // the card's current directory
   bool usbSpace(uint32_t &totalKB, uint32_t &freeKB);
   // the pendrive's sectors (e.g. to save them), nullptr if none
   const uint8_t *usbImage(size_t &size);

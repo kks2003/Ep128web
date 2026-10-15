@@ -345,6 +345,14 @@ static bool usbDeleteTree(const std::string &p)
   return f_unlink(p.c_str()) == FR_OK;
 }
 
+bool usbChdir(const char *path)
+{
+  if (!card_usb_image)
+    return false;
+  activeDrive = 0;
+  return f_chdrive("0:") == FR_OK && f_chdir(usbPath(path).c_str()) == FR_OK;
+}
+
 bool usbDelete(const char *path)
 {
   if (!card_usb_image)

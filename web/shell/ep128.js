@@ -400,13 +400,64 @@
       if (e.d) {
         row(e.n + '/', 'dir', '', () => { usbCwd = p; renderUsb(); }, [del]);
       } else {
-        row(e.n, '', fmtSize(e.s), null, [['⬇', 'Letöltés', () => {
+        const runnable = extOf(e.n) === 'cas';
+        const run = () => runFromUsb(usbCwd, e.n);
+        row(e.n, runnable ? 'run' : '', fmtSize(e.s), runnable ? run : null, [
+          ...(runnable ? [['▶', 'Indítás a pendrive-ról (a kártyán keresztül)', run]] : []),
+          ['⬇', 'Letöltés', () => {
           try { M.FS.mkdir('/tmp'); } catch (err) { }
           if (api.usbGet(p, '/tmp/usbfile') === 0) download(M.FS.readFile('/tmp/usbfile'), e.n);
         }], del]);
       }
     }
     if (!entries.length) row('(üres)', '', '', null, []);
+  }
+
+  // starts a .cas program of the pendrive: the machine restarts, then the
+  // card loads it from its directory (as LOAD after CD on the card)
+  function runFromUsb(dir, name) {
+    if (!machine || machine.type !== 1) return;
+    if (tvcSlotOf(SLOT_CARD256) < 0) {
+      setMessage('A pendrive-ról indításhoz tedd a TVC256k++ kártyát egy portba (Bővítőportok)', true);
+      return;
+    }
+    let base = name.replace(/\.cas$/i, '');
+    if (!isTypable(base, 1)) {
+      // a copy with a name that can be typed, next to the original
+      const simple = sanitizeName(base).replace(/\./g, '-') || 'program';
+      if (api.usbGet(usbJoin(dir, name), '/tmp/usbfile') !== 0 ||
+          !usbPutBytes(usbJoin(dir, simple + '.cas'), M.FS.readFile('/tmp/usbfile'))) {
+        setMessage('Nem sikerült elindítani: ' + name, true);
+        return;
+      }
+      base = simple;
+      saveUsb();
+      renderUsb();
+    }
+    if (tapeName) {
+      api.setTape('');
+      tapeName = '';
+      $('tape-name').textContent = 'nincs kazetta';
+    }
+    startAutostart('load "' + base + '"\n', null, false, tvcRedirectFor(SLOT_CARD256), () => {
+      api.cardSelectDrive(0);
+      api.usbChdir(dir);
+    });
+    canvas.focus();
+  }
+
+  // deletes everything from the pendrive (it is formatted again)
+  function clearUsb() {
+    if (!usbPlugged) return;
+    if (!confirm('Törlöd a pendrive teljes tartalmát?')) return;
+    api.cardUsb(0);
+    usbPlugged = false;
+    usbSaved = [];
+    db.put('usbfiles', usbSaved);
+    usbCwd = '';
+    applyTvcUsb();
+    saveUsb();
+    setMessage('A pendrive üres');
   }
 
   function setupUsbUI() {
@@ -434,6 +485,7 @@
       applyTvcUsb();
     };
     $('usb-add').onclick = () => $('usb-file').click();
+    $('usb-clear').onclick = clearUsb;
     $('usb-add-dir').onclick = () => $('usb-folder').click();
     $('usb-file').onchange = (e) => { addUsbFiles(e.target.files, false); e.target.value = ''; };
     $('usb-folder').onchange = (e) => { addUsbFiles(e.target.files, true); e.target.value = ''; };
@@ -2416,6 +2468,7 @@ registerProcessor('ep-output', EPOutput);
       usbGet: c('ep_usb_get', 'number', ['string', 'string']),
       usbMkdir: c('ep_usb_mkdir', 'number', ['string']),
       usbDelete: c('ep_usb_delete', 'number', ['string']),
+      usbChdir: c('ep_usb_chdir', 'number', ['string']),
       usbInfo: c('ep_usb_info', 'number', ['number']),
       setTvcExtJoy: c('ep_set_tvc_ext_joy', null, ['number', 'number'])
     };

@@ -868,6 +868,12 @@ EMSCRIPTEN_KEEPALIVE int ep_usb_mkdir(const char *path)
   return TVC256kppFS::usbMkdirs(path) ? 0 : -1;
 }
 
+// the pendrive's current directory, as the card's CD command sets it
+EMSCRIPTEN_KEEPALIVE int ep_usb_chdir(const char *path)
+{
+  return TVC256kppFS::usbChdir(path) ? 0 : -1;
+}
+
 EMSCRIPTEN_KEEPALIVE int ep_usb_delete(const char *path)
 {
   return TVC256kppFS::usbDelete(path) ? 0 : -1;
