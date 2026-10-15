@@ -79,6 +79,10 @@ class TVC256kpp {
   // PSRAM drive: formats the first numBlocks (4 kB each) of the PSRAM
   bool formatPsramDrive(uint32_t numBlocks);
   static uint32_t fsStat(int which) { return TVC256kppFS::stat(which); }
+  // Copies a file to the PSRAM drive (formatted first if there is none, as
+  // the launcher's "load dir to PSRAM" does) and selects that drive, so
+  // that LOAD through the card finds it.
+  static bool putPsramFile(const char *name, const uint8_t *data, size_t size);
   uint8_t  baseRegister(int set) const { return sel_[set & 1]; }
 
  private:

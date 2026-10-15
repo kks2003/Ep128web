@@ -5,11 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=__BUILD_V__">
+<meta name="build" content="__BUILD_V__">
 </head>
 <body>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">__BUILD__</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -208,7 +209,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js"></script>
-<script src="ep128.js"></script>
+<script src="ep128emu.js?v=__BUILD_V__"></script>
+<script src="ep128.js?v=__BUILD_V__"></script>
 </body>
 </html>

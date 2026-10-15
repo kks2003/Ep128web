@@ -190,10 +190,12 @@ def fs_checks(repo):
 def boot_checks(pkg, repo=None):
     # real TVC BASIC 2.2 ROMs (from the ep128emu ROM package) with the card in slot 2
     exe = build("test/native_boot.cpp", "boot_harness")
-    def boot(enabled, text=None, flash=None):
+    def boot(enabled, text=None, flash=None, put=None):
         env = dict(os.environ)
         if flash:
             env["CARD_FLASH"] = flash
+        if put:
+            env["CARD_PUT"] = put
         cmd = [exe, pkg, str(enabled), "12", os.path.join(OBJ, "boot.ppm"), "2", "4"]
         if text:
             cmd.append(text)
@@ -221,6 +223,11 @@ def boot_checks(pkg, repo=None):
         opens = int(out.split("fs opens=")[1].split()[0])
         nbytes = int(out.split("bytes=")[1].split()[0])
         checks.append(("LOAD from the flash drive opens a file and reads it (>= 8000 bytes)", opens >= 1 and nbytes >= 8000))
+        # a file dropped on the web page goes to the PSRAM drive; LOAD finds it there
+        out = boot(1, 'load "dropped"\n', files[0], put=files[1])
+        nbytes = int(out.split("bytes=")[1].split()[0])
+        checks.append(("a dropped file is loaded from the PSRAM drive through the card",
+                       "put=0" in out and nbytes >= os.path.getsize(files[1]) - 128))
     for name, ok in checks:
         print("boot: %s: %s" % (name, "OK" if ok else "FAIL"))
         bad += 0 if ok else 1

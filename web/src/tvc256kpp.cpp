@@ -113,7 +113,7 @@ void TVC256kpp::setDefaults()
   psramCached_[0] = psramCached_[1] = -1;
   updateParamPages();
   std::memset(ioRam_, 0, 0x800);
-  TVC256kppFS::resetPsramDrive();         // power-on: no PSRAM drive
+  TVC256kppFS::powerOn();                 // no PSRAM drive, root directory
   card_power_on();                        // graphics, functions
   card_int_active = false;
   currentOverlay_ = (const uint8_t *) 0;
@@ -235,8 +235,8 @@ uint8_t TVC256kpp::regRead(uint8_t r)
     return kFwMajor;
   case REG_FW_VERSION_MINOR:
     return kFwMinor;
-  case REG_DRIVE_SELECT:
-    return regs_[REG_DRIVE_SELECT];
+  case REG_DRIVE_SELECT:                   // firmware: TVC_ROM[0x1810]
+    return ioRam_[kDriveSelectOffset - kRamOffset];
   case REG_DRIVE_PSRAM_VALID:
     return ioRam_[0x24];
   case REG_DRIVE_FLASH_VALID:
@@ -288,8 +288,7 @@ void TVC256kpp::regWrite(uint8_t r, uint8_t v)
       romPage_ = v;                        // values above 1 are ignored
     return;
   case REG_DRIVE_SELECT:
-    regs_[r] = v & 3;
-    ioRam_[kDriveSelectOffset - kRamOffset] = regs_[r];
+    ioRam_[kDriveSelectOffset - kRamOffset] = (v > 3 ? 3 : v);
     return;
   // read-only registers
   case REG_MEMORY_PSRAM_SIZE_IN_MB:
@@ -381,9 +380,6 @@ bool TVC256kpp::handleSlotROMRead(uint16_t addr, uint16_t slotPaging,
   if (offs < kRomPageSize) {
     val = rom_[size_t(romPage_) * kRomPageSize + offs];
   }
-  else if (offs == kDriveSelectOffset) {
-    val = regs_[REG_DRIVE_SELECT];
-  }
   else {
     val = ioRam_[offs - kRamOffset];
   }
@@ -398,8 +394,6 @@ bool TVC256kpp::handleSlotROMWrite(uint16_t addr, uint16_t slotPaging,
   uint16_t offs = addr & (kIoAreaSize - 1);
   if (offs >= kRamOffset) {
     ioRam_[offs - kRamOffset] = val;
-    if (offs == kDriveSelectOffset)
-      regs_[REG_DRIVE_SELECT] = val & 3;
   }
   return true;                             // writes to the ROM area are ignored
 }
@@ -440,4 +434,12 @@ void TVC256kpp::videoLine(int paperStart)
 bool TVC256kpp::irqActive() const
 {
   return enabled_ && card_int_active;
+}
+
+bool TVC256kpp::putPsramFile(const char *name, const uint8_t *data, size_t size)
+{
+  if (!TVC256kppFS::putPsramFile(name, data, size))
+    return false;
+  TVC_ROM[kDriveSelectOffset] = 1;         // the PSRAM drive is the current one
+  return true;
 }

@@ -23,6 +23,7 @@ int ep_unpack_rom_package(const char *, const char *);
 void ep_set_tvc_card256(int, int);
 int ep_load_tvc_card_flash(const char *);
 int ep_tvc_card_fs_stat(int);
+int ep_tvc_card_put_file(const char *, const char *);
 void ep_audio_clear();
 }
 static void runMs(int ms) { for (int i = 0; i < ms / 20; i++) { ep_run(20000); ep_audio_clear(); } }
@@ -71,6 +72,10 @@ int main(int argc, char **argv)
   }
   ep_reset(1);
   runMs(std::atoi(argv[3]) * 1000);
+  if (const char *put = std::getenv("CARD_PUT")) {   // web page: a dropped file
+    std::printf("put=%d\n", ep_tvc_card_put_file("dropped.cas", put));
+    ep_write_memory(0x0B05, 0x80 | slot); ep_write_memory(0x0B0D, 0x80 | slot);
+  }
   if (argc > 6) {            // press Enter once, as a user would
     ep_set_key(0x3E, 1); runMs(100); ep_set_key(0x3E, 0); runMs(std::atoi(argv[6]) * 1000);
   }

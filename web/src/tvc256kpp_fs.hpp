@@ -26,6 +26,12 @@ namespace TVC256kppFS {
   // PSRAM drive: (re)formats the first numBlocks x 4 kB blocks of the PSRAM
   bool formatPsramDrive(uint32_t numBlocks);
   void resetPsramDrive();             // power-on state: no PSRAM drive
+  // the card (re)boots: no PSRAM drive, no open files or directories, the
+  // flash drive's current directory is the root again
+  void powerOn();
+  // writes a file to the root of the PSRAM drive (name is lowercased like
+  // the card does), formatting a 4 MB drive first if there is none
+  bool putPsramFile(const char *name, const uint8_t *data, size_t size);
 
   // Executes one REG_USB_MSC_CMD command. ioRam is the 2 kB RAM at the end of
   // the IO ROM area ($D800-$DFFF): parameters at +$100, results at +$200.

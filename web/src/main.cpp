@@ -745,13 +745,36 @@ EMSCRIPTEN_KEEPALIVE int ep_load_tvc_card_flash(const char *path)
     return -1;
   }
   std::vector<unsigned char> buf;
-  unsigned char chunk[65536];
+  static unsigned char chunk[65536];   // not on the stack: 64 kB is the whole wasm stack
   size_t n;
   while ((n = std::fread(chunk, 1, sizeof(chunk), f)) > 0)
     buf.insert(buf.end(), chunk, chunk + n);
   std::fclose(f);
   if (!TVC256kpp::loadFlashImage(&buf[0], buf.size())) {
     lastError = "not a valid littlefs flash image";
+    return -1;
+  }
+  return 0;
+}
+
+// Copies a file of the virtual file system to the TVC256k++ card's PSRAM
+// drive (formatted first if needed) and makes that the card's current drive.
+// Returns 0 on success, -1 on error.
+EMSCRIPTEN_KEEPALIVE int ep_tvc_card_put_file(const char *name, const char *path)
+{
+  std::FILE *f = std::fopen(path, "rb");
+  if (!f) {
+    lastError = std::string("cannot open ") + path;
+    return -1;
+  }
+  std::vector<unsigned char> buf;
+  static unsigned char chunk[65536];   // not on the stack: 64 kB is the whole wasm stack
+  size_t n;
+  while ((n = std::fread(chunk, 1, sizeof(chunk), f)) > 0)
+    buf.insert(buf.end(), chunk, chunk + n);
+  std::fclose(f);
+  if (!TVC256kpp::putPsramFile(name, buf.empty() ? (const uint8_t *) "" : &buf[0], buf.size())) {
+    lastError = "the card's PSRAM drive is full";
     return -1;
   }
   return 0;

@@ -185,6 +185,21 @@ int main(int argc, char **argv)
   io[0x10] = 1;
   CHECK(TVC256kppFS::mscCommand(OPENDIR, io) == 0x83);
 
+  // a file copied to the PSRAM drive by the web page (formats the drive)
+  CHECK(TVC256kppFS::putPsramFile("Game.CAS", &expected[0], expected.size()));
+  io[0x10] = 1;
+  std::vector<std::string> pf = list("/");
+  CHECK(pf.size() == 1 && pf[0] == "game.cas");
+  // the card reboots (cold reset): flash drive back in the root directory
+  io[0x10] = 2;
+  std::memset(&io[0x100], 0, 0x600);
+  putStr(0x100, "games");
+  CHECK(TVC256kppFS::mscCommand(CHDIR, io) == 0);
+  TVC256kppFS::powerOn();
+  CHECK(TVC256kppFS::mscCommand(GETCWD, io) == 0 && getStr(0x200) == "/");
+  io[0x10] = 1;
+  CHECK(TVC256kppFS::mscCommand(OPENDIR, io) == 0x83);              // PSRAM drive gone
+
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

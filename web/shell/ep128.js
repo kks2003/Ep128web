@@ -227,6 +227,11 @@
 
   // value of the cassette device redirect ($0B05/$0B0D) that points at the
   // slot of a card, or 0 if the card is not installed
+  // device for the LOAD / RUN buttons: the TVC256k++ card if present, else FILE:
+  function defaultTvcLoadRedirect() {
+    return tvcSlotOf(SLOT_CARD256) >= 0 ? tvcRedirectFor(SLOT_CARD256) : tvcRedirectFor(SLOT_FILEIO);
+  }
+
   function tvcRedirectFor(card) {
     const slot = tvcSlotOf(card);
     return slot >= 0 ? (0x80 | slot) : 0;
@@ -729,7 +734,7 @@ registerProcessor('ep-output', EPOutput);
     return ev;
   }
 
-  function startAutostart(command, onTyped, isTvcTape = false, tvcRedirect) {
+  function startAutostart(command, onTyped, isTvcTape = false, tvcRedirect, prepare) {
     releaseAllKeys();
     api.reset(1);
     keyedSinceReset = false;
@@ -738,6 +743,8 @@ registerProcessor('ep-output', EPOutput);
       phase: machine.type === 1 ? 'basic' : 'boot',
       t: 0, phaseT: 0, dark: false, logo: 0, stable: 0,
       command, onTyped, events: null, wait: 0,
+      // called once after the reset, when BASIC is ready, before typing
+      prepare,
       isTvcTape: !!isTvcTape,
       // TVC: the cassette device redirect the loading command must use
       // (5: TAPE, 129: FILE: in slot 1), forced while the task types
@@ -786,6 +793,7 @@ registerProcessor('ep-output', EPOutput);
       a.last = v;
       if (a.stable >= 25 || phaseTime > 15e6) {
         a.phase = 'type';
+        if (a.prepare) a.prepare();
         applyTvcRedirect(a);
         // TVC BASIC ignores keys for about a second after the banner appears,
         // and then the first key: wait, and send an Enter first
@@ -1034,6 +1042,7 @@ registerProcessor('ep-output', EPOutput);
   function storeProgramFiles(files) {
     const startable = [];
     const stored = [];
+    lastStoredFiles = stored;
     for (const f of files) {
       let name = hostName(f.name);
       if (machine.type === 1 && !extOf(name)) name += '.cas';
@@ -1046,8 +1055,41 @@ registerProcessor('ep-output', EPOutput);
     return (startable.length === 0 && stored.length === 1) ? stored : startable;
   }
 
+  // the files of the last drop (in /files), copied to the TVC256k++ card's
+  // PSRAM drive when the card loads the program
+  let lastStoredFiles = [];
+
+  // TVC with the TVC256k++ card: the program and the files dropped with it go
+  // to the card's PSRAM drive and LOAD runs through the card, so the program
+  // sees the card (its drives, functions, graphics) like on the real machine
+  function startProgramOnCard(name) {
+    let base = name.replace(/\.cas$/i, '');
+    let files = lastStoredFiles.includes(name) ? lastStoredFiles.slice() : [name];
+    if (!isTypable(base, 1)) {
+      base = sanitizeName(base).replace(/\./g, '-') || 'program';
+      files.push(base + '.cas');
+      M.FS.writeFile('/files/' + base + '.cas', M.FS.readFile('/files/' + name));
+      listFiles();
+    }
+    const prepare = () => {
+      const failed = files.filter((f) => api.cardPutFile(f, '/files/' + f) !== 0);
+      if (failed.length)
+        setMessage('Nem fért a kártya PSRAM drive-jára: ' + failed.join(', '), true);
+    };
+    startAutostart('load "' + base + '"\n', null, false, tvcRedirectFor(SLOT_CARD256), prepare);
+  }
+
   function startProgram(name) {
     let cmd;
+    if (machine.type === 1 && tvcSlotOf(SLOT_CARD256) >= 0 && extOf(name) === 'cas') {
+      if (tapeName) {
+        api.setTape('');
+        tapeName = '';
+        $('tape-name').textContent = 'nincs kazetta';
+      }
+      startProgramOnCard(name);
+      return;
+    }
     if (machine.type === 1) {
       if (tvcSlotOf(SLOT_FILEIO) < 0) {
         setMessage('A .cas programokhoz tegyél FILE: kártyát egy bővítőportba (Bővítőportok)', true);
@@ -1090,7 +1132,9 @@ registerProcessor('ep-output', EPOutput);
     const desc = $('chooser-desc');
     const list = $('chooser-list');
     if (title) title.textContent = 'Melyik programot indítsam?';
-    if (desc) desc.textContent = 'Az összes fájl a FILE: eszközre került, így a program futás közben is betöltheti a többit.';
+    if (desc) desc.textContent = (machine.type === 1 && tvcSlotOf(SLOT_CARD256) >= 0)
+      ? 'Az összes fájl a TVC256k++ kártya PSRAM drive-jára kerül, így a program futás közben is betöltheti a többit.'
+      : 'Az összes fájl a FILE: eszközre került, így a program futás közben is betöltheti a többit.';
     list.textContent = '';
     for (const n of names) {
       const b = document.createElement('button');
@@ -1843,14 +1887,14 @@ registerProcessor('ep-output', EPOutput);
     $('btn-turbo').onclick = toggleTurbo;
     $('btn-load').onclick = () => {
       if (machine.type === 1)
-        setTvcRedirect(tapeName ? 5 : tvcRedirectFor(SLOT_FILEIO));
+        setTvcRedirect(tapeName ? 5 : defaultTvcLoadRedirect());
       typeText('load"*"\n');
       canvas.focus();
     };
     const btnRun = $('btn-run');
     if (btnRun) btnRun.onclick = () => {
       if (machine.type === 1)
-        setTvcRedirect(tapeName ? 5 : tvcRedirectFor(SLOT_FILEIO));
+        setTvcRedirect(tapeName ? 5 : defaultTvcLoadRedirect());
       typeText('run\n');
       canvas.focus();
     };
@@ -2039,7 +2083,11 @@ registerProcessor('ep-output', EPOutput);
   // --------------------------------------------------------------------------
 
   async function main() {
+    // the build id makes the browser fetch the new .wasm after an update
+    const buildMeta = document.querySelector('meta[name="build"]');
+    const buildV = buildMeta && !buildMeta.content.startsWith('__') ? buildMeta.content : '';
     M = await createEp128Module({
+      locateFile: (path, prefix) => prefix + path + (buildV ? '?v=' + buildV : ''),
       print: (s) => console.log(s),
       printErr: (s) => console.warn(s)
     });
@@ -2075,6 +2123,7 @@ registerProcessor('ep-output', EPOutput);
       unpackRoms: c('ep_unpack_rom_package', 'number', ['string', 'string']),
       setTvcSlot: c('ep_set_tvc_slot', null, ['number', 'number']),
       loadTvcCardFlash: c('ep_load_tvc_card_flash', 'number', ['string']),
+      cardPutFile: c('ep_tvc_card_put_file', 'number', ['string', 'string']),
       setTvcExtJoy: c('ep_set_tvc_ext_joy', null, ['number', 'number'])
     };
     for (const d of ['/roms', '/files', '/tmp', '/disk', '/tape']) ensureDir(d);

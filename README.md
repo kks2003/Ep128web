@@ -115,9 +115,12 @@ betölti.
 A [TVC256k++](https://github.com/dikdom/tvc256kplusplus) kártya bármelyik bővítőportba
 tehető; a parancssora BASIC-ből `EXT` + a port száma (pl. a 3-as portban `EXT 3`). Ha a
 legnagyobb sorszámú tároló-kártya, bootoláskor magára állítja a kazetta-átirányítást, így a
-`LOAD` és a CLI fájlparancsai a kártya meghajtóit használják. Egy `.cas` program automatikus
-indítása viszont a `FILE:` eszközre állítja át (hogy az utántöltés is onnan jöjjön); utána a
-kártya fájlparancsai („IO operation failed”) csak hideg reset után működnek újra.
+`LOAD` és a CLI fájlparancsai a kártya meghajtóit használják (USB nincs, ezért bootoláskor a
+flash drive lesz az aktív, mint a valódi kártyán). Ha a kártya be van dugva, a ráhúzott `.cas`
+fájlok (egy ZIP összes fájlja is) a kártya PSRAM drive-jára kerülnek (ha még nincs, 4 MB-os
+drive-ot formáz neki), az lesz az aktív meghajtó, és a `LOAD` a kártyán keresztül fut, így a
+program látja a kártyát, és a többi fájlt is onnan töltheti be. Hideg resetkor a kártya
+újraindul: a PSRAM drive megszűnik, a flash drive útvonala visszaáll a gyökérre.
 
 Állapot (3. lépés):
 
@@ -174,7 +177,7 @@ python3 test/native_card_test.py --roms ep128emu_roms-2.0.11.bin   # + a valódi
 git clone --recursive https://github.com/kks2003/Ep128web.git
 cd Ep128web
 source /path/to/emsdk/emsdk_env.sh   # Emscripten SDK (tesztelve: 6.0.11)
-./build.sh                           # eredmény: dist/
+./build.sh                           # eredmény: dist/ (a fejlécben a fordítás ideje és a commit)
 cd dist && python3 -m http.server 8000
 ```
 

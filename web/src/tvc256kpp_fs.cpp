@@ -7,6 +7,8 @@
 #include <vector>
 #include <cstring>
 #include <strings.h>
+#include <string>
+#include <cctype>
 
 extern "C" {
 uint8_t TVC_ROM[0x2000];
@@ -21,6 +23,9 @@ bool psram_drive_initialized = false;
 uint32_t free_psram_start = 0;
 // only referenced by copy_dir_to_psram() after USB checks that always fail
 lfs_t lfs_psram;
+// open file / directory handles of tvc-lfs.c
+extern bool lfs_file_in_use[4];
+extern bool lfs_dir_in_use[4];
 
 bool ends_with_cas(char *fileName)
 {
@@ -161,6 +166,37 @@ void resetPsramDrive()
   free_psram_start = 0;
   std::strcpy(psramDrive.wd, "/");
   TVC_ROM[0x1824] = 0;
+}
+
+void powerOn()
+{
+  resetPsramDrive();
+  for (int i = 0; i < 4; i++) {
+    lfs_file_in_use[i] = false;
+    lfs_dir_in_use[i] = false;
+  }
+  if (flashDrive.ok) {
+    // remounting forgets the files the TVC left open
+    lfs_unmount(&flashDrive.lfs);
+    flashDrive.ok = (lfs_mount(&flashDrive.lfs, &flashDrive.cfg) >= 0);
+  }
+  std::strcpy(flashDrive.wd, "/");
+}
+
+bool putPsramFile(const char *name, const uint8_t *data, size_t size)
+{
+  if (!psramDrive.ok && !formatPsramDrive(1024))
+    return false;
+  std::string path = "/";
+  for (const char *p = name; *p; p++)
+    path += char(std::tolower((unsigned char) *p));
+  lfs_file_t f;
+  if (lfs_file_open(&psramDrive.lfs, &f, path.c_str(),
+                    LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC) < 0)
+    return false;
+  bool ok = (lfs_file_write(&psramDrive.lfs, &f, data, lfs_size_t(size)) == lfs_ssize_t(size));
+  ok = (lfs_file_close(&psramDrive.lfs, &f) >= 0) && ok;
+  return ok;
 }
 
 }   // namespace TVC256kppFS
