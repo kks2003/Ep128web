@@ -287,16 +287,14 @@ int main()
   wr(c, 0x20, 0xC3, 9);
   CHECK(rd(c, 0x20, 0xC3) == 0);
 
-  // a warm reset keeps the card's state, a second one within a second
-  // (50 frames) reboots it (firmware: watchdog in reset_handler())
+  // a warm reset keeps the card's state, a cold one restarts the card
   c.reset(true);
-  for (int i = 0; i < 60; i++) c.videoVSync();
   CHECK(c.formatPsramDrive(32) && rd(c, 0x20, 0xC8) == 1);
   c.reset(false);
-  CHECK(rd(c, 0x20, 0xC8) == 1);                 // kept
-  for (int i = 0; i < 10; i++) c.videoVSync();
   c.reset(false);
-  CHECK(rd(c, 0x20, 0xC8) == 0);                 // rebooted: no PSRAM drive
+  CHECK(rd(c, 0x20, 0xC8) == 1);                 // kept
+  c.reset(true);
+  CHECK(rd(c, 0x20, 0xC8) == 0);                 // restarted: no PSRAM drive
 
   // cold reset restores power-up paging
   c.reset(true);

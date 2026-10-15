@@ -161,8 +161,8 @@ a PSRAM drive megszűnik, a flash drive útvonala visszaáll a gyökérre.
 - **egér**: a 🖱 gombbal (csak TVC-n, kártyával) a böngésző egere a kártya USB-egere lesz
   (relatív mozgás, három gomb, sebesség-regiszter); kilépés: Esc. Az első mozdulattól a
   `REG_USB_INIT` jelzi, hogy van egér;
-- **reset**: a TVC resetje a kártyán csak a grafikát állítja alaphelyzetbe; egy másodpercen
-  belüli második reset a kártyát is újraindítja, mint a firmware-ben (watchdog);
+- **reset**: a TVC resetje a kártyán csak a grafikát állítja alaphelyzetbe; a kártya teljes
+  újraindítását (a valódi gépen két reset egy másodpercen belül) a „Hideg reset” gomb adja;
 - **USB pendrive**: a TVC-nél megjelenő „USB pendrive (TVC256k++)” panelen bedugható egy
   FAT pendrive (32–256 MB) a kártya USB-portjába. A panel mutatja a tartalmát (mappák,
   méretek, szabad hely); fájl, mappa vagy ZIP (kibontva, mappastruktúrával) adható hozzá

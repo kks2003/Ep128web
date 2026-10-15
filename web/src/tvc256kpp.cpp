@@ -102,7 +102,7 @@ const uint8_t TVC256kpp::kFwMajor;
 const uint8_t TVC256kpp::kFwMinor;
 
 TVC256kpp::TVC256kpp()
-  : enabled_(false), slot_(1), border_(0), romPage_(0), framesSinceStart_(0),
+  : enabled_(false), slot_(1), border_(0), romPage_(0),
     ioRam_(&TVC_ROM[kRamOffset]), pagingCb_(0), pagingCbData_(0)
 {
   std::memset(TVC256kppFS::fastRam(), 0, TVC_RAM_SIZE);
@@ -169,11 +169,9 @@ void TVC256kpp::reset(bool cold)
   // Warm reset: the card keeps paging and memory contents, only the video
   // state is reinitialised (firmware: reset_handler()). Cold reset: full
   // re-init.
-  // The firmware's reset_handler() reboots the card (watchdog) when the
-  // reset comes within a second of the previous one (or of the start).
-  const bool reboot = cold || framesSinceStart_ < 50;
-  framesSinceStart_ = 0;
-  if (reboot) {
+  // (The firmware reboots the card on two resets within a second; on the
+  // web page the cold reset button stands for that.)
+  if (cold) {
     flushPsramBuffers();
     setDefaults();
     notifyPaging();
@@ -483,11 +481,8 @@ bool TVC256kpp::handleSlotROMWrite(uint16_t addr, uint16_t slotPaging,
 
 void TVC256kpp::videoVSync()
 {
-  if (enabled_) {
+  if (enabled_)
     card_gfx_vsync();
-    if (framesSinceStart_ < 0x7FFFFFFF)
-      framesSinceStart_++;
-  }
 }
 
 void TVC256kpp::videoLine(int paperStart)
