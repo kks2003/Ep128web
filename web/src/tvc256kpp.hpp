@@ -60,6 +60,18 @@ class TVC256kpp {
   uint8_t *psram()   { flushPsramBuffers(); return &psram_[0]; }
   uint8_t  borderColor() const { return border_; }
 
+  // Video overlay. videoVSync() at the start of each frame, then
+  // videoLine() for each line, with the position of the paper area in the
+  // 768 pixel wide line (or -1 if the line has no paper). Afterwards
+  // currentOverlay() returns the overlay of that line (768 bytes, $FF where
+  // the TVC's own picture is visible, TVC colour otherwise) or nullptr.
+  void videoVSync();
+  void videoLine(int paperStart);
+  static const uint8_t *currentOverlay() { return currentOverlay_; }
+  static void clearOverlay() { currentOverlay_ = (const uint8_t *) 0; }
+  // the card's /INT output (sprite collision interrupt)
+  bool irqActive() const;
+
   // Flash drive image (flash-root-*.bin, 15 MB littlefs). Shared by all
   // card instances; returns false if it is not a valid littlefs image.
   static bool loadFlashImage(const uint8_t *data, size_t size)
@@ -80,10 +92,12 @@ class TVC256kpp {
   uint8_t pageSel_[2];             // 0..15 fast page, 0x10/0x11 PSRAM, 0xFF off
   uint8_t psramHi_[2];
   int     psramCached_[2];         // PSRAM page held in the buffer, or -1
-  uint8_t ioRam_[0x800];           // 2 kB RAM at the end of the IO ROM area
+  uint8_t *ioRam_;                 // 2 kB RAM at the end of the IO ROM area
   std::vector<uint8_t> rom_;       // 2 x 6 kB
   std::vector<uint8_t> psram_;
-  std::vector<uint8_t> buf_[2];    // internal pages 16 / 17
+  uint8_t *buf_[2];                // internal pages 16 / 17 (PSRAM windows)
+  uint8_t overlay_[768];
+  static const uint8_t *currentOverlay_;
   void (*pagingCb_)(void *);
   void *pagingCbData_;
 
@@ -95,6 +109,7 @@ class TVC256kpp {
   void writebackBuffer(int i);
   void flushPsramBuffers();
   void notifyPaging() { if (pagingCb_) pagingCb_(pagingCbData_); }
+  void updateParamPages();
   void setDefaults();
   void reloadPsramBuffers();
 };

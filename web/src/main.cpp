@@ -165,6 +165,14 @@ namespace {
       int   y = ((curLine + 1) >> 1) - 1;
       if (y >= 0 && y < frameHeight) {
         decodeLine(&(lineBuf[0]), buf);
+        // TVC256k++ card: its overlay replaces the TVC's pixels
+        const uint8_t *ov = TVC256kpp::currentOverlay();
+        if (ov) {
+          for (int x = 0; x < frameWidth && x < 768; x++) {
+            if (ov[x] != 0xFF)
+              lineBuf[x] = ov[x];
+          }
+        }
         uint32_t  *p = &(backBuffer[size_t(y) * size_t(frameWidth)]);
         for (int x = 0; x < frameWidth; x++)
           p[x] = palette[lineBuf[x]];

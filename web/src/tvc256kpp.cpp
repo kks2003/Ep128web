@@ -2,16 +2,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "tvc256kpp.hpp"
+#include "card/card_shim.h"
+#include "card/tvc-card.h"
 #include <cstring>
 
 namespace {
   enum {
-    REG_SPRITE_FOREGROUND = 0x60,
-    REG_SPRITE_SP_COLLISION_LOW = 0x96,
-    REG_SPRITE_BG_COLLISION_HIGH = 0x99,
-    REG_SCREEN_BORDER_COLOR = 0xA7,
-    REG_SCREEN_Y = 0xA8,
-    REG_SCREEN_MAXY = 0xA9,
     REG_MEMORY_P2 = 0xB0,
     REG_MEMORY_P3 = 0xB1,
     REG_MEMORY_MAP_8M_P2_LOW = 0xB2,
@@ -20,13 +16,9 @@ namespace {
     REG_MEMORY_MAP_8M_P3_HIGH = 0xB5,
     REG_MEMORY_PSRAM_SIZE_IN_MB = 0xB6,
     REG_MEMORY_ROM_PAGE = 0xB7,
-    REG_FUNCTION_EXECUTE = 0xC0,
-    REG_FUNCTION_PARAM_START = 0xC1,
-    REG_FUNCTION_RESULT = 0xC2,
     REG_FW_VERSION_MAJOR = 0xC3,
     REG_FW_VERSION_MINOR = 0xC4,
     REG_DRIVE_SELECT = 0xC5,
-    REG_FUNCTION_MULTI_EXECUTE = 0xC6,
     REG_DRIVE_PSRAM_VALID = 0xC8,
     REG_DRIVE_FLASH_VALID = 0xC9,
     REG_DRIVE_DSK_VALID = 0xCA,
@@ -37,7 +29,24 @@ namespace {
   };
   const uint16_t kRamOffset = 0x1800;    // start of IO RAM in the 8 kB area
   const uint16_t kDriveSelectOffset = 0x1810;   // $D810, mirrors REG_DRIVE_SELECT
+
+  // registers handled by the firmware code in card/tvc-io-regs.c: sprites,
+  // screen, built-in functions
+  inline bool isFirmwareRegister(uint8_t r)
+  {
+    return (r < 0xB0 || r == 0xC0 || r == 0xC1 || r == 0xC2 || r == 0xC6
+            || r == 0xC7);
+  }
+
+  // overlay pixel (bit 4: transparent, bits 3..0: I R G B) to TVC colour
+  inline uint8_t overlayColor(uint8_t c)
+  {
+    return uint8_t(((c & 1) ? 0x01 : 0) | ((c & 2) ? 0x10 : 0)
+                   | ((c & 4) ? 0x04 : 0) | ((c & 8) ? 0x40 : 0));
+  }
 }
+
+const uint8_t *TVC256kpp::currentOverlay_ = (const uint8_t *) 0;
 
 const size_t TVC256kpp::kFastRamSize;
 const size_t TVC256kpp::kPsramSize;
@@ -49,12 +58,13 @@ const uint8_t TVC256kpp::kFwMinor;
 
 TVC256kpp::TVC256kpp()
   : enabled_(false), slot_(1), border_(0), romPage_(0),
-    pagingCb_(0), pagingCbData_(0)
+    ioRam_(&TVC_ROM[kRamOffset]), pagingCb_(0), pagingCbData_(0)
 {
-  std::memset(TVC256kppFS::fastRam(), 0, kFastRamSize);
+  std::memset(TVC256kppFS::fastRam(), 0, TVC_RAM_SIZE);
   psram_.assign(kPsramSize, 0);
-  buf_[0].assign(kPageSize, 0);
-  buf_[1].assign(kPageSize, 0);
+  // the PSRAM windows follow the fast RAM, as pages 16 and 17
+  buf_[0] = TVC256kppFS::fastRam() + kFastRamSize;
+  buf_[1] = buf_[0] + kPageSize;
   rom_.assign(2 * kRomPageSize, 0xFF);
   loadROM(tvc256kpp_rom_data, tvc256kpp_rom_size);
   TVC256kppFS::attachPsram(&psram_[0], uint32_t(kPsramSize >> 20));
@@ -93,12 +103,7 @@ bool TVC256kpp::loadROM(const uint8_t *data, size_t size)
 void TVC256kpp::setDefaults()
 {
   std::memset(regs_, 0, sizeof(regs_));
-  for (int i = 0; i < 16; i++)
-    regs_[REG_SPRITE_FOREGROUND + i] = 1;            // default: foreground
-  regs_[REG_SCREEN_MAXY] = 240;
   regs_[REG_USB_MOUSE_SPEED] = 0x10;
-  regs_[REG_FUNCTION_EXECUTE] = 0xFF;
-  regs_[REG_FUNCTION_MULTI_EXECUTE] = 0xFF;
   sel_[0] = sel_[1] = 0;
   inc_[0] = inc_[1] = 1;
   romPage_ = 0;
@@ -106,23 +111,26 @@ void TVC256kpp::setDefaults()
   pageSel_[1] = 5;                                   // U3: fast page 5
   psramHi_[0] = psramHi_[1] = 0;
   psramCached_[0] = psramCached_[1] = -1;
-  std::memset(ioRam_, 0, sizeof(ioRam_));
+  updateParamPages();
+  std::memset(ioRam_, 0, 0x800);
   TVC256kppFS::resetPsramDrive();         // power-on: no PSRAM drive
+  card_power_on();                        // graphics, functions
+  card_int_active = false;
+  currentOverlay_ = (const uint8_t *) 0;
 }
 
 void TVC256kpp::reset(bool cold)
 {
   // Warm reset: the card keeps paging and memory contents, only the video
-  // state is reinitialised (not emulated yet). Cold reset: full re-init.
+  // state is reinitialised (firmware: reset_handler()). Cold reset: full
+  // re-init.
   if (cold) {
     flushPsramBuffers();
     setDefaults();
     notifyPaging();
   }
   else {
-    for (int i = 0; i < 16; i++)
-      regs_[REG_SPRITE_FOREGROUND + i] = 1;
-    regs_[REG_SCREEN_MAXY] = 240;
+    card_reset();
   }
 }
 
@@ -139,21 +147,30 @@ uint8_t *TVC256kpp::getPage(int i)
   if (s < 16)
     return TVC256kppFS::fastRam() + size_t(s) * kPageSize;
   if (s == 0x10 || s == 0x11)
-    return &buf_[s & 1][0];
+    return buf_[s & 1];
   return (uint8_t *) 0;
 }
 
 void TVC256kpp::selectFast(int i, uint8_t v)
 {
   pageSel_[i] = (v == 0xFF ? uint8_t(0xFF) : uint8_t(v & 0x0F));
+  updateParamPages();
   notifyPaging();
+}
+
+void TVC256kpp::updateParamPages()
+{
+  // the built-in functions find their parameters in the page mapped to U2
+  // or U3: 0..15 fast RAM, 16/17 PSRAM window, 255 none
+  currentP2 = pageSel_[0];
+  currentP3 = pageSel_[1];
 }
 
 void TVC256kpp::writebackBuffer(int i)
 {
   if (psramCached_[i] >= 0) {
     std::memcpy(&psram_[size_t(psramCached_[i]) * kPageSize],
-                &buf_[i][0], kPageSize);
+                buf_[i], kPageSize);
   }
 }
 
@@ -167,7 +184,7 @@ void TVC256kpp::reloadPsramBuffers()
 {
   for (int i = 0; i < 2; i++) {
     if (psramCached_[i] >= 0)
-      std::memcpy(&buf_[i][0], &psram_[size_t(psramCached_[i]) * kPageSize], kPageSize);
+      std::memcpy(buf_[i], &psram_[size_t(psramCached_[i]) * kPageSize], kPageSize);
   }
 }
 
@@ -190,10 +207,11 @@ void TVC256kpp::mapPsram(int i)
     // never keep one PSRAM page in two buffers
     if (psramCached_[i ^ 1] == page)
       writebackBuffer(i ^ 1);
-    std::memcpy(&buf_[i][0], &psram_[size_t(page) * kPageSize], kPageSize);
+    std::memcpy(buf_[i], &psram_[size_t(page) * kPageSize], kPageSize);
     psramCached_[i] = page;
   }
   pageSel_[i] = uint8_t(0x10 + i);
+  updateParamPages();
   notifyPaging();
 }
 
@@ -202,6 +220,8 @@ void TVC256kpp::mapPsram(int i)
 
 uint8_t TVC256kpp::regRead(uint8_t r)
 {
+  if (isFirmwareRegister(r))
+    return card_reg_read(r);
   switch (r) {
   case REG_MEMORY_P2:
     return pageSel_[0];
@@ -226,11 +246,6 @@ uint8_t TVC256kpp::regRead(uint8_t r)
   default:
     break;
   }
-  if (r >= REG_SPRITE_SP_COLLISION_LOW && r <= REG_SPRITE_BG_COLLISION_HIGH) {
-    uint8_t v = regs_[r];                  // collision registers clear on read
-    regs_[r] = 0;
-    return v;
-  }
   if (r == 0xD2 || r == 0xD3) {            // mouse DX, DY clear on read
     uint8_t v = regs_[r];
     regs_[r] = 0;
@@ -241,6 +256,10 @@ uint8_t TVC256kpp::regRead(uint8_t r)
 
 void TVC256kpp::regWrite(uint8_t r, uint8_t v)
 {
+  if (isFirmwareRegister(r)) {
+    card_reg_write(r, v);
+    return;
+  }
   switch (r) {
   case REG_MEMORY_P2:
     selectFast(0, v);
@@ -268,20 +287,12 @@ void TVC256kpp::regWrite(uint8_t r, uint8_t v)
     if (v <= 1)
       romPage_ = v;                        // values above 1 are ignored
     return;
-  case REG_FUNCTION_EXECUTE:
-  case REG_FUNCTION_MULTI_EXECUTE:
-    // built-in functions are not implemented yet: report an error code
-    regs_[REG_FUNCTION_RESULT] = 0xFE;
-    regs_[r] = 0xFF;                       // "executed"
-    return;
   case REG_DRIVE_SELECT:
     regs_[r] = v & 3;
     ioRam_[kDriveSelectOffset - kRamOffset] = regs_[r];
     return;
   // read-only registers
-  case REG_SCREEN_Y:
   case REG_MEMORY_PSRAM_SIZE_IN_MB:
-  case REG_FUNCTION_RESULT:
   case REG_FW_VERSION_MAJOR:
   case REG_FW_VERSION_MINOR:
   case REG_USB_INIT:
@@ -301,8 +312,6 @@ void TVC256kpp::regWrite(uint8_t r, uint8_t v)
   default:
     break;
   }
-  if (r >= REG_SPRITE_SP_COLLISION_LOW && r <= REG_SPRITE_BG_COLLISION_HIGH)
-    return;                                // collision state is read-only
   regs_[r] = v;
 }
 
@@ -338,6 +347,7 @@ bool TVC256kpp::handleWrite(uint16_t port, uint8_t value)
     return false;
   if (port == 0x00) {                      // the card watches the border colour
     border_ = value;
+    card_border_write(value);
     return false;                          // the TVC still handles it
   }
   int d = int(port) - baseSlotPort();
@@ -392,4 +402,42 @@ bool TVC256kpp::handleSlotROMWrite(uint16_t addr, uint16_t slotPaging,
       regs_[REG_DRIVE_SELECT] = val & 3;
   }
   return true;                             // writes to the ROM area are ignored
+}
+
+// ---------------------------------------------------------------------------
+// video overlay
+
+void TVC256kpp::videoVSync()
+{
+  if (enabled_)
+    card_gfx_vsync();
+}
+
+void TVC256kpp::videoLine(int paperStart)
+{
+  currentOverlay_ = (const uint8_t *) 0;
+  if (!enabled_ || paperStart < 0)
+    return;
+  const uint8_t *p = card_gfx_line();
+  if (!p)
+    return;
+  // one overlay pixel (6.25 MHz) is two pixels of the 768 pixel wide line
+  bool visible = false;
+  std::memset(overlay_, 0xFF, sizeof(overlay_));
+  for (int i = 0; i < 256; i++) {
+    int x = paperStart + i * 2;
+    if (x + 1 >= int(sizeof(overlay_)))
+      break;
+    if (!(p[i] & 0x10)) {
+      overlay_[x] = overlay_[x + 1] = overlayColor(p[i]);
+      visible = true;
+    }
+  }
+  if (visible)
+    currentOverlay_ = overlay_;
+}
+
+bool TVC256kpp::irqActive() const
+{
+  return enabled_ && card_int_active;
 }

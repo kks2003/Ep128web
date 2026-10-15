@@ -119,7 +119,7 @@ legnagyobb sorszámú tároló-kártya, bootoláskor magára állítja a kazetta
 indítása viszont a `FILE:` eszközre állítja át (hogy az utántöltés is onnan jöjjön); utána a
 kártya fájlparancsai („IO operation failed”) csak hideg reset után működnek újra.
 
-Állapot (2. lépés):
+Állapot (3. lépés):
 
 - megvalósítva: a kártya IO portjai és regiszterfájlja (két port-készlet, automatikus
   növelés), 256 kB gyors RAM és 8 MB PSRAM lapozása az U2/U3 területen, az IO ROM
@@ -131,15 +131,33 @@ kártya fájlparancsai („IO operation failed”) csak hideg reset után műkö
   A flash drive képét (`flash-root-*.bin`, vagy a `flash-root-*-bin.zip`) ráejtheted az
   oldalra; a böngésző megjegyzi. Utána `EXT <port>` → `DS`, `DIR`, `CD games`, `X`, majd
   `LOAD "aircraft"`, `RUN`;
-- a PSRAM drive alapja is megvan (littlefs a PSRAM-ban), de formázni egyelőre nem lehet
-  (`LCDSR` USB-t igényel);
-- még nincs: USB és DSK drive, a beépített függvények (`REG_FUNCTION_EXECUTE`, ezek kellenek
-  a launcherhez is), sprite-ok és grafikai overlay, vSID, egér, állapotmentés. A `$C0`/`$C6`
-  függvényhívások hibakóddal térnek vissza.
+- **grafika**: a firmware rajzoló kódja (`tvc-graphics.c`) soronként kiszámolja a 256×240-es
+  overlay-t, amit az emulátor a TVC képére rak (a papír területére, a TVC VSYNC/BORDER
+  jeleihez igazítva, mint a kártya). Megy mind a négy mód (üres, 2 színű és 16 színű
+  karakteres, 16 színű bitmap), a 16 sprite (2/16 szín, előtér/háttér), a 0–7 pixeles
+  görgetés kerettel, a keretszín, a sprite–sprite és sprite–háttér ütközés, és az ütközési
+  megszakítás (a TVC adott porthoz tartozó IT-bitjén, ha a program engedélyezte).
+  Bekapcsoláskor a gyors RAM-ban ott van a firmware fontja (`$1000`), háttérképe (`$8000`)
+  és mintasprite-jai, ahogy a valódi kártyán; TVC reset kikapcsolja az overlay-t;
+- **beépített függvények**: `REG_FUNCTION_EXECUTE` (`$C0`) és a több függvényt egymás után
+  futtató `REG_FUNCTION_MULTI_EXECUTE` (`$C6`) a firmware saját `tvc-routines.c` kódjával
+  fut: szövegkiírás, színek, pont/vonal/téglalap/ellipszis/háromszög, kitöltés,
+  képmásolás, memóriamozgatás (gyors RAM és PSRAM), zx7 kicsomagolás, sprite-tükrözés,
+  matematikai kifejezés, PSRAM drive létrehozás/törlés, fájlműveletek a PSRAM és flash
+  drive-on. A hívás azonnal lefut, a regiszter visszaolvasva már `$FF` („kész”).
+  Három nyilvánvaló firmware-hibát javítottam (a forrásban `Ep128web:` megjegyzéssel): a
+  PSRAM drive létrehozása (34) és a szabad PSRAM-pozíció lekérdezése (35) a paraméter helyett
+  a mutatót olvasta/írta, a függvényes fájlírás (`$84`) pedig fordított irányban másolt;
+- a PSRAM drive a 34-es függvénnyel létrehozható; az `LCDSR` (mappa másolása a PSRAM-ba)
+  USB-t igényel, ez nem megy;
+- még nincs: USB és DSK drive, vSID hang, egér, állapotmentés.
 
 A kártya IO ROM-ját a `scripts/extract_card_rom.py` állítja elő a firmware
 `TVC-IO-v0.24.uf2` fájljából (`web/src/tvc256kpp_rom.cpp`). A Z80-oldali viselkedés
-az ep128emu-ba a `patches/tvc256kpp.patch` segítségével kerül be.
+az ep128emu-ba a `patches/tvc256kpp.patch` segítségével kerül be, az overlay
+megjelenítése a `patches/zzz-tvc256kpp-overlay.patch` segítségével. A gyors RAM bekapcsoláskori
+tartalmát (font, háttérkép) a `scripts/gen_card_data.py` készíti a kártya repójából
+(`web/src/card/tvc-card-data.c`).
 
 Tesztek (nem kellenek hozzájuk a TVC ROM-ok):
 

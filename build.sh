@@ -67,6 +67,11 @@ SOURCES="
   web/src/tvc256kpp_rom.cpp
   web/src/tvc256kpp_fs.cpp
   web/src/card/tvc-lfs.c
+  web/src/card/tvc-graphics.c
+  web/src/card/tvc-routines.c
+  web/src/card/tvc-io-regs.c
+  web/src/card/tvc-card-data.c
+  web/src/card/zx7Compress.c
   web/src/card/littlefs/lfs.c
   web/src/card/littlefs/lfs_util.c
   web/src/soundio_web.cpp

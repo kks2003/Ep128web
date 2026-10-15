@@ -26,6 +26,113 @@ static int rd(TVC256kpp &c, int base, int reg)
   return v;
 }
 
+// fast RAM address of the function parameter area (REG_FUNCTION_PARAM_START
+// = 0, U2 = fast page 4)
+static uint8_t *params(TVC256kpp &c) { return c.fastRam() + 4 * 0x4000; }
+
+static int call(TVC256kpp &c, int func)
+{
+  wr(c, 0x20, 0xC1, 0);
+  wr(c, 0x20, 0xC0, func);
+  CHECK(rd(c, 0x20, 0xC0) == 0xFF);
+  return rd(c, 0x20, 0xC2);
+}
+
+// runs a frame up to line n (0: first paper line) and returns its overlay
+static const uint8_t *overlayLine(TVC256kpp &c, int n, int paperStart = 0)
+{
+  c.videoVSync();
+  for (int i = 0; i < n; i++)
+    c.videoLine(paperStart);
+  c.videoLine(paperStart);
+  return TVC256kpp::currentOverlay();
+}
+
+static void graphicsChecks(TVC256kpp &c)
+{
+  uint8_t *ram = c.fastRam();
+  // power-on: font at $1000, screen RAM $0400 cleared, no overlay
+  CHECK(rd(c, 0x20, 0xA3) == 2 && rd(c, 0x20, 0xA1) == 1);
+  CHECK(ram[0x400] == 0x20 && ram[0x800] == 0x0F);
+  CHECK(overlayLine(c, 0) == 0);
+  CHECK(rd(c, 0x20, 0xA9) == 240);
+  // print_string_ascii: "AB" -> screen codes 1, 2 in text colour 3
+  params(c)[0] = 3;
+  CHECK(call(c, 8) == 0);                       // set_text_color
+  std::strcpy((char *) params(c), "AB");
+  CHECK(call(c, 6) == 0);
+  CHECK(ram[0x400] == 1 && ram[0x401] == 2 && ram[0x800] == 3);
+  params(c)[0] = 0xFF;
+  CHECK(call(c, 9) == 0 && params(c)[0] == 2 && params(c)[1] == 0);   // get_xy
+  // 2 colour text mode: the 'A' glyph in colour 3 on the first line
+  wr(c, 0x20, 0xA0, 1);
+  const uint8_t *ov = overlayLine(c, 1, 100);   // glyph row 1
+  CHECK(ov != 0);
+  if (ov) {
+    uint8_t g = ram[0x1000 + 1 * 8 + 1];
+    int px = 0;
+    while (px < 8 && !(g & (0x80 >> px)))
+      px++;
+    CHECK(px < 8 && ov[100 + px * 2] == 0x11 && ov[100 + px * 2 + 1] == 0x11);
+    CHECK(ov[99] == 0xFF);                      // left of the paper
+  }
+  // bitmap mode: clear (transparent), then one dot
+  wr(c, 0x20, 0xA0, 3);
+  CHECK(call(c, 1) == 0 && ram[0x8000] == 0x88);
+  CHECK(overlayLine(c, 0) == 0);
+  params(c)[0] = 0x0C;
+  CHECK(call(c, 22) == 0);                      // set_pen_color
+  params(c)[0] = 10; params(c)[1] = 5;
+  CHECK(call(c, 24) == 0);                      // set_dot_color (10, 5)
+  CHECK(ram[0x8000 + 5 * 128 + 5] == 0xC8);
+  ov = overlayLine(c, 5, 8);
+  CHECK(ov && ov[8 + 20] == 0x44 && ov[8 + 21] == 0x44 && ov[8 + 22] == 0xFF);
+  // multi execute: set_text_color(5), set_xy(4, 2), get_xy
+  uint8_t prg[] = { 8, 5, 10, 4, 2, 9, 0, 0 };
+  std::memcpy(params(c), prg, sizeof(prg));
+  wr(c, 0x20, 0xC1, 0);
+  wr(c, 0x20, 0xC6, 3);
+  CHECK(rd(c, 0x20, 0xC6) == 0xFF && rd(c, 0x20, 0xC2) == 0);
+  CHECK(params(c)[6] == 4 && params(c)[7] == 2);
+  // a failing function stops the list: result = its index, code at [0]
+  uint8_t prg2[] = { 8, 1, 0x7F };
+  std::memcpy(params(c), prg2, sizeof(prg2));
+  wr(c, 0x20, 0xC6, 2);
+  CHECK(rd(c, 0x20, 0xC2) == 0x82);
+  // sprites: two 2 colour balloons (data at fast RAM 0) at the top left,
+  // overlapping -> sprite-sprite collision
+  wr(c, 0x20, 0xA0, 0);
+  wr(c, 0x20, 0x94, 0);                         // colour mode: 2 colours
+  for (int i = 0; i < 2; i++) {
+    wr(c, 0x20, 0x00 + i * 2, 24 + i * 4); wr(c, 0x20, 0x01 + i * 2, 0);
+    wr(c, 0x20, 0x20 + i * 2, 21);         wr(c, 0x20, 0x21 + i * 2, 0);
+    wr(c, 0x20, 0x40 + i, 15);
+    wr(c, 0x20, 0x50 + i, 0);
+  }
+  wr(c, 0x20, 0x90, 3);                         // enable sprites 0 and 1
+  CHECK(rd(c, 0x20, 0x90) == 3 && rd(c, 0x20, 0x70) == 1);
+  ov = overlayLine(c, 1);                       // balloon row 1: 01 FF C0
+  CHECK(ov && ov[6 * 2] == 0xFF && ov[7 * 2] == 0x55 && ov[(7 + 4) * 2] == 0x55);
+  CHECK(rd(c, 0x20, 0x96) == 3);                // collision, cleared on read
+  CHECK(rd(c, 0x20, 0x96) == 0);
+  // collision interrupt at the end of the frame
+  wr(c, 0x20, 0x9A, 3);
+  overlayLine(c, 239);
+  CHECK(c.irqActive());
+  rd(c, 0x20, 0x96);
+  CHECK(!c.irqActive());
+  // warm reset switches the overlay off
+  c.reset(false);
+  CHECK(rd(c, 0x20, 0x90) == 0 && overlayLine(c, 1) == 0);
+  // the TVC border colour (port $00, bits 7531 = IGRB) used by the scroll border
+  c.handleWrite(0x00, 0x2A);                    // G, R, B
+  CHECK(rd(c, 0x20, 0xA7) == 7);
+  wr(c, 0x20, 0xA5, 0x80);
+  ov = overlayLine(c, 10, 0);
+  CHECK(ov && ov[0] == 0x15 && ov[15] == 0x15 && ov[16] == 0xFF);
+  wr(c, 0x20, 0xA5, 0);
+}
+
 int main()
 {
   TVC256kpp c;
@@ -70,6 +177,7 @@ int main()
 
   // power-up paging: U2 = fast page 4, U3 = fast page 5
   CHECK(rd(c, 0x20, 0xB0) == 4 && rd(c, 0x20, 0xB1) == 5);
+  graphicsChecks(c);
   CHECK(c.getPage(0) == c.fastRam() + 4 * 0x4000);
   CHECK(c.getPage(1) == c.fastRam() + 5 * 0x4000);
   CHECK(rd(c, 0x20, 0xB6) == 8);                 // PSRAM size in MB
@@ -137,9 +245,9 @@ int main()
   c.handleSlotROMRead(0xD810, 0x4000, v); CHECK(v == 2);
   c.handleSlotROMWrite(0xD810, 0x4000, 1);
   CHECK(rd(c, 0x20, 0xC5) == 1);
-  // unimplemented function call reports error and "done"
-  wr(c, 0x20, 0xC0, 0x19);
-  CHECK(rd(c, 0x20, 0xC0) == 0xFF && rd(c, 0x20, 0xC2) != 0);
+  // unknown function code: error result and "done"
+  wr(c, 0x20, 0xC0, 0x7F);
+  CHECK(rd(c, 0x20, 0xC0) == 0xFF && rd(c, 0x20, 0xC2) == 0xFF);
   // border colour is snooped but not consumed
   CHECK(!c.handleWrite(0x00, 0x05) && c.borderColor() == 5);
   // read-only registers
@@ -149,6 +257,7 @@ int main()
   // cold reset restores power-up paging
   c.reset(true);
   CHECK(rd(c, 0x20, 0xB0) == 4 && rd(c, 0x20, 0xB1) == 5);
+  graphicsChecks(c);
   // slot 3 -> base $40
   c.setSlot(3);
   CHECK(c.handleRead(0x40, v) && !c.handleRead(0x20, v));

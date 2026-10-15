@@ -10,9 +10,17 @@
 
 extern "C" {
 uint8_t TVC_ROM[0x2000];
-uint8_t TVC_RAM[0x40000];
+// fast RAM + PSRAM windows; the extra space keeps the firmware routines'
+// unchecked addressing (e.g. base registers + offsets) inside the array
+uint8_t TVC_RAM[TVC_RAM_SIZE + 0x20000];
 uint8_t *psram_array = 0;
 uint32_t psram_size_mb = 8;
+
+// PSRAM drive state used by the card's built-in functions (tvc-routines.c)
+bool psram_drive_initialized = false;
+uint32_t free_psram_start = 0;
+// only referenced by copy_dir_to_psram() after USB checks that always fail
+lfs_t lfs_psram;
 
 bool ends_with_cas(char *fileName)
 {
@@ -135,6 +143,12 @@ bool formatPsramDrive(uint32_t numBlocks)
   psramDrive.ok = (lfs_mount(&psramDrive.lfs, &psramDrive.cfg) >= 0);
   std::strcpy(psramDrive.wd, "/");
   TVC_ROM[0x1824] = psramDrive.ok ? 1 : 0;
+  psram_drive_initialized = psramDrive.ok;
+  if (psramDrive.ok) {
+    // tvc-lfs-psram.c: first byte of the PSRAM after the drive
+    free_psram_start = (size_t(numBlocks) * kBlockSize < size_t(psram_size_mb) * 1024 * 1024
+                        ? numBlocks * kBlockSize : 0x00FFFFFFU);
+  }
   return psramDrive.ok;
 }
 
@@ -143,14 +157,26 @@ void resetPsramDrive()
   if (psramDrive.ok)
     lfs_unmount(&psramDrive.lfs);
   psramDrive.ok = false;
+  psram_drive_initialized = false;
+  free_psram_start = 0;
   std::strcpy(psramDrive.wd, "/");
   TVC_ROM[0x1824] = 0;
 }
 
-uint8_t mscCommand(uint8_t cmd, uint8_t *ioRam)
+}   // namespace TVC256kppFS
+
+namespace {
+
+// Runs one drive command on the parameters in TVC_ROM ($D900 / $DA00).
+// drive: 0 = USB, 1 = PSRAM, 2 = flash, 3 = DSK
+uint8_t driveCommand(uint8_t drive, uint8_t cmd)
 {
-  std::memcpy(&TVC_ROM[0x1800], ioRam, 0x800);
-  const uint8_t drive = TVC_ROM[0x1810];
+  if (psramDrive.ok && !psram_drive_initialized) {
+    // delete_psram_drive() (built-in function 36) dropped the drive
+    lfs_unmount(&psramDrive.lfs);
+    psramDrive.ok = false;
+    std::strcpy(psramDrive.wd, "/");
+  }
   Drive *d = (drive == 1 ? &psramDrive : (drive == 2 ? &flashDrive : (Drive *) 0));
   const bool isFlash = (d == &flashDrive);
   uint8_t fres = 0xFF;
@@ -189,7 +215,50 @@ uint8_t mscCommand(uint8_t cmd, uint8_t *ioRam)
     if (cmd == 0x03) statReadBytes += uint32_t(TVC_ROM[0x1a00]) | (uint32_t(TVC_ROM[0x1a01]) << 8);
     if (cmd == 0x09) statReadBytes += uint32_t(TVC_ROM[0x1a04]) | (uint32_t(TVC_ROM[0x1a05]) << 8) | (uint32_t(TVC_ROM[0x1a06]) << 16);
   }
-  std::memcpy(ioRam, &TVC_ROM[0x1800], 0x800);
+  return fres;
+}
+
+}   // namespace
+
+// the drive functions that the card's built-in functions call
+#define CARD_LFS_DEF(op, cmd) \
+  extern "C" uint8_t tvc_lfs_psram_##op(void) { return driveCommand(1, cmd); } \
+  extern "C" uint8_t tvc_lfs_flash_##op(void) { return driveCommand(2, cmd); }
+CARD_LFS_DEF(file_open, 0x01)
+CARD_LFS_DEF(file_close, 0x02)
+CARD_LFS_DEF(file_read, 0x03)
+CARD_LFS_DEF(file_write, 0x04)
+CARD_LFS_DEF(dir_open, 0x05)
+CARD_LFS_DEF(dir_close, 0x06)
+CARD_LFS_DEF(dir_read, 0x07)
+CARD_LFS_DEF(file_write_source, 0x08)
+CARD_LFS_DEF(file_read_dest, 0x09)
+CARD_LFS_DEF(file_seek, 0x0A)
+CARD_LFS_DEF(getcwd, 0x0B)
+CARD_LFS_DEF(chdir, 0x0C)
+CARD_LFS_DEF(mkdir, 0x0D)
+CARD_LFS_DEF(delete, 0x0E)
+CARD_LFS_DEF(rename, 0x0F)
+CARD_LFS_DEF(getstat, 0x10)
+CARD_LFS_DEF(sync, 0x11)
+CARD_LFS_DEF(mount_dsk, 0x12)
+CARD_LFS_DEF(unmount_dsk, 0x13)
+#undef CARD_LFS_DEF
+
+extern "C" int psram_drive_init(uint32_t num_of_blocks)
+{
+  return TVC256kppFS::formatPsramDrive(num_of_blocks) ? 0 : -1;
+}
+
+namespace TVC256kppFS {
+
+uint8_t mscCommand(uint8_t cmd, uint8_t *ioRam)
+{
+  if (ioRam != &TVC_ROM[0x1800])
+    std::memcpy(&TVC_ROM[0x1800], ioRam, 0x800);
+  uint8_t fres = driveCommand(TVC_ROM[0x1810], cmd);
+  if (ioRam != &TVC_ROM[0x1800])
+    std::memcpy(ioRam, &TVC_ROM[0x1800], 0x800);
   return (fres == FR_OK) ? 0 : uint8_t(fres | 0x80);
 }
 

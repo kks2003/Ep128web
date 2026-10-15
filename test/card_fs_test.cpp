@@ -2,6 +2,8 @@
 // Z80 code: the parameters are placed into the 2 kB IO RAM the same way the
 // card's ROM does it. Usage: card_fs_test flash-root.bin launcher.cas
 #include "tvc256kpp_fs.hpp"
+#include "card/card_shim.h"
+#include "card/tvc-card.h"
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -124,6 +126,51 @@ int main(int argc, char **argv)
   io[0x10] = 0;                                                       // USB drive: none
   CHECK(TVC256kppFS::mscCommand(OPENDIR, io) == 0x83);                // FR_NOT_READY
   io[0x10] = 1;                                                       // PSRAM drive: not formatted
+  CHECK(TVC256kppFS::mscCommand(OPENDIR, io) == 0x83);
+
+  // the same through the card's built-in functions (REG_FUNCTION_EXECUTE),
+  // parameters in fast RAM page 4 (U2)
+  card_power_on();
+  currentP2 = 4;
+  uint8_t *par = &TVC_RAM[4 * 0x4000];
+  auto func = [&](int f) { card_reg_write(0xC1, 0); card_reg_write(0xC0, uint8_t(f));
+                           CHECK(card_reg_read(0xC0) == 0xFF); return card_reg_read(0xC2); };
+  TVC_ROM[0x1810] = 2;                                                // flash
+  par[0] = 1; par[1] = '/';
+  CHECK(func(0x8C) == 0);                                             // chdir back to the root
+  par[0] = 0x01; par[1] = 0x11; par[2] = 8; std::memcpy(&par[3], "launcher", 8);
+  CHECK(func(0x81) == 0);                                             // open file
+  CHECK(par[8] == 12 && std::memcmp(&par[9], "launcher.cas", 12) == 0);
+  uint32_t fsize = par[4] | (par[5] << 8) | (par[6] << 16);
+  CHECK(fsize == expected.size() - 128);
+  uint8_t fh[4]; std::memcpy(fh, par, 4);
+  par[4] = 100; par[5] = 0;
+  CHECK(func(0x83) == 0);                                             // read 100 bytes
+  CHECK((par[4] | (par[5] << 8)) == 100 && std::memcmp(&par[6], &expected[128], 100) == 0);
+  std::memcpy(par, fh, 4);
+  CHECK(func(0x82) == 0);                                             // close
+  // PSRAM drive from a function: create (34), position after it (35), delete (36)
+  par[0] = 32; par[1] = 0;
+  CHECK(func(34) == 0 && TVC_ROM[0x1824] == 1);
+  std::memset(par, 0, 4);
+  CHECK(func(35) == 0 && (par[0] | (par[1] << 8) | (par[2] << 16)) == 32 * 4096);
+  // write a file on it and read it back (functions 0x81, 0x84, 0x82, 0x83)
+  TVC_ROM[0x1810] = 1;
+  par[0] = 0x0B; par[1] = 0x01; par[2] = 5; std::memcpy(&par[3], "x.bin", 5);   // the firmware needs FA_READ
+  CHECK(func(0x81) == 0);
+  std::memcpy(fh, par, 4);
+  par[4] = 5; par[5] = 0; std::memcpy(&par[6], "HELLO", 5);
+  CHECK(func(0x84) == 0);
+  std::memcpy(par, fh, 4);
+  CHECK(func(0x82) == 0);
+  par[0] = 0x01; par[1] = 0x01; par[2] = 5; std::memcpy(&par[3], "x.bin", 5);
+  CHECK(func(0x81) == 0 && par[4] == 5);
+  par[4] = 16; par[5] = 0;
+  CHECK(func(0x83) == 0 && par[4] == 5 && std::memcmp(&par[6], "HELLO", 5) == 0);
+  std::memcpy(par, fh, 4);
+  CHECK(func(0x82) == 0);
+  CHECK(func(36) == 0 && TVC_ROM[0x1824] == 0);
+  io[0x10] = 1;
   CHECK(TVC256kppFS::mscCommand(OPENDIR, io) == 0x83);
 
   // PSRAM drive: format, then make a directory and see it
