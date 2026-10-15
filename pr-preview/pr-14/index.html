@@ -6,13 +6,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610151846-a8ebe8d">
-<meta name="build" content="202610151846-a8ebe8d">
+<link rel="stylesheet" href="style.css?v=202610151857-21630ce">
+<meta name="build" content="202610151857-21630ce">
 </head>
 <body>
-<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #14 előnézete, nem az éles oldal · fordítva: 2026.10.15 20:46 · a8ebe8d · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #14 előnézete, nem az éles oldal · fordítva: 2026.10.15 20:57 · 21630ce · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.15 20:46 · a8ebe8d</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.15 20:57 · 21630ce</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -139,6 +139,8 @@
       <label class="slot">Port 3 <select id="tvc-slot3"></select></label>
       <button id="tvc-slots-apply" title="A kártyák betöltése és hideg újraindítás">Portok betöltése, újraindítás</button>
       <button id="tvc-slots-default" title="FILE:, VT-DOS, GameCard, üres (betöltés a gombbal)">Alapbeállítás</button>
+      <label class="slot" title="Üres, FAT formátumú pendrive a TVC256k++ kártya USB-portjában: bootoláskor ez lesz az aktív meghajtó, és a ráhúzott fájlok erre kerülnek">
+        <input type="checkbox" id="tvc-usb"> USB pendrive (16 MB) a TVC256k++-on</label>
       <span class="name" id="tvc-slots-note"></span>
       <span class="name">A VT-DOS, a FILE: és a TVC256k++ közül a legnagyobb sorszámú portban lévő lesz
         az alapértelmezett tároló; a parancssoruk csak így működik. VT-DOS: <code>EXT 2</code>,
@@ -212,7 +214,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610151846-a8ebe8d"></script>
-<script src="ep128.js?v=202610151846-a8ebe8d"></script>
+<script src="ep128emu.js?v=202610151857-21630ce"></script>
+<script src="ep128.js?v=202610151857-21630ce"></script>
 </body>
 </html>
