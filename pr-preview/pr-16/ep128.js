@@ -2091,7 +2091,7 @@ registerProcessor('ep-output', EPOutput);
       typeText(inp.value + '\n');
       inp.value = '';
     });
-    $('tb-full').onclick = toggleFullscreen;
+    $('tb-full').onclick = () => { toggleFullscreen(); canvas.focus(); };
   }
 
   function toggleFullscreen() {
@@ -2462,7 +2462,6 @@ registerProcessor('ep-output', EPOutput);
       typeText('run\n');
       canvas.focus();
     };
-    $('btn-full').onclick = () => { toggleFullscreen(); canvas.focus(); };
     setupMouse();
     setupUsbUI();
     $('btn-snap').onclick = () => {
