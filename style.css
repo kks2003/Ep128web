@@ -256,6 +256,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
   width: 100%; color: var(--muted); font-size: 12px;
   overflow-wrap: anywhere;
 }
+.group .name a.file-start { color: var(--text); text-decoration: underline; cursor: pointer; }
 .group button { padding: 3px 9px; min-height: 28px; font-size: 13px; }
 
 #help { margin-top: 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; }
