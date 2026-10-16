@@ -48,7 +48,7 @@ tétele, kazettánál és lemeznél pedig a natív eszköz marad.
 Gépkonfigurációk:
 
 - **Enterprise**: EP128 (UK/magyar) EXDOS-szal vagy csak magnóval, EP 640K
-  EXOS 2.32-vel (UK/magyar), EP 2048K EXOS 2.4-gyel. Mindegyikben benne van az
+  EXOS 2.32-vel (UK/magyar), EP 2048K EXOS 2.4-gyel (EXDOS-szal vagy csak magnóval). Mindegyikben benne van az
   ep128emu `epfileio.rom` bővítése (`FILE:` eszköz).
 - **Videoton TVC**: TVC 64k+ BASIC 2.2, TVC 64k és 32k BASIC 1.2, valamint
   rendszer-cartridge-dzsel: TVC 64k+ BASIC 2.2 · VT-DOS (`tvc_dos12c.rom`, a
