@@ -232,6 +232,7 @@
   let arrowsAsJoystick = false;
   let tapeName = '';
   let diskName = '';
+  let diskNameB = '';           // drive B: (image in /diskb)
   let autoTask = null;          // automatic typing / autostart state
   let tvcSlots = TVC_DEFAULT_SLOTS.slice();   // TVC: card in expansion slots 0..3
   let cartridgeName = '';       // TVC: cartridge ROM image name
@@ -824,6 +825,8 @@
     }
     if (diskName)
       api.setDisk(0, '/disk/' + diskName);
+    if (diskNameB)
+      api.setDisk(1, '/diskb/' + diskNameB);
     if (m.type === 1) applyTvcSlots();   // before the reset: the TVC OS detects the cards at boot
     if (coldReset !== false) {
       api.reset(1);
@@ -1499,6 +1502,16 @@ registerProcessor('ep-output', EPOutput);
     showChooser(box);
   }
 
+  // a disk image in drive B: (no autostart: the program or the user uses it)
+  function loadDiskFileB(f) {
+    ensureDir('/diskb');
+    diskNameB = sanitizeName(f.name);
+    M.FS.writeFile('/diskb/' + diskNameB, f.bytes);
+    $('diskb-name').textContent = f.name;
+    check(api.setDisk(1, '/diskb/' + diskNameB), 'lemez (B:)');
+    setMessage('Lemez a B: meghajtóban: ' + f.name);
+  }
+
   function loadDiskFile(f) {
     ensureDir('/disk');
     diskName = sanitizeName(f.name);
@@ -1820,6 +1833,8 @@ registerProcessor('ep-output', EPOutput);
     if (snapshots.length) {
       loadSnapshotFile(snapshots[0]);
     } else if (disks.length) {
+      // with two disk images, the second one goes into drive B:
+      if (disks.length > 1) loadDiskFileB(disks[1]);
       loadDiskFile(disks[0]);
     } else if (tapes.length) {
       loadTapeFile(tapes[0]);
@@ -2542,6 +2557,37 @@ registerProcessor('ep-output', EPOutput);
       download(M.FS.readFile('/disk/' + diskName), diskName);
       api.setDisk(0, '/disk/' + diskName);
     };
+    $('diskb-file').onchange = async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      try {
+        let bytes = new Uint8Array(await file.arrayBuffer());
+        let name = file.name;
+        if (extOf(name) === 'zip') {
+          const img = (await unzip(bytes)).find((x) => fileKind(x) === 'disk');
+          if (!img) { setMessage('Nincs lemezkép a ZIP-ben', true); return; }
+          bytes = img.bytes;
+          name = img.name;
+        }
+        loadDiskFileB({ name, bytes });
+      } catch (err) {
+        setMessage(String(err.message || err), true);
+      }
+      canvas.focus();
+    };
+    $('diskb-eject').onclick = () => {
+      api.setDisk(1, '');
+      diskNameB = '';
+      $('diskb-name').textContent = 'nincs lemez';
+      canvas.focus();
+    };
+    $('diskb-save').onclick = () => {
+      if (!diskNameB) return;
+      api.setDisk(1, '');               // flush and close the image file
+      download(M.FS.readFile('/diskb/' + diskNameB), diskNameB);
+      api.setDisk(1, '/diskb/' + diskNameB);
+    };
     $('files-clear').onclick = () => {
       for (const n of M.FS.readdir('/files'))
         if (n !== '.' && n !== '..') M.FS.unlink('/files/' + n);
@@ -2732,7 +2778,7 @@ registerProcessor('ep-output', EPOutput);
       usbInfo: c('ep_usb_info', 'number', ['number']),
       setTvcExtJoy: c('ep_set_tvc_ext_joy', null, ['number', 'number'])
     };
-    for (const d of ['/roms', '/files', '/tmp', '/disk', '/tape']) ensureDir(d);
+    for (const d of ['/roms', '/files', '/tmp', '/disk', '/diskb', '/tape']) ensureDir(d);
 
     await setupAudio();
     check(api.init(sampleRate), 'indítás');
