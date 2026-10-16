@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="hu">
+<head>
+<meta name="robots" content="noindex, nofollow">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ep128emu web</title>
+<meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
+<link rel="stylesheet" href="style.css?v=202610161454-6b68119">
+<meta name="build" content="202610161454-6b68119">
+</head>
+<body>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #19 előnézete, nem az éles oldal · fordítva: 2026.10.16 16:54 · 6b68119 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<header>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.16 16:54 · 6b68119</small></h1>
+  <nav id="toolbar">
+    <label class="sel">Gép
+      <select id="machine"></select>
+    </label>
+    <button id="btn-reset" title="Meleg reset (F11)">Reset</button>
+    <button id="btn-cold" title="Hideg reset / bekapcsolás (Shift+F11)">Hideg reset</button>
+    <button id="btn-pause" title="Szünet (Pause)">Szünet</button>
+    <button id="btn-turbo" title="Gyorsítás (F12)">Turbó</button>
+    <label class="file">Fájl betöltése…
+      <input type="file" id="file-any" multiple>
+    </label>
+    <button id="btn-snap" title="Pillanatkép mentése (.ep128s)">Állapot mentése</button>
+    <span class="vol">
+      <button id="btn-mute" class="mute" title="Némítás" aria-pressed="false">🔊</button>
+      <input type="range" id="volume" min="0" max="100" value="70" title="Hangerő" aria-label="Hangerő">
+    </span>
+  </nav>
+</header>
+
+<main>
+ <div id="play">
+  <div id="screen-wrap">
+    <canvas id="screen" width="768" height="288" tabindex="0"></canvas>
+    <div id="overlay" hidden>
+      <div class="box">
+        <h2>Hiányzó ROM-ok</h2>
+        <p>Az emulátorhoz szükség van a gépek ROM-jaira (Enterprise: EXOS, BASIC,
+        EXDOS…; TVC: rendszer- és bővítő ROM). Ezek szerzői jogi okokból nincsenek a csomagban.</p>
+        <ol>
+          <li>Töltsd le az <b>ep128emu_roms-2.0.11.bin</b> fájlt:
+            <a href="https://enterpriseforever.com/letoltesek-downloads/egyeb-misc/msg61025/" target="_blank" rel="noopener">enterpriseforever.com</a>
+            vagy <a href="http://ep128.hu/Emu/ep128emu_roms-2.0.11.bin" target="_blank" rel="noopener">ep128.hu</a></li>
+          <li>Húzd ide, vagy válaszd ki:
+            <label class="file big">ROM-csomag kiválasztása…
+              <input type="file" id="file-roms" accept=".bin,.rom,.7z">
+            </label></li>
+        </ol>
+        <p class="small">A böngésző eltárolja (IndexedDB), legközelebb nem kell újra megadni.
+        Egyenként is feltölthetők <code>.rom</code> fájlok (pl. <code>exos21.rom</code>, <code>basic21.rom</code>).</p>
+      </div>
+    </div>
+    <div id="chooser" hidden>
+      <div class="box">
+        <h2 id="chooser-title">Melyik programot indítsam?</h2>
+        <p class="small" id="chooser-desc">Az összes fájl a FILE: eszközre került, így a program
+        futás közben is betöltheti a többit.</p>
+        <div id="chooser-list"></div>
+        <button id="chooser-cancel">Mégse</button>
+      </div>
+    </div>
+    <div id="click-hint" hidden>Kattints vagy koppints a képre a hang bekapcsolásához</div>
+  </div>
+
+  <div id="touch-bar">
+    <button id="tb-kbd" aria-pressed="false">⌨ Billentyűzet</button>
+    <button id="tb-joy" aria-pressed="false">🕹 Joystick</button>
+    <button id="tb-text" aria-pressed="false">Aa Szöveg beírása</button>
+    <button id="btn-load" title='load"*" + Enter (TVC)' hidden>load"*"</button>
+    <button id="btn-run" title='RUN + Enter'>Run</button>
+    <button id="btn-mouse" title="Egér a TVC256k++ kártyának (kilépés: Esc)" hidden>🖱</button>
+    <button id="tb-full" title="Teljes képernyő">⛶</button>
+  </div>
+
+  <form id="typer" hidden autocomplete="off">
+    <textarea id="typer-input" rows="1" placeholder='pl. LOAD "FILE:GAME.COM" – vagy illessz be egy teljes BASIC programot (Shift+Enter: új sor)'
+              autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send"></textarea>
+    <button type="submit" id="typer-send">Beír + Enter</button>
+  </form>
+
+  <div id="vjoy" hidden>
+    <div id="vjoy-pad" aria-label="Irányok"><span class="knob"></span></div>
+    <div id="vjoy-side">
+      <select id="vjoy-mode" title="Mit küldjön a joystick?">
+        <option value="joy1">Joystick (Joystick panel)</option>
+        <option value="cursor">Kurzor + Space</option>
+      </select>
+      <button id="vjoy-fire">TŰZ</button>
+    </div>
+  </div>
+
+  <div id="vkbd" hidden></div>
+ </div>
+
+  <section id="status">
+    <span id="st-speed">–</span>
+    <span id="st-tape"></span>
+    <span id="st-msg"></span>
+  </section>
+
+  <section id="media">
+    <div class="group">
+      <h3>Magnó</h3>
+      <span id="tape-name" class="name">nincs kazetta</span>
+      <button id="tape-play">▶ Lejátszás</button>
+      <button id="tape-stop">■ Stop</button>
+      <button id="tape-rew">⏮ Elejére</button>
+      <button id="tape-rec">● Felvétel</button>
+      <button id="tape-new">Üres kazetta</button>
+      <button id="tape-save">Letöltés</button>
+      <label class="name"><input type="checkbox" id="tape-fast" checked> Gyors betöltés (turbó, amíg forog a szalag)</label>
+    </div>
+    <div class="group">
+      <h3>Lemez (A:)</h3>
+      <span id="disk-name" class="name">nincs lemez</span>
+      <button id="disk-eject">Kiadás</button>
+      <button id="disk-save">Letöltés</button>
+    </div>
+    <div class="group">
+      <h3>Lemez (B:)</h3>
+      <span id="diskb-name" class="name">nincs lemez</span>
+      <label class="file">Betöltés…
+        <input type="file" id="diskb-file" accept=".img,.dsk,.zip">
+      </label>
+      <button id="diskb-eject">Kiadás</button>
+      <button id="diskb-save">Letöltés</button>
+    </div>
+    <div class="group">
+      <h3>FILE: eszköz</h3>
+      <span id="files-list" class="name">üres</span>
+      <button id="files-clear">Törlés</button>
+    </div>
+    <div class="group" id="tvc-cards-group">
+      <h3>TVC bővítőportok</h3>
+      <label class="slot">Port 0 <select id="tvc-slot0"></select></label>
+      <label class="slot">Port 1 <select id="tvc-slot1"></select></label>
+      <label class="slot">Port 2 <select id="tvc-slot2"></select></label>
+      <label class="slot">Port 3 <select id="tvc-slot3"></select></label>
+      <button id="tvc-slots-apply" title="A kártyák betöltése és hideg újraindítás">Portok betöltése, újraindítás</button>
+      <button id="tvc-slots-default" title="FILE:, VT-DOS, GameCard, üres (betöltés a gombbal)">Alapbeállítás</button>
+      <span class="name" id="tvc-slots-note"></span>
+      <span class="name">A VT-DOS, a FILE: és a TVC256k++ közül a legnagyobb sorszámú portban lévő lesz
+        az alapértelmezett tároló; a parancssoruk csak így működik. VT-DOS: <code>EXT 2</code>,
+        TVC256k++: <code>EXT</code> + a port száma (pl. 3-as portban <code>EXT 3</code>).
+        TVC256k++ flash drive: ejtsd rá a <code>flash-root-*.bin</code> / <code>.zip</code> fájlt.</span>
+    </div>
+    <div class="group" id="usb-group" hidden>
+      <h3>USB pendrive (TVC256k++)</h3>
+      <label title="A pendrive a TVC256k++ kártya USB-portjában: bootoláskor ez lesz az aktív meghajtó, és a képre húzott programok is erre kerülnek">
+        <input type="checkbox" id="usb-on"> Bedugva</label>
+      <label class="slot">Méret <select id="usb-size">
+        <option value="32">32 MB</option><option value="64">64 MB</option>
+        <option value="128">128 MB</option><option value="256">256 MB</option></select></label>
+      <span class="name" id="usb-space"></span>
+      <div id="usb-browser">
+        <div id="usb-path"></div>
+        <ul id="usb-list"></ul>
+        <div id="usb-drop">Húzd ide a fájlokat (bármilyen típus; a ZIP kibontva, mappastruktúrával kerül fel)</div>
+      </div>
+      <button id="usb-add">Fájlok hozzáadása…</button>
+      <button id="usb-add-dir">Mappa hozzáadása…</button>
+      <button id="usb-mkdir">Új mappa</button>
+      <button id="usb-clear" title="A pendrive teljes tartalmának törlése">Pendrive törlése</button>
+      <input type="file" id="usb-file" multiple hidden>
+      <input type="file" id="usb-folder" webkitdirectory multiple hidden>
+      <span class="name" id="usb-note"></span>
+    </div>
+    <div class="group" id="joy-group">
+      <div class="slot" id="cart-group">
+        <b>Cartridge</b>
+        <span id="cart-name" class="name">nincs modul</span>
+        <button id="cart-eject">Kiadás</button>
+      </div>
+      <h3 title="TVC: az 1. port ugyanaz, mint a beépített kurzorjoystick">Joystick</h3>
+      <div id="joy-map"></div>
+      <span class="name" id="pad-status"></span>
+    </div>
+  </section>
+
+  <details id="help">
+    <summary>Súgó</summary>
+    <ul>
+      <li><b>Fájl betöltése</b> (vagy húzd a képre, akár több fájlt vagy egy <code>.zip</code>-et):
+        <code>.tap</code>/<code>.wav</code> → magnó,
+        <code>.img</code>/<code>.dsk</code> → A: lemez (TVC-n 360/720 kB-os nyers lemezkép is használható; szükség esetén EXDOS-os / VT-DOS-os gépre vált, és kilistázza),
+        <code>.crt</code> → TVC cartridge (bővítő modul),
+        <code>.ep128s</code> → pillanatkép, <code>.ep128d</code> → demó,
+        <code>.bin</code> → ROM-csomag. Minden más fájl a <code>FILE:</code> eszközre kerül,
+        és a program automatikusan elindul; ha több indítható program van, választhatsz.</li>
+      <li><b>TVC-játékok</b>: nyisd meg a tvc.hu programletöltéseit, töltsd le a kiválasztott
+        játékot, majd a „Letöltött játék indítása…” gombbal válaszd ki a <code>.cas</code>
+        fájlt vagy a <code>.zip</code> csomagot. A böngésző biztonsági korlátozásai miatt
+        a letöltött fájlt külön ki kell választani.</li>
+      <li><b>Utántöltős programok</b>: tedd fel az összes fájlt egyszerre (vagy egy ZIP-ben).
+        Az alapértelmezett eszköz a betöltés módjához igazodik (Enterprise-on
+        <code>:DEF_DEV_FILE</code> / <code>:DEF_DEV_TAPE</code> / <code>:DEF_DEV_DISK</code>),
+        így a további részek ugyanonnan töltődnek. Kazettán a többi rész magától jön a szalagról.</li>
+      <li>Kazetta betöltésekor a gép újraindul, és automatikusan kiadja a
+        <code>LOAD</code> parancsot. Mentés kazettára: „Üres kazetta” → „● Felvétel”
+        → BASIC-ben <code>SAVE "név"</code>, végül „Letöltés”.</li>
+      <li>Enterprise-billentyűk: Esc = ESC, Backspace = ERASE, Del = DEL, Ins = INS,
+        End vagy Pause = STOP, Home = HOLD, Alt = ALT, F1–F8 = funkciógombok,
+        CapsLock = LOCK. A <code>:</code> az <code>'</code> helyén, a
+        <code>@</code> a <code>`</code> helyén, a <code>^</code> az <code>=</code> helyén van.</li>
+      <li><b>Videoton TVC</b>: a <code>.cas</code> programok a FILE: eszközre kerülnek, és
+        automatikusan elindulnak (<code>LOAD "név"</code> + <code>RUN</code>). A billentyűzet
+        a magyar PC-kiosztást követi (QWERTZ, a <code>0</code> az <code>1</code> bal oldalán,
+        <code>ö ü ó</code> a 9 után; PC Esc = ESC, a magyar PC <code>í</code> billentyűje = í).
+        Magnó vagy lemez használatakor a FILE: bővítés kikapcsol
+        (a TVC-n ez helyettesíti a magnót, és ütközik a VT-DOS-szal), <code>.cas</code> betöltésekor
+        visszakapcsol. Lemezkép betöltésekor automatikusan <code>EXT 2</code> + <code>DIR</code>.</li>
+      <li>Joystickok: a Joystick panelen minden bemenethez (numerikus 8/4/6/2 + 0, nyilak + jobb Ctrl, W A S D + Space, gamepad 1–4, érintős joystick) kiválasztható, melyik joystickot hajtja: TVC-n az 1. portot (= a beépített kurzorjoystick), a 2. portot vagy a GameCard 3–4. joystickját, EP-n a két külső joystickot.</li>
+      <li><b>Mobilon</b>: a kép alatti gombokkal kapcsolható a képernyő-billentyűzet
+        (a Shift, Ctrl és Alt egy leütésre ragad), az érintős joystick (a Joystick panel szerint,
+        vagy kurzorbillentyűk + Space), és a szövegbeírás a telefon saját billentyűzetével.
+        A ⛶ gombbal a kép és a vezérlők együtt kerülnek teljes képernyőre.</li>
+      <li>F11 = reset, Shift+F11 = hideg reset, F12 = turbó.</li>
+    </ul>
+    <p class="small">Az emulációs mag az <a href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu</a>
+    (Varga István, GPL v2) változatlan forráskódja, WebAssemblyre fordítva.</p>
+  </details>
+
+  <section id="catalog" class="group catalog-panel">
+    <h3>Program katalógus</h3>
+    <div id="catalog-filters">
+      <input id="catalog-search" type="search" placeholder="Keresés…" aria-label="Keresés">
+      <select id="catalog-type" aria-label="Típus szűrő">
+        <option value="">Minden típus</option>
+      </select>
+      <select id="catalog-year" aria-label="Évjárat szűrő">
+        <option value="">Minden évjárat</option>
+        <option value="2000+" selected>2000-től</option>
+      </select>
+    </div>
+    <div id="catalog-status" class="small">Katalógus betöltése…</div>
+    <div id="catalog-grid" class="catalog-grid"></div>
+  </section>
+</main>
+
+<script src="ep128emu.js?v=202610161454-6b68119"></script>
+<script src="ep128.js?v=202610161454-6b68119"></script>
+</body>
+</html>
