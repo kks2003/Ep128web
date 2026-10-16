@@ -57,6 +57,7 @@
   ];
   for (const m of MACHINES) m.type = m.type || 0;
   // machine ids of earlier versions (VT-DOS is a card in a slot now)
+  const DEFAULT_TVC = 'tvc64-12';   // the default machine, and the TVC switched to for TVC files
   const MACHINE_ALIASES = { 'tvc64p-22-vtdos': 'tvc64p-22', 'tvc64-12-vtdos': 'tvc64-12' };
 
   // TVC expansion cards; the ids are those of ep_set_tvc_slot()
@@ -176,8 +177,11 @@
   const PAUSE = '\u0001';      // in autotyped text: wait 2.5 seconds
   const PRESS_ESC = '\u0002';  // in autotyped text: press the TVC ESC key
 
+  // can a file name be typed in a LOAD command? Only plain ASCII: accented
+  // letters are typable, but the FILE: devices would not match them with
+  // the host file name
   function isTypable(text, type) {
-    return Array.from(text).every((ch) => CHARMAP[type][ch]);
+    return /^[\x20-\x7e]*$/.test(text) && Array.from(text).every((ch) => CHARMAP[type][ch]);
   }
 
   // --------------------------------------------------------------------------
@@ -227,8 +231,14 @@
 
   // value of the cassette device redirect ($0B05/$0B0D) that points at the
   // slot of a card, or 0 if the card is not installed
-  // device for the LOAD / RUN buttons: the TVC256k++ card if present, else FILE:
+  // device for the LOAD / RUN buttons: the tape if one is loaded, else the
+  // card the last loaded program or disk was started from (e.g. VT-DOS after
+  // a disk image), else the TVC256k++ card if present, else FILE:
+  let tvcLastLoadCard = -1;
+
   function defaultTvcLoadRedirect() {
+    if (tapeName) return 5;
+    if (tvcLastLoadCard >= 0 && tvcSlotOf(tvcLastLoadCard) >= 0) return tvcRedirectFor(tvcLastLoadCard);
     return tvcSlotOf(SLOT_CARD256) >= 0 ? tvcRedirectFor(SLOT_CARD256) : tvcRedirectFor(SLOT_FILEIO);
   }
 
@@ -246,6 +256,30 @@
   function applyTvcSlots() {
     if (api && api.setTvcSlot) tvcSlots.forEach((card, slot) => api.setTvcSlot(slot, card));
     applyTvcUsb();
+    if (tvcSlotOf(SLOT_CARD256) >= 0) fetchDefaultCardFlash();
+  }
+
+  // The TVC256k++ flash drive: unless the user loaded an image, the one
+  // published in the card's repository (GPL-3.0, with the TVC programs on it)
+  // is downloaded from there once, like a real card shipping with it
+  const CARD_FLASH_URL = 'https://raw.githubusercontent.com/dikdom/tvc256kplusplus/main/binaries/flash-root-1.3-bin.zip';
+  let cardFlashLoaded = false, cardFlashFetching = false;
+
+  async function fetchDefaultCardFlash() {
+    if (cardFlashLoaded || cardFlashFetching) return;
+    cardFlashFetching = true;
+    try {
+      const r = await fetch(CARD_FLASH_URL);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const f = (await unzip(new Uint8Array(await r.arrayBuffer())))
+        .find((e) => fileKind(e) === 'cardflash');
+      if (!f) throw new Error('nincs benne flash-kép');
+      if (!cardFlashLoaded) loadCardFlash(f);
+    } catch (e) {
+      console.warn(e);
+      setMessage('A TVC256k++ flash drive képe nem tölthető le (' + (e.message || e) + '); ráhúzhatod a flash-root-*-bin.zip fájlt', true);
+    }
+    cardFlashFetching = false;
   }
 
   // --------------------------------------------------------------------------
@@ -662,7 +696,7 @@
 
   function loadCartridgeFile(f) {
     if (machine.type !== 1) {
-      const tvc = MACHINES.find((x) => x.id === 'tvc64p-22') || MACHINES.find((x) => x.type === 1);
+      const tvc = MACHINES.find((x) => x.id === DEFAULT_TVC) || MACHINES.find((x) => x.type === 1);
       if (tvc) applyMachine(tvc);
     }
     cartridgeName = sanitizeName(f.name) || 'cartridge.crt';
@@ -1022,6 +1056,8 @@ registerProcessor('ep-output', EPOutput);
       tvcRedirect: tvcRedirect !== undefined ? tvcRedirect
         : (isTvcTape ? 5 : tvcRedirectFor(SLOT_FILEIO))
     };
+    if (machine.type === 1 && (autoTask.tvcRedirect & 0x80))
+      tvcLastLoadCard = tvcSlots[autoTask.tvcRedirect & 3];
     setMessage('Indítás…');
   }
 
@@ -1114,7 +1150,9 @@ registerProcessor('ep-output', EPOutput);
 
   function sanitizeName(name) {
     // lower case, only characters that can be typed with the autostart code
-    let base = name.toLowerCase().replace(/[^a-z0-9.\-]/g, '');
+    // (accented letters lose their accents: ÁTTÖRÉS -> attores)
+    let base = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9.\-]/g, '');
     if (!base || base[0] === '.') base = 'file' + base;
     return base.slice(0, 28);
   }
@@ -1140,6 +1178,19 @@ registerProcessor('ep-output', EPOutput);
 
   // --- ZIP archives (stored and deflated entries) ---
 
+  const CP852_HIGH =
+    'ÇüéâäůćçłëŐőîŹÄĆÉĹĺôöĽľŚśÖÜŤťŁ×čáíóúĄąŽžĘę¬źČş«»░▒▓│┤ÁÂĚŞ╣║╗╝Żż┐' +
+    '└┴┬├─┼Ăă╚╔╩╦╠═╬¤đĐĎËďŇÍÎě┘┌█▄ŢŮ▀ÓßÔŃńňŠšŔÚŕŰýÝţ´\u00AD˝˛ˇ˘§÷¸°¨˙űŘř■\u00A0';
+
+  function decodeCp852(raw) {
+    // plain ASCII or valid UTF-8 (many tools leave the flag unset) as is
+    if (raw.every((b) => b < 0x80)) return String.fromCharCode(...raw);
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(raw); } catch (e) { }
+    let out = '';
+    for (const b of raw) out += b < 0x80 ? String.fromCharCode(b) : CP852_HIGH[b - 0x80];
+    return out;
+  }
+
   async function unzip(bytes) {
     const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     // find the end of central directory record
@@ -1159,7 +1210,10 @@ registerProcessor('ep-output', EPOutput);
       const extraLen = dv.getUint16(p + 30, true);
       const commentLen = dv.getUint16(p + 32, true);
       const local = dv.getUint32(p + 42, true);
-      const name = new TextDecoder().decode(bytes.subarray(p + 46, p + 46 + nameLen));
+      // names are UTF-8 if flag bit 11 is set, else in the DOS code page
+      // (Hungarian archives: CP852)
+      const rawName = bytes.subarray(p + 46, p + 46 + nameLen);
+      const name = (dv.getUint16(p + 8, true) & 0x800) ? new TextDecoder().decode(rawName) : decodeCp852(rawName);
       p += 46 + nameLen + extraLen + commentLen;
       if (name.endsWith('/')) continue;
       const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
@@ -1214,6 +1268,7 @@ registerProcessor('ep-output', EPOutput);
     try { M.FS.mkdir('/card'); } catch (e) { }
     M.FS.writeFile('/card/flash.bin', f.bytes);
     check(api.loadTvcCardFlash('/card/flash.bin'), 'TVC256k++ flash drive kép');
+    cardFlashLoaded = true;
     db.put('cardflash', f.bytes);
     setMessage('TVC256k++ flash drive kép betöltve' + (tvcSlotOf(SLOT_CARD256) >= 0 ? '' : ' – tedd a kártyát egy bővítőportba'));
   }
@@ -1469,7 +1524,16 @@ registerProcessor('ep-output', EPOutput);
       b.onclick = () => { box.hidden = true; startProgram(n); canvas.focus(); };
       list.appendChild(b);
     }
+    showChooser(box);
+  }
+
+  // shows a chooser over the emulator screen, scrolled into view (the
+  // program catalog below the screen may be scrolled away from it)
+  function showChooser(box) {
     box.hidden = false;
+    box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const first = box.querySelector('button');
+    if (first) first.focus({ preventScroll: true });
   }
 
   function chooseCasOrWav(casFiles, wavFiles, onChoose) {
@@ -1503,7 +1567,7 @@ registerProcessor('ep-output', EPOutput);
       list.appendChild(b);
     }
 
-    box.hidden = false;
+    showChooser(box);
   }
 
   async function loadFiles(fileList) {
@@ -1586,7 +1650,7 @@ registerProcessor('ep-output', EPOutput);
       const isTvcProg = progFiles.some((f) => extOf(f.name) === 'cas');
       const isTvcTape = tapes.some((f) => extOf(f.name) === 'wav');
       if (isTvcProg || isTvcTape) {
-        const tvc = MACHINES.find((x) => x.id === 'tvc64p-22') || MACHINES.find((x) => x.type === 1);
+        const tvc = MACHINES.find((x) => x.id === DEFAULT_TVC) || MACHINES.find((x) => x.type === 1);
         if (tvc) applyMachine(tvc);
       }
     }
@@ -2214,14 +2278,14 @@ registerProcessor('ep-output', EPOutput);
     $('btn-turbo').onclick = toggleTurbo;
     $('btn-load').onclick = () => {
       if (machine.type === 1)
-        setTvcRedirect(tapeName ? 5 : defaultTvcLoadRedirect());
+        setTvcRedirect(defaultTvcLoadRedirect());
       typeText('load"*"\n');
       canvas.focus();
     };
     const btnRun = $('btn-run');
     if (btnRun) btnRun.onclick = () => {
       if (machine.type === 1)
-        setTvcRedirect(tapeName ? 5 : defaultTvcLoadRedirect());
+        setTvcRedirect(defaultTvcLoadRedirect());
       typeText('run\n');
       canvas.focus();
     };
@@ -2501,7 +2565,7 @@ registerProcessor('ep-output', EPOutput);
         else if (key === 'cardflash') {
           try { M.FS.mkdir('/card'); } catch (e) { }
           M.FS.writeFile('/card/flash.bin', value);
-          api.loadTvcCardFlash('/card/flash.bin');
+          cardFlashLoaded = (api.loadTvcCardFlash('/card/flash.bin') === 0);
         }
       } catch (e) { console.warn(e); }
     }
@@ -2526,7 +2590,7 @@ registerProcessor('ep-output', EPOutput);
     let id = null;
     try { id = localStorage.getItem('ep128web.machine'); } catch (e) { }
     id = MACHINE_ALIASES[id] || id;
-    machine = MACHINES.find((m) => m.id === id) || MACHINES.find((m) => m.id === 'tvc64p-22');
+    machine = MACHINES.find((m) => m.id === id) || MACHINES.find((m) => m.id === DEFAULT_TVC);
     setupUI();
     listFiles();
     applyMachine(machine);
