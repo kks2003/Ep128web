@@ -75,16 +75,16 @@
   </div>
 
   <form id="typer" hidden autocomplete="off">
-    <input id="typer-input" type="text" placeholder='pl. LOAD "FILE:GAME.COM"'
-           autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
-    <button type="submit">Beír + Enter</button>
+    <textarea id="typer-input" rows="1" placeholder='pl. LOAD "FILE:GAME.COM" – vagy illessz be egy teljes BASIC programot (Shift+Enter: új sor)'
+              autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send"></textarea>
+    <button type="submit" id="typer-send">Beír + Enter</button>
   </form>
 
   <div id="vjoy" hidden>
     <div id="vjoy-pad" aria-label="Irányok"><span class="knob"></span></div>
     <div id="vjoy-side">
       <select id="vjoy-mode" title="Mit küldjön a joystick?">
-        <option value="joy1">Külső joystick 1</option>
+        <option value="joy1">Joystick (Joystick panel)</option>
         <option value="cursor">Kurzor + Space</option>
       </select>
       <button id="vjoy-fire">TŰZ</button>
@@ -119,14 +119,18 @@
       <button id="disk-save">Letöltés</button>
     </div>
     <div class="group">
+      <h3>Lemez (B:)</h3>
+      <span id="diskb-name" class="name">nincs lemez</span>
+      <label class="file">Betöltés…
+        <input type="file" id="diskb-file" accept=".img,.dsk,.zip">
+      </label>
+      <button id="diskb-eject">Kiadás</button>
+      <button id="diskb-save">Letöltés</button>
+    </div>
+    <div class="group">
       <h3>FILE: eszköz</h3>
       <span id="files-list" class="name">üres</span>
       <button id="files-clear">Törlés</button>
-    </div>
-    <div class="group" id="cart-group">
-      <h3>Cartridge</h3>
-      <span id="cart-name" class="name">nincs modul</span>
-      <button id="cart-eject">Kiadás</button>
     </div>
     <div class="group" id="tvc-cards-group">
       <h3>TVC bővítőportok</h3>
@@ -163,9 +167,14 @@
       <input type="file" id="usb-folder" webkitdirectory multiple hidden>
       <span class="name" id="usb-note"></span>
     </div>
-    <div class="group">
-      <h3>Joystick</h3>
-      <label><input type="checkbox" id="arrows-joy"> Nyilak + Jobb Ctrl = joystick 1</label>
+    <div class="group" id="joy-group">
+      <div class="slot" id="cart-group">
+        <b>Cartridge</b>
+        <span id="cart-name" class="name">nincs modul</span>
+        <button id="cart-eject">Kiadás</button>
+      </div>
+      <h3 title="TVC: az 1. port ugyanaz, mint a beépített kurzorjoystick">Joystick</h3>
+      <div id="joy-map"></div>
       <span class="name" id="pad-status"></span>
     </div>
   </section>
@@ -202,9 +211,9 @@
         Magnó vagy lemez használatakor a FILE: bővítés kikapcsol
         (a TVC-n ez helyettesíti a magnót, és ütközik a VT-DOS-szal), <code>.cas</code> betöltésekor
         visszakapcsol. Lemezkép betöltésekor automatikusan <code>EXT 2</code> + <code>DIR</code>.</li>
-      <li>Joystick 1: numerikus 8/4/6/2 + 0 (tűz), gamepad, vagy a fenti kapcsoló.</li>
+      <li>Joystickok: a Joystick panelen minden bemenethez (numerikus 8/4/6/2 + 0, nyilak + jobb Ctrl, W A S D + Space, gamepad 1–4, érintős joystick) kiválasztható, melyik joystickot hajtja: TVC-n az 1. portot (= a beépített kurzorjoystick), a 2. portot vagy a GameCard 3–4. joystickját, EP-n a két külső joystickot.</li>
       <li><b>Mobilon</b>: a kép alatti gombokkal kapcsolható a képernyő-billentyűzet
-        (a Shift, Ctrl és Alt egy leütésre ragad), az érintős joystick (külső joystick 1
+        (a Shift, Ctrl és Alt egy leütésre ragad), az érintős joystick (a Joystick panel szerint,
         vagy kurzorbillentyűk + Space), és a szövegbeírás a telefon saját billentyűzetével.
         A ⛶ gombbal a kép és a vezérlők együtt kerülnek teljes képernyőre.</li>
       <li>F11 = reset, Shift+F11 = hideg reset, F12 = turbó.</li>
