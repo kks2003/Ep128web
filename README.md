@@ -10,7 +10,7 @@ került egy kis webes frontend (canvas + Web Audio).
 ## Használat
 
 1. Nyisd meg az oldalt (lásd lent: GitHub Pages vagy helyi szerver).
-2. Alapértelmezés szerint Videoton TVC 64k+ BASIC 2.2 indul; a gépválasztást
+2. Alapértelmezés szerint Videoton TVC 64k BASIC 1.2 indul; a gépválasztást
    az oldal megjegyzi.
 3. Első indításkor kéri a ROM-okat: töltsd le az **ep128emu_roms-2.0.11.bin**
    csomagot ([enterpriseforever.com](https://enterpriseforever.com/letoltesek-downloads/egyeb-misc/msg61025/)

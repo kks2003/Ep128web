@@ -57,6 +57,7 @@
   ];
   for (const m of MACHINES) m.type = m.type || 0;
   // machine ids of earlier versions (VT-DOS is a card in a slot now)
+  const DEFAULT_TVC = 'tvc64-12';   // the default machine, and the TVC switched to for TVC files
   const MACHINE_ALIASES = { 'tvc64p-22-vtdos': 'tvc64p-22', 'tvc64-12-vtdos': 'tvc64-12' };
 
   // TVC expansion cards; the ids are those of ep_set_tvc_slot()
@@ -686,7 +687,7 @@
 
   function loadCartridgeFile(f) {
     if (machine.type !== 1) {
-      const tvc = MACHINES.find((x) => x.id === 'tvc64p-22') || MACHINES.find((x) => x.type === 1);
+      const tvc = MACHINES.find((x) => x.id === DEFAULT_TVC) || MACHINES.find((x) => x.type === 1);
       if (tvc) applyMachine(tvc);
     }
     cartridgeName = sanitizeName(f.name) || 'cartridge.crt';
@@ -1611,7 +1612,7 @@ registerProcessor('ep-output', EPOutput);
       const isTvcProg = progFiles.some((f) => extOf(f.name) === 'cas');
       const isTvcTape = tapes.some((f) => extOf(f.name) === 'wav');
       if (isTvcProg || isTvcTape) {
-        const tvc = MACHINES.find((x) => x.id === 'tvc64p-22') || MACHINES.find((x) => x.type === 1);
+        const tvc = MACHINES.find((x) => x.id === DEFAULT_TVC) || MACHINES.find((x) => x.type === 1);
         if (tvc) applyMachine(tvc);
       }
     }
@@ -2551,7 +2552,7 @@ registerProcessor('ep-output', EPOutput);
     let id = null;
     try { id = localStorage.getItem('ep128web.machine'); } catch (e) { }
     id = MACHINE_ALIASES[id] || id;
-    machine = MACHINES.find((m) => m.id === id) || MACHINES.find((m) => m.id === 'tvc64p-22');
+    machine = MACHINES.find((m) => m.id === id) || MACHINES.find((m) => m.id === DEFAULT_TVC);
     setupUI();
     listFiles();
     applyMachine(machine);
