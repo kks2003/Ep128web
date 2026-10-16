@@ -47,18 +47,8 @@
       roms: [['tvc22_sys.rom', [0x00]], ['tvc22_ext.rom', [0x02]]]
     },
     {
-      id: 'tvc64p-22-vtdos', type: 1, name: 'TVC 64k+ · BASIC 2.2 · VT-DOS', ram: 128,
-      roms: [['tvc22_sys.rom', [0x00]], ['tvc22_ext.rom', [0x02]],
-             ['tvc_dos12d.rom', [0x03]]]
-    },
-    {
       id: 'tvc64-12', type: 1, name: 'TVC 64k · BASIC 1.2', ram: 80,
       roms: [['tvc12_sys.rom', [0x00]], ['tvc12_ext.rom', [0x02]]]
-    },
-    {
-      id: 'tvc64-12-vtdos', type: 1, name: 'TVC 64k · BASIC 1.2 · VT-DOS', ram: 80,
-      roms: [['tvc12_sys.rom', [0x00]], ['tvc12_ext.rom', [0x02]],
-             ['tvc_dos12d.rom', [0x03]]]
     },
     {
       id: 'tvc32-12', type: 1, name: 'TVC 32k · BASIC 1.2', ram: 48,
@@ -66,6 +56,22 @@
     }
   ];
   for (const m of MACHINES) m.type = m.type || 0;
+  // machine ids of earlier versions (VT-DOS is a card in a slot now)
+  const MACHINE_ALIASES = { 'tvc64p-22-vtdos': 'tvc64p-22', 'tvc64-12-vtdos': 'tvc64-12' };
+
+  // TVC expansion cards; the ids are those of ep_set_tvc_slot()
+  const SLOT_EMPTY = 0, SLOT_VTDOS = 1, SLOT_FILEIO = 2, SLOT_CARD256 = 5;
+  const TVC_CARDS = [
+    { id: SLOT_EMPTY, name: '— üres —' },
+    { id: SLOT_VTDOS, name: 'VT-DOS (lemez)', rom: 'tvc_dos12d.rom', seg: 0x03 },
+    { id: SLOT_FILEIO, name: 'FILE: (.cas fájlok)', rom: 'tvcfileio.rom', seg: 0x04 },
+    { id: 3, name: 'GameCard (SN76489 + Joy 3-4)' },
+    { id: 4, name: 'Multichip Soundcard (SN, SAA, OPL2)' },
+    { id: SLOT_CARD256, name: 'TVC256k++' }
+  ];
+  // the card initialized last (highest slot) of VT-DOS, FILE: and TVC256k++
+  // becomes the default storage device, so VT-DOS comes after FILE:
+  const TVC_DEFAULT_SLOTS = [SLOT_FILEIO, SLOT_VTDOS, 3, SLOT_EMPTY];
 
   // KeyboardEvent.code -> Enterprise keyboard matrix position (row * 8 + col),
   // following ep128emu's default config/ep_keys.cfg
@@ -101,6 +107,8 @@
     ArrowRight: 0x70, ArrowLeft: 0x71, ArrowDown: 0x72, ArrowUp: 0x73,
     ControlRight: 0x74
   };
+  const SCROLL_KEYS = new Set(['PageUp', 'PageDown', 'Home', 'End', 'Space',
+    'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
   const KEY_SHIFT = 0x07;
   const KEY_ENTER = 0x3E;
   const KEY_SPACE = 0x46;
@@ -199,20 +207,313 @@
   let tapeName = '';
   let diskName = '';
   let autoTask = null;          // automatic typing / autostart state
-  let tvcFileIO = true;         // TVC: FILE: device instead of cassette
+  let tvcSlots = TVC_DEFAULT_SLOTS.slice();   // TVC: card in expansion slots 0..3
   let cartridgeName = '';       // TVC: cartridge ROM image name
-  let tvcGameCard = true;       // TVC: GameCard (SN76489 + Joy 3-4)
-  let tvcMultiSound = false;    // TVC: Multichip Soundcard (SN, SAA, OPL2)
   try {
-    const gc = localStorage.getItem('ep128web.tvcGameCard');
-    if (gc !== null) tvcGameCard = (gc === '1');
-    const ms = localStorage.getItem('ep128web.tvcMultiSound');
-    if (ms !== null) tvcMultiSound = (ms === '1');
+    const v = JSON.parse(localStorage.getItem('ep128web.tvcSlots'));
+    if (validTvcSlots(v)) tvcSlots = v;
   } catch (e) {}
 
-  function applyTvcSoundCards() {
-    if (api && api.setTvcGameCard) api.setTvcGameCard(tvcGameCard ? 1 : 0);
-    if (api && api.setTvcMultiSound) api.setTvcMultiSound(tvcMultiSound ? 1 : 0);
+  function validTvcSlots(v) {
+    if (!Array.isArray(v) || v.length !== 4) return false;
+    if (!v.every((c) => TVC_CARDS.some((x) => x.id === c))) return false;
+    // a card can only be in one slot
+    return v.every((c, i) => c === SLOT_EMPTY || v.indexOf(c) === i);
+  }
+
+  function tvcSlotOf(card) {
+    return tvcSlots.indexOf(card);
+  }
+
+  // value of the cassette device redirect ($0B05/$0B0D) that points at the
+  // slot of a card, or 0 if the card is not installed
+  // device for the LOAD / RUN buttons: the TVC256k++ card if present, else FILE:
+  function defaultTvcLoadRedirect() {
+    return tvcSlotOf(SLOT_CARD256) >= 0 ? tvcRedirectFor(SLOT_CARD256) : tvcRedirectFor(SLOT_FILEIO);
+  }
+
+  function tvcRedirectFor(card) {
+    const slot = tvcSlotOf(card);
+    return slot >= 0 ? (0x80 | slot) : 0;
+  }
+
+  function setTvcRedirect(value) {
+    if (machine.type !== 1 || !value) return;
+    writeMemory(2821, value);
+    writeMemory(2829, value);
+  }
+
+  function applyTvcSlots() {
+    if (api && api.setTvcSlot) tvcSlots.forEach((card, slot) => api.setTvcSlot(slot, card));
+    applyTvcUsb();
+  }
+
+  // --------------------------------------------------------------------------
+  // USB pendrive of the TVC256k++ card: a FAT volume in the emulator; the
+  // page shows and edits its files, and keeps them in IndexedDB (key
+  // 'usbfiles': [{p: path, b: bytes} or {p: path, d: 1}])
+
+  let usbOn = false, usbSize = 128, usbPlugged = false, usbCwd = '';
+  let usbSaved = null;            // the stored files, read at start-up
+  let usbSavedWrites = -1;        // sector write count at the last save
+  try {
+    usbOn = localStorage.getItem('ep128web.usbOn') === '1';
+    usbSize = Number(localStorage.getItem('ep128web.usbSize')) || 128;
+  } catch (e) { }
+
+  function applyTvcUsb() {
+    if (!api || !api.cardUsb) return;
+    if (usbOn && !usbPlugged) {
+      usbPlugged = (api.cardUsb(usbSize) === 0);
+      if (usbPlugged && usbSaved) restoreUsb(usbSaved);
+      usbSavedWrites = api.usbInfo(2);
+    }
+    else if (!usbOn && usbPlugged) { api.cardUsb(0); usbPlugged = false; }
+    renderUsb();
+    updateMouseButton();
+  }
+
+  function usbJoin(dir, name) { return dir ? dir + '/' + name : name; }
+
+  // every file and directory of the pendrive, depth first
+  function usbWalk(dir, out) {
+    const list = JSON.parse(api.usbList(dir) || 'null') || [];
+    for (const e of list) {
+      const p = usbJoin(dir, e.n);
+      if (e.d) { out.push({ p, d: 1 }); usbWalk(p, out); }
+      else if (api.usbGet(p, '/tmp/usbfile') === 0) out.push({ p, b: M.FS.readFile('/tmp/usbfile') });
+    }
+    return out;
+  }
+
+  function saveUsb() {
+    if (!usbPlugged) return;
+    try { M.FS.mkdir('/tmp'); } catch (e) { }
+    usbSaved = usbWalk('', []);
+    usbSavedWrites = api.usbInfo(2);
+    db.put('usbfiles', usbSaved);
+  }
+
+  function restoreUsb(entries) {
+    const failed = [];
+    for (const e of entries) {
+      if (e.d) api.usbMkdir(e.p);
+      else if (!usbPutBytes(e.p, e.b)) failed.push(e.p);
+    }
+    if (failed.length) setMessage('Nem fért a pendrive-ra: ' + failed.join(', '), true);
+  }
+
+  function usbPutBytes(path, bytes) {
+    try { M.FS.mkdir('/tmp'); } catch (e) { }
+    M.FS.writeFile('/tmp/usbput', bytes);
+    const ok = api.usbPut(path, '/tmp/usbput') === 0;
+    M.FS.unlink('/tmp/usbput');
+    return ok;
+  }
+
+  // adds files to the current directory; entries: {path (relative), bytes}
+  async function addUsbFiles(fileList, useRelativePath) {
+    if (!usbPlugged) { setMessage('Előbb dugd be a pendrive-ot (Bedugva)', true); return; }
+    const entries = [];
+    for (const file of Array.from(fileList)) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const rel = (useRelativePath && file.webkitRelativePath) || file.name;
+      if (extOf(file.name) === 'zip') {
+        for (const z of await unzip(bytes)) entries.push({ path: z.path || z.name, bytes: z.bytes });
+      } else {
+        entries.push({ path: rel, bytes });
+      }
+    }
+    const failed = entries.filter((e) => !usbPutBytes(usbJoin(usbCwd, e.path), e.bytes)).map((e) => e.path);
+    if (failed.length)
+      setMessage('Nem sikerült (megtelt, vagy a név nem megengedett): ' + failed.join(', '), true);
+    else
+      setMessage(entries.length + ' fájl a pendrive-ra került');
+    saveUsb();
+    renderUsb();
+  }
+
+  function fmtSize(n) {
+    if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+    if (n >= 1024) return (n / 1024).toFixed(1) + ' kB';
+    return n + ' B';
+  }
+
+  function renderUsb() {
+    const grp = $('usb-group');
+    if (!grp) return;
+    grp.hidden = !(machine && machine.type === 1);
+    $('usb-on').checked = usbOn;
+    $('usb-size').value = String(usbSize);
+    const list = $('usb-list'), path = $('usb-path');
+    list.textContent = '';
+    path.textContent = '';
+    $('usb-note').textContent = (usbOn && tvcSlotOf(SLOT_CARD256) < 0)
+      ? 'A TVC256k++ kártya nincs egyik portban sem (Bővítőportok).' : '';
+    if (!usbPlugged) {
+      $('usb-space').textContent = 'nincs bedugva';
+      return;
+    }
+    const total = api.usbInfo(0), free = api.usbInfo(1);
+    $('usb-space').textContent = 'szabad: ' + fmtSize(free * 1024) + ' / ' + fmtSize(total * 1024);
+    // path: clickable parts
+    const parts = usbCwd ? usbCwd.split('/') : [];
+    const link = (text, to) => {
+      const a = document.createElement('a');
+      a.textContent = text;
+      a.onclick = () => { usbCwd = to; renderUsb(); };
+      path.appendChild(a);
+    };
+    link('USB:/', '');
+    parts.forEach((p, i) => { link(p + '/', parts.slice(0, i + 1).join('/')); });
+    let entries = JSON.parse(api.usbList(usbCwd) || 'null');
+    if (!entries) { usbCwd = ''; entries = JSON.parse(api.usbList('') || '[]'); }
+    entries.sort((a, b) => (b.d - a.d) || a.n.localeCompare(b.n));
+    const row = (name, cls, size, onOpen, actions) => {
+      const li = document.createElement('li');
+      const n = document.createElement('span');
+      n.className = 'n' + (cls ? ' ' + cls : '');
+      n.textContent = name;
+      if (onOpen) n.onclick = onOpen;
+      li.appendChild(n);
+      const s = document.createElement('span');
+      s.className = 's';
+      s.textContent = size;
+      li.appendChild(s);
+      for (const [label, title, fn] of actions) {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.title = title;
+        b.onclick = fn;
+        li.appendChild(b);
+      }
+      list.appendChild(li);
+    };
+    if (usbCwd) row('..', 'dir', '', () => { usbCwd = parts.slice(0, -1).join('/'); renderUsb(); }, []);
+    for (const e of entries) {
+      const p = usbJoin(usbCwd, e.n);
+      const del = ['✕', 'Törlés', () => {
+        if (!confirm('Törlöd: ' + p + (e.d ? ' (a mappa teljes tartalmával)' : '') + '?')) return;
+        api.usbDelete(p);
+        saveUsb();
+        renderUsb();
+      }];
+      if (e.d) {
+        row(e.n + '/', 'dir', '', () => { usbCwd = p; renderUsb(); }, [del]);
+      } else {
+        const runnable = extOf(e.n) === 'cas';
+        const run = () => runFromUsb(usbCwd, e.n);
+        row(e.n, runnable ? 'run' : '', fmtSize(e.s), runnable ? run : null, [
+          ...(runnable ? [['▶', 'Indítás a pendrive-ról (a kártyán keresztül)', run]] : []),
+          ['⬇', 'Letöltés', () => {
+          try { M.FS.mkdir('/tmp'); } catch (err) { }
+          if (api.usbGet(p, '/tmp/usbfile') === 0) download(M.FS.readFile('/tmp/usbfile'), e.n);
+        }], del]);
+      }
+    }
+    if (!entries.length) row('(üres)', '', '', null, []);
+  }
+
+  // starts a .cas program of the pendrive: the machine restarts, then the
+  // card loads it from its directory (as LOAD after CD on the card)
+  function runFromUsb(dir, name) {
+    if (!machine || machine.type !== 1) return;
+    if (tvcSlotOf(SLOT_CARD256) < 0) {
+      setMessage('A pendrive-ról indításhoz tedd a TVC256k++ kártyát egy portba (Bővítőportok)', true);
+      return;
+    }
+    let base = name.replace(/\.cas$/i, '');
+    if (!isTypable(base, 1)) {
+      // a copy with a name that can be typed, next to the original
+      const simple = sanitizeName(base).replace(/\./g, '-') || 'program';
+      if (api.usbGet(usbJoin(dir, name), '/tmp/usbfile') !== 0 ||
+          !usbPutBytes(usbJoin(dir, simple + '.cas'), M.FS.readFile('/tmp/usbfile'))) {
+        setMessage('Nem sikerült elindítani: ' + name, true);
+        return;
+      }
+      base = simple;
+      saveUsb();
+      renderUsb();
+    }
+    if (tapeName) {
+      api.setTape('');
+      tapeName = '';
+      $('tape-name').textContent = 'nincs kazetta';
+    }
+    startAutostart('load "' + base + '"\n', null, false, tvcRedirectFor(SLOT_CARD256), () => {
+      api.cardSelectDrive(0);
+      api.usbChdir(dir);
+    });
+    canvas.focus();
+  }
+
+  // deletes everything from the pendrive (it is formatted again)
+  function clearUsb() {
+    if (!usbPlugged) return;
+    if (!confirm('Törlöd a pendrive teljes tartalmát?')) return;
+    api.cardUsb(0);
+    usbPlugged = false;
+    usbSaved = [];
+    db.put('usbfiles', usbSaved);
+    usbCwd = '';
+    applyTvcUsb();
+    saveUsb();
+    setMessage('A pendrive üres');
+  }
+
+  function setupUsbUI() {
+    if (!$('usb-group')) return;
+    $('usb-on').onchange = () => {
+      usbOn = $('usb-on').checked;
+      try { localStorage.setItem('ep128web.usbOn', usbOn ? '1' : '0'); } catch (e) { }
+      if (!usbOn && usbPlugged) saveUsb();
+      applyTvcUsb();
+      setMessage(usbOn ? 'Pendrive bedugva' : 'Pendrive kihúzva (a tartalma megmarad)');
+    };
+    $('usb-size').onchange = () => {
+      const size = Number($('usb-size').value);
+      if (usbPlugged) {
+        saveUsb();
+        if (!confirm('A pendrive újraformázódik ' + size + ' MB-ra, a fájlok visszakerülnek rá. Mehet?')) {
+          $('usb-size').value = String(usbSize);
+          return;
+        }
+        api.cardUsb(0);
+        usbPlugged = false;
+      }
+      usbSize = size;
+      try { localStorage.setItem('ep128web.usbSize', String(usbSize)); } catch (e) { }
+      applyTvcUsb();
+    };
+    $('usb-add').onclick = () => $('usb-file').click();
+    $('usb-clear').onclick = clearUsb;
+    $('usb-add-dir').onclick = () => $('usb-folder').click();
+    $('usb-file').onchange = (e) => { addUsbFiles(e.target.files, false); e.target.value = ''; };
+    $('usb-folder').onchange = (e) => { addUsbFiles(e.target.files, true); e.target.value = ''; };
+    $('usb-mkdir').onclick = () => {
+      if (!usbPlugged) return;
+      const name = prompt('Az új mappa neve:');
+      if (!name) return;
+      if (api.usbMkdir(usbJoin(usbCwd, name.replace(/[\\/]/g, '_'))) !== 0) setMessage('Nem sikerült a mappát létrehozni', true);
+      saveUsb();
+      renderUsb();
+    };
+    const box = $('usb-group');
+    box.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); $('usb-browser').classList.add('drag'); });
+    box.addEventListener('dragleave', () => $('usb-browser').classList.remove('drag'));
+    box.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      $('usb-browser').classList.remove('drag');
+      if (e.dataTransfer && e.dataTransfer.files.length) addUsbFiles(e.dataTransfer.files, false);
+    });
+    // what TVC programs write to the pendrive is saved too
+    setInterval(() => {
+      if (usbPlugged && ready && api.usbInfo(2) !== usbSavedWrites) {
+        saveUsb();
+        if (!$('usb-group').hidden) renderUsb();
+      }
+    }, 5000);
   }
 
   function setMessage(text, isError) {
@@ -305,8 +606,12 @@
 
   function machineROMs(m) {
     let roms = m.roms;
-    if (m.type === 1 && tvcFileIO)
-      roms = roms.concat([['tvcfileio.rom', [0x04]]]);
+    if (m.type === 1) {
+      for (const card of TVC_CARDS) {
+        if (card.rom && tvcSlots.includes(card.id))
+          roms = roms.concat([[card.rom, [card.seg]]]);
+      }
+    }
     if (m.type === 1 && cartridgeName && fileExists('/roms/' + cartridgeName))
       roms = roms.concat([[cartridgeName, [0x01]]]);
     return roms;
@@ -339,6 +644,7 @@
   function updateTvcCardsUI() {
     const grp = $('tvc-cards-group');
     if (grp) grp.hidden = !(machine && machine.type === 1);
+    renderUsb();
   }
 
   function ejectCartridge() {
@@ -378,6 +684,7 @@
       cartridgeName = '';
     }
     updateCartridgeUI();
+    updateMouseButton();
     if (vkbdType >= 0) renderKeyboard();
     const missing = missingROMs(m);
     if (missing.length) {
@@ -403,16 +710,10 @@
     }
     if (diskName)
       api.setDisk(0, '/disk/' + diskName);
+    if (m.type === 1) applyTvcSlots();   // before the reset: the TVC OS detects the cards at boot
     if (coldReset !== false) {
       api.reset(1);
       keyedSinceReset = false;
-    }
-    if (m.type === 1) {
-      applyTvcSoundCards();
-      if (tvcFileIO) {
-        writeMemory(2821, 129);
-        writeMemory(2829, 129);
-      }
     }
     ready = true;
     try { localStorage.setItem('ep128web.machine', m.id); } catch (e) { }
@@ -583,7 +884,12 @@ registerProcessor('ep-output', EPOutput);
     }
     if (e.metaKey) return;      // leave Cmd+... shortcuts to the browser
     const code = mapKey(e);
-    if (code === undefined) return;
+    if (code === undefined) {
+      // keys without an emulated key that would scroll the page away from
+      // the screen (e.g. End on the TVC)
+      if (SCROLL_KEYS.has(e.code)) e.preventDefault();
+      return;
+    }
     e.preventDefault();
     resumeAudio();
     if (autoTask || e.repeat) return;   // the EP has its own auto-repeat
@@ -699,7 +1005,7 @@ registerProcessor('ep-output', EPOutput);
     return ev;
   }
 
-  function startAutostart(command, onTyped, isTvcTape = false) {
+  function startAutostart(command, onTyped, isTvcTape = false, tvcRedirect, prepare) {
     releaseAllKeys();
     api.reset(1);
     keyedSinceReset = false;
@@ -708,9 +1014,24 @@ registerProcessor('ep-output', EPOutput);
       phase: machine.type === 1 ? 'basic' : 'boot',
       t: 0, phaseT: 0, dark: false, logo: 0, stable: 0,
       command, onTyped, events: null, wait: 0,
-      isTvcTape: !!isTvcTape
+      // called once after the reset, when BASIC is ready, before typing
+      prepare,
+      isTvcTape: !!isTvcTape,
+      // TVC: the cassette device redirect the loading command must use
+      // (5: TAPE, 129: FILE: in slot 1), forced while the task types
+      tvcRedirect: tvcRedirect !== undefined ? tvcRedirect
+        : (isTvcTape ? 5 : tvcRedirectFor(SLOT_FILEIO))
     };
     setMessage('Indítás…');
+  }
+
+  // TVC: forces the cassette device redirect (system variables $0B05/$0B0D)
+  // for an autostart task. Plain text typing does not set one, so that it
+  // does not take the redirect away from e.g. the TVC256k++ card's commands.
+  function applyTvcRedirect(a) {
+    if (machine.type !== 1 || !a.tvcRedirect) return;
+    writeMemory(2821, a.tvcRedirect);
+    writeMemory(2829, a.tvcRedirect);
   }
 
   // returns the number of microseconds to emulate before calling again,
@@ -743,15 +1064,8 @@ registerProcessor('ep-output', EPOutput);
       a.last = v;
       if (a.stable >= 25 || phaseTime > 15e6) {
         a.phase = 'type';
-        if (machine.type === 1) {
-          if (a.isTvcTape) {
-            writeMemory(2821, 5);
-            writeMemory(2829, 5);
-          } else if (tvcFileIO) {
-            writeMemory(2821, 129);
-            writeMemory(2829, 129);
-          }
-        }
+        if (a.prepare) a.prepare();
+        applyTvcRedirect(a);
         // TVC BASIC ignores keys for about a second after the banner appears,
         // and then the first key: wait, and send an Enter first
         a.events = machine.type === 1
@@ -763,15 +1077,7 @@ registerProcessor('ep-output', EPOutput);
     if (a.events.length) {
       const [code, down, delay] = a.events.shift();
       if (code >= 0) api.setKey(code, down);
-      if (machine.type === 1) {
-        if (a.isTvcTape) {
-          writeMemory(2821, 5);
-          writeMemory(2829, 5);
-        } else if (tvcFileIO) {
-          writeMemory(2821, 129);
-          writeMemory(2829, 129);
-        }
-      }
+      applyTvcRedirect(a);
       return delay;
     }
     if (a.phase === 'logo') {
@@ -779,15 +1085,7 @@ registerProcessor('ep-output', EPOutput);
       a.phaseT = a.t;
       return 20000;
     }
-    if (machine.type === 1) {
-      if (a.isTvcTape) {
-        writeMemory(2821, 5);
-        writeMemory(2829, 5);
-      } else if (tvcFileIO) {
-        writeMemory(2821, 129);
-        writeMemory(2829, 129);
-      }
-    }
+    applyTvcRedirect(a);
     autoTask = null;
     setMessage('');
     if (a.onTyped) a.onTyped();
@@ -875,7 +1173,7 @@ registerProcessor('ep-output', EPOutput);
       } else {
         throw new Error('nem támogatott ZIP tömörítés: ' + name);
       }
-      out.push({ name: name.split('/').pop(), bytes: content });
+      out.push({ name: name.split('/').pop(), path: name, bytes: content });
     }
     return out;
   }
@@ -889,6 +1187,8 @@ registerProcessor('ep-output', EPOutput);
   function fileKind(f) {
     const ext = extOf(f.name);
     if (ext === 'crt') return 'cartridge';
+    // TVC256k++ flash drive image (15 MB littlefs), e.g. flash-root-1.3.bin
+    if (ext === 'bin' && (/^flash-root/i.test(f.name) || f.bytes.length === 15728640)) return 'cardflash';
     if (ext === 'rom' || (ext === 'bin' && f.bytes.length > 100000 && /rom/i.test(f.name)))
       return 'rom';
     if (ext === 'ep128s' || ext === 'ep128d' || ext === 'ep128s2') return 'snapshot';
@@ -908,6 +1208,14 @@ registerProcessor('ep-output', EPOutput);
     const ext = extOf(name);
     if (machine.type === 1) return ext === 'cas';
     return ['com', 'bas', 'prg', 'ep', 'exe', 'app', ''].includes(ext);
+  }
+
+  function loadCardFlash(f) {
+    try { M.FS.mkdir('/card'); } catch (e) { }
+    M.FS.writeFile('/card/flash.bin', f.bytes);
+    check(api.loadTvcCardFlash('/card/flash.bin'), 'TVC256k++ flash drive kép');
+    db.put('cardflash', f.bytes);
+    setMessage('TVC256k++ flash drive kép betöltve' + (tvcSlotOf(SLOT_CARD256) >= 0 ? '' : ' – tedd a kártyát egy bővítőportba'));
   }
 
   function loadROMFile(f) {
@@ -948,25 +1256,11 @@ registerProcessor('ep-output', EPOutput);
     setMessage((ext === 'ep128d' ? 'Demó: ' : 'Pillanatkép: ') + f.name);
   }
 
-  // switch the TVC FILE: extension on or off (it replaces the cassette
-  // device and conflicts with VT-DOS)
-  function setTVCFileIO(enabled, m) {
-    if (tvcFileIO !== enabled || m !== machine) {
-      tvcFileIO = enabled;
-      applyMachine(m || machine);
-      $('machine').value = machine.id;
-    }
-  }
-
   function loadTapeFile(f) {
     ensureDir('/tape');
     tapeName = sanitizeName(f.name);
     M.FS.writeFile('/tape/' + tapeName, f.bytes);
-    if (machine.type === 1) {
-      setTVCFileIO(false);
-      writeMemory(2821, 5);
-      writeMemory(2829, 5);
-    }
+    setTvcRedirect(5);
     check(api.setTape('/tape/' + tapeName), 'kazetta');
     $('tape-name').textContent = f.name;
     setMessage('Kazetta betöltve – indítás…');
@@ -994,14 +1288,15 @@ registerProcessor('ep-output', EPOutput);
         tapeName = '';
         $('tape-name').textContent = 'nincs kazetta';
       }
-      // VT-DOS is needed, and tvcfileio.rom must be removed
-      const m = machine.roms.some((r) => r[0].startsWith('tvc_dos'))
-        ? machine
-        : (MACHINES.find((x) => x.id === 'tvc64-12-vtdos') || MACHINES.find((x) => x.id === 'tvc64p-22-vtdos'));
-      setTVCFileIO(false, m);
       check(api.setDisk(0, '/disk/' + diskName), 'lemez');
+      if (tvcSlotOf(SLOT_VTDOS) < 0) {
+        setMessage('A lemezhez tegyél VT-DOS kártyát egy bővítőportba (Bővítőportok)', true);
+        return;
+      }
       setMessage('Lemez az A: meghajtóban – VT-DOS indítása…');
-      startAutostart('ext 2\n' + PAUSE + 'dir\n' + PAUSE + PRESS_ESC, null);
+      // the VT-DOS commands (EXT 2) need the default device to be the DOS
+      startAutostart('ext 2\n' + PAUSE + 'dir\n' + PAUSE + PRESS_ESC, null, false,
+                     tvcRedirectFor(SLOT_VTDOS));
     } else {
       if (!machine.roms.some((r) => r[0].startsWith('exdos'))) {
         applyMachine(MACHINES.find((x) => x.id === 'ep128uk-exdos'));
@@ -1018,6 +1313,7 @@ registerProcessor('ep-output', EPOutput);
   function storeProgramFiles(files) {
     const startable = [];
     const stored = [];
+    lastStoredFiles = stored;
     for (const f of files) {
       let name = hostName(f.name);
       if (machine.type === 1 && !extOf(name)) name += '.cas';
@@ -1030,20 +1326,108 @@ registerProcessor('ep-output', EPOutput);
     return (startable.length === 0 && stored.length === 1) ? stored : startable;
   }
 
+  // the files of the last drop (in /files), copied to the TVC256k++ card's
+  // PSRAM drive when the card loads the program
+  let lastStoredFiles = [];
+
+  // TVC with the TVC256k++ card: the program and the files dropped with it go
+  // to the card's PSRAM drive and LOAD runs through the card, so the program
+  // sees the card (its drives, functions, graphics) like on the real machine
+  function startProgramOnCard(name) {
+    let base = name.replace(/\.cas$/i, '');
+    let files = lastStoredFiles.includes(name) ? lastStoredFiles.slice() : [name];
+    if (!isTypable(base, 1)) {
+      base = sanitizeName(base).replace(/\./g, '-') || 'program';
+      files.push(base + '.cas');
+      M.FS.writeFile('/files/' + base + '.cas', M.FS.readFile('/files/' + name));
+      listFiles();
+    }
+    // as on the real card: the files go to the USB pendrive (plugged in now if
+    // needed); the PSRAM is left to the programs, which often use it as memory
+    if (!usbPlugged) {
+      usbOn = true;
+      try { localStorage.setItem('ep128web.usbOn', '1'); } catch (e) { }
+      applyTvcUsb();
+    }
+    if (usbPlugged) {
+      const failed = files.filter((f) => !usbPutBytes(f, M.FS.readFile('/files/' + f)));
+      if (failed.length) setMessage('Nem fért a pendrive-ra: ' + failed.join(', '), true);
+      saveUsb();
+      renderUsb();
+      startAutostart('load "' + base + '"\n', null, false, tvcRedirectFor(SLOT_CARD256), () => api.cardSelectDrive(0));
+      return;
+    }
+    const prepare = () => {
+      const failed = files.filter((f) => api.cardPutFile(f, '/files/' + f) !== 0);
+      if (failed.length)
+        setMessage('Nem fért a kártya PSRAM drive-jára: ' + failed.join(', '), true);
+    };
+    startAutostart('load "' + base + '"\n', null, false, tvcRedirectFor(SLOT_CARD256), prepare);
+  }
+
+  // TVC256k++ card: the browser's mouse becomes the card's USB mouse while
+  // the pointer is locked to the screen (the button starts it, Esc ends it)
+  function setupMouse() {
+    const btn = $('btn-mouse');
+    if (!btn) return;
+    const toCard = (b) => (b & 1) | ((b & 4) >> 1) | ((b & 2) << 1);   // left, middle, right
+    let buttons = 0;
+    const locked = () => document.pointerLockElement === canvas;
+    btn.onclick = () => {
+      if (!ready) return;
+      canvas.focus();
+      if (canvas.requestPointerLock) canvas.requestPointerLock();
+    };
+    document.addEventListener('pointerlockchange', () => {
+      btn.classList.toggle('on', locked());
+      if (locked()) setMessage('Egér a TVC256k++ kártyán – kilépés: Esc');
+      else { buttons = 0; if (ready) api.setMouse(0, 0, 0, 0); setMessage(''); }
+    });
+    canvas.addEventListener('mousemove', (e) => {
+      if (!locked() || !ready) return;
+      api.setMouse(e.movementX | 0, e.movementY | 0, buttons, 0);
+    });
+    const onButton = (e) => {
+      if (!locked() || !ready) return;
+      buttons = toCard(e.buttons);
+      api.setMouse(0, 0, buttons, 0);
+      e.preventDefault();
+    };
+    canvas.addEventListener('mousedown', onButton);
+    canvas.addEventListener('mouseup', onButton);
+    canvas.addEventListener('contextmenu', (e) => { if (locked()) e.preventDefault(); });
+    updateMouseButton();
+  }
+
+  // the mouse button is shown on the TVC when the TVC256k++ card is installed
+  function updateMouseButton() {
+    const btn = $('btn-mouse');
+    if (!btn) return;
+    btn.hidden = !(machine && machine.type === 1 && tvcSlotOf(SLOT_CARD256) >= 0);
+  }
+
   function startProgram(name) {
     let cmd;
-    if (machine.type === 1) {
-      const m = machine.roms.some((r) => r[0].startsWith('tvc_dos'))
-        ? (MACHINES.find((x) => x.id === 'tvc64p-22') || MACHINES.find((x) => x.id === 'tvc64-12'))
-        : machine;
-      setTVCFileIO(true, m);
+    if (machine.type === 1 && tvcSlotOf(SLOT_CARD256) >= 0 && extOf(name) === 'cas') {
       if (tapeName) {
         api.setTape('');
         tapeName = '';
         $('tape-name').textContent = 'nincs kazetta';
       }
-      writeMemory(2821, 129);
-      writeMemory(2829, 129);
+      startProgramOnCard(name);
+      return;
+    }
+    if (machine.type === 1) {
+      if (tvcSlotOf(SLOT_FILEIO) < 0) {
+        setMessage('A .cas programokhoz tegyél FILE: kártyát egy bővítőportba (Bővítőportok)', true);
+        return;
+      }
+      if (tapeName) {
+        api.setTape('');
+        tapeName = '';
+        $('tape-name').textContent = 'nincs kazetta';
+      }
+      setTvcRedirect(tvcRedirectFor(SLOT_FILEIO));
       let base = name.replace(/\.cas$/i, '');
       if (!isTypable(base, 1)) {
         // the name cannot be typed: start it through a copy with a simple name
@@ -1075,7 +1459,9 @@ registerProcessor('ep-output', EPOutput);
     const desc = $('chooser-desc');
     const list = $('chooser-list');
     if (title) title.textContent = 'Melyik programot indítsam?';
-    if (desc) desc.textContent = 'Az összes fájl a FILE: eszközre került, így a program futás közben is betöltheti a többit.';
+    if (desc) desc.textContent = (machine.type === 1 && tvcSlotOf(SLOT_CARD256) >= 0)
+      ? 'Az összes fájl a TVC256k++ kártya PSRAM drive-jára kerül, így a program futás közben is betöltheti a többit.'
+      : 'Az összes fájl a FILE: eszközre került, így a program futás közben is betöltheti a többit.';
     list.textContent = '';
     for (const n of names) {
       const b = document.createElement('button');
@@ -1133,7 +1519,8 @@ registerProcessor('ep-output', EPOutput);
       const of = (kind) => files.filter((f) => fileKind(f) === kind);
       // ROMs first, so that a ROM package and a program can be dropped together
       for (const f of of('rom')) loadROMFile(f);
-      if (!files.some((f) => fileKind(f) !== 'rom')) return;
+      for (const f of of('cardflash')) loadCardFlash(f);
+      if (!files.some((f) => !['rom', 'cardflash'].includes(fileKind(f)))) return;
       if (!ready) {
         setMessage('Először a ROM-okat kell betölteni', true);
         return;
@@ -1499,9 +1886,69 @@ registerProcessor('ep-output', EPOutput);
   // --------------------------------------------------------------------------
   // UI
 
+  // TVC expansion slots: the selection only takes effect with the button,
+  // which installs the cards and restarts the machine
+  function setupTvcSlotsUI() {
+    const selects = [0, 1, 2, 3].map((i) => $('tvc-slot' + i));
+    if (selects.some((x) => !x)) return;
+    const show = () => selects.forEach((sel, i) => { sel.value = String(tvcSlots[i]); });
+    const pending = () => selects.map((sel) => Number(sel.value));
+    const update = () => {
+      const p = pending();
+      const changed = p.some((c, i) => c !== tvcSlots[i]);
+      $('tvc-slots-apply').classList.toggle('on', changed);
+      $('tvc-slots-note').textContent = !validTvcSlots(p)
+        ? 'Egy kártya csak egy portban lehet.'
+        : (changed ? 'Módosítva – a betöltés gombbal lép életbe.' : '');
+    };
+    for (const sel of selects) {
+      for (const card of TVC_CARDS) {
+        const o = document.createElement('option');
+        o.value = String(card.id);
+        o.textContent = card.name;
+        sel.appendChild(o);
+      }
+      sel.onchange = update;
+    }
+    show();
+    $('tvc-slots-apply').onclick = () => {
+      const p = pending();
+      if (!validTvcSlots(p)) { update(); return; }
+      tvcSlots = p;
+      try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots)); } catch (e) { }
+      update();
+      if (machine.type === 1) {
+        autoTask = null;
+        releaseAllKeys();
+        applyMachine(machine);        // loads the card ROMs, cold reset
+      }
+      canvas.focus();
+    };
+    $('tvc-slots-default').onclick = () => {
+      selects.forEach((sel, i) => { sel.value = String(TVC_DEFAULT_SLOTS[i]); });
+      update();
+    };
+    update();
+  }
+
+  let muted = false;
+  try { muted = localStorage.getItem('ep128web.muted') === '1'; } catch (e) { }
+
   function applyVolume() {
-    const v = Number($('volume').value) / 100;
+    const v = muted ? 0 : Number($('volume').value) / 100;
     api.setVolume(v * v);
+    const b = $('btn-mute');
+    if (b) {
+      b.textContent = muted ? '🔇' : '🔊';
+      b.title = muted ? 'Hang bekapcsolása' : 'Némítás';
+      b.setAttribute('aria-pressed', String(muted));
+    }
+  }
+
+  function toggleMute() {
+    muted = !muted;
+    try { localStorage.setItem('ep128web.muted', muted ? '1' : '0'); } catch (e) { }
+    applyVolume();
   }
 
   function reset(cold) {
@@ -1766,39 +2213,28 @@ registerProcessor('ep-output', EPOutput);
     };
     $('btn-turbo').onclick = toggleTurbo;
     $('btn-load').onclick = () => {
-      if (machine.type === 1) {
-        if (tapeName) {
-          writeMemory(2821, 5);
-          writeMemory(2829, 5);
-        } else if (tvcFileIO) {
-          writeMemory(2821, 129);
-          writeMemory(2829, 129);
-        }
-      }
+      if (machine.type === 1)
+        setTvcRedirect(tapeName ? 5 : defaultTvcLoadRedirect());
       typeText('load"*"\n');
       canvas.focus();
     };
     const btnRun = $('btn-run');
     if (btnRun) btnRun.onclick = () => {
-      if (machine.type === 1) {
-        if (tapeName) {
-          writeMemory(2821, 5);
-          writeMemory(2829, 5);
-        } else if (tvcFileIO) {
-          writeMemory(2821, 129);
-          writeMemory(2829, 129);
-        }
-      }
+      if (machine.type === 1)
+        setTvcRedirect(tapeName ? 5 : defaultTvcLoadRedirect());
       typeText('run\n');
       canvas.focus();
     };
     $('btn-full').onclick = () => { toggleFullscreen(); canvas.focus(); };
+    setupMouse();
+    setupUsbUI();
     $('btn-snap').onclick = () => {
       if (!ready) return;
       check(api.saveSnapshot('/tmp/save.ep128s'), 'mentés');
       download(M.FS.readFile('/tmp/save.ep128s'), 'ep128-' +
                new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.ep128s');
     };
+    $('btn-mute').onclick = () => { toggleMute(); canvas.focus(); };
     $('volume').oninput = (e) => {
       applyVolume();
       try { localStorage.setItem('ep128web.volume', e.target.value); } catch (er) { }
@@ -1863,26 +2299,7 @@ registerProcessor('ep-output', EPOutput);
       arrowsAsJoystick = e.target.checked;
       canvas.focus();
     };
-    const gcBox = $('tvc-gamecard');
-    if (gcBox) {
-      gcBox.checked = tvcGameCard;
-      gcBox.onchange = (e) => {
-        tvcGameCard = e.target.checked;
-        try { localStorage.setItem('ep128web.tvcGameCard', tvcGameCard ? '1' : '0'); } catch (err) {}
-        applyTvcSoundCards();
-        canvas.focus();
-      };
-    }
-    const msBox = $('tvc-multisound');
-    if (msBox) {
-      msBox.checked = tvcMultiSound;
-      msBox.onchange = (e) => {
-        tvcMultiSound = e.target.checked;
-        try { localStorage.setItem('ep128web.tvcMultiSound', tvcMultiSound ? '1' : '0'); } catch (err) {}
-        applyTvcSoundCards();
-        canvas.focus();
-      };
-    }
+    setupTvcSlotsUI();
 
     const wrap = $('screen-wrap');
     wrap.addEventListener('dragover', (e) => { e.preventDefault(); wrap.classList.add('drag'); });
@@ -1904,6 +2321,7 @@ registerProcessor('ep-output', EPOutput);
   let lastTapePos = -1;
   let tapeFast = true;
   let speedAccUs = 0, speedAccMs = 0;
+  let audioLevelSmooth = -1;      // seconds of audio buffered, smoothed
 
   function frame(now) {
     requestAnimationFrame(frame);
@@ -1915,10 +2333,14 @@ registerProcessor('ep-output', EPOutput);
 
     let us = dt * 1000;
     if (audioRunning && !turbo) {
-      // keep about 60 ms of audio buffered: run slightly faster or slower
+      // keep about 60 ms of audio buffered. The speed is only nudged (at most
+      // 0.5 %, from a smoothed buffer level): bigger steps change the pitch
+      // audibly, like a dragging tape. Only an almost empty buffer (e.g.
+      // after the tab was in the background) gets a faster catch-up.
       const buffered = audioLevel / sampleRate;
-      if (buffered < 0.04) us *= 1.1;
-      else if (buffered > 0.1) us *= 0.9;
+      audioLevelSmooth = audioLevelSmooth < 0 ? buffered : audioLevelSmooth * 0.95 + buffered * 0.05;
+      if (buffered < 0.01) us *= 1.03;
+      else us *= 1 + Math.max(-0.005, Math.min(0.005, (0.06 - audioLevelSmooth) * 0.1));
     }
     us = Math.round(us);
 
@@ -1945,9 +2367,13 @@ registerProcessor('ep-output', EPOutput);
         check(api.run(us), 'emuláció');
       }
     } catch (e) {
+      // a WebAssembly error stops the emulator for good: say so
       console.error(e);
       paused = true;
+      ready = false;
       $('btn-pause').classList.add('on');
+      setMessage('Az emulátor hibára futott (' + String(e.message || e).slice(0, 80) +
+                 ') – töltsd újra az oldalt. A pendrive tartalma megmarad.', true);
       return;
     }
     emulatedUs += us;
@@ -1995,7 +2421,11 @@ registerProcessor('ep-output', EPOutput);
   // --------------------------------------------------------------------------
 
   async function main() {
+    // the build id makes the browser fetch the new .wasm after an update
+    const buildMeta = document.querySelector('meta[name="build"]');
+    const buildV = buildMeta && !buildMeta.content.startsWith('__') ? buildMeta.content : '';
     M = await createEp128Module({
+      locateFile: (path, prefix) => prefix + path + (buildV ? '?v=' + buildV : ''),
       print: (s) => console.log(s),
       printErr: (s) => console.warn(s)
     });
@@ -2029,8 +2459,19 @@ registerProcessor('ep-output', EPOutput);
       readMemory: c('ep_read_memory', 'number', ['number']),
       writeMemory: c('ep_write_memory', null, ['number', 'number']),
       unpackRoms: c('ep_unpack_rom_package', 'number', ['string', 'string']),
-      setTvcGameCard: c('ep_set_tvc_gamecard', null, ['number']),
-      setTvcMultiSound: c('ep_set_tvc_multisound', null, ['number']),
+      setTvcSlot: c('ep_set_tvc_slot', null, ['number', 'number']),
+      loadTvcCardFlash: c('ep_load_tvc_card_flash', 'number', ['string']),
+      cardPutFile: c('ep_tvc_card_put_file', 'number', ['string', 'string']),
+      setMouse: c('ep_set_mouse', null, ['number', 'number', 'number', 'number']),
+      cardUsb: c('ep_tvc_card_usb', 'number', ['number']),
+      cardSelectDrive: c('ep_tvc_card_select_drive', null, ['number']),
+      usbList: c('ep_usb_list', 'string', ['string']),
+      usbPut: c('ep_usb_put', 'number', ['string', 'string']),
+      usbGet: c('ep_usb_get', 'number', ['string', 'string']),
+      usbMkdir: c('ep_usb_mkdir', 'number', ['string']),
+      usbDelete: c('ep_usb_delete', 'number', ['string']),
+      usbChdir: c('ep_usb_chdir', 'number', ['string']),
+      usbInfo: c('ep_usb_info', 'number', ['number']),
       setTvcExtJoy: c('ep_set_tvc_ext_joy', null, ['number', 'number'])
     };
     for (const d of ['/roms', '/files', '/tmp', '/disk', '/tape']) ensureDir(d);
@@ -2056,6 +2497,12 @@ registerProcessor('ep-output', EPOutput);
       try {
         if (key === 'pkg') installROMPackage(value);
         else if (key.startsWith('rom:')) M.FS.writeFile('/roms/' + key.slice(4), value);
+        else if (key === 'usbfiles') usbSaved = value;
+        else if (key === 'cardflash') {
+          try { M.FS.mkdir('/card'); } catch (e) { }
+          M.FS.writeFile('/card/flash.bin', value);
+          api.loadTvcCardFlash('/card/flash.bin');
+        }
       } catch (e) { console.warn(e); }
     }
     if (!fileExists('/roms/exos21.rom')) {
@@ -2078,6 +2525,7 @@ registerProcessor('ep-output', EPOutput);
 
     let id = null;
     try { id = localStorage.getItem('ep128web.machine'); } catch (e) { }
+    id = MACHINE_ALIASES[id] || id;
     machine = MACHINES.find((m) => m.id === id) || MACHINES.find((m) => m.id === 'tvc64p-22');
     setupUI();
     listFiles();
