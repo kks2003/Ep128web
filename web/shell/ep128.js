@@ -126,6 +126,10 @@
   const KEYMAP_TVC = Object.assign({}, KEYMAP, {
     Escape: 0x38, IntlBackslash: 0x1F, End: undefined, Pause: undefined
   });
+  // TVC: End and Pause press CTRL+ESC, the STOP of the TVC (Ctrl+Esc itself
+  // is taken by Windows for the Start menu)
+  const TVC_STOP_KEYS = new Set(['End', 'Pause']);
+  const TVC_STOP = [0x0F, 0x38];
   const JOY_KEYMAP = {
     ArrowRight: 0x70, ArrowLeft: 0x71, ArrowDown: 0x72, ArrowUp: 0x73,
     ControlRight: 0x74
@@ -1000,6 +1004,12 @@ registerProcessor('ep-output', EPOutput);
       return;
     }
     if (e.metaKey) return;      // leave Cmd+... shortcuts to the browser
+    if (machine && machine.type === 1 && TVC_STOP_KEYS.has(e.code)) {
+      e.preventDefault();
+      resumeAudio();
+      if (!autoTask && !e.repeat) TVC_STOP.forEach(keyDown);
+      return;
+    }
     const code = mapKey(e);
     if (code === undefined) {
       // keys without an emulated key that would scroll the page away from
@@ -1015,6 +1025,11 @@ registerProcessor('ep-output', EPOutput);
 
   document.addEventListener('keyup', (e) => {
     if (isTextInput(e.target)) return;
+    if (machine && machine.type === 1 && TVC_STOP_KEYS.has(e.code)) {
+      e.preventDefault();
+      TVC_STOP.forEach(keyUp);
+      return;
+    }
     const code = mapKey(e);
     if (code === undefined) return;
     e.preventDefault();

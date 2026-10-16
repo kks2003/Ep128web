@@ -104,7 +104,7 @@ Enterprise-billentyűzet: Esc = ESC, Backspace = ERASE, Del = DEL, Ins = INS, En
 Home = HOLD, Alt = ALT, F1–F8 = funkciógombok, CapsLock = LOCK; F11 = reset,
 Shift+F11 = hideg reset, F12 = turbó. Joystick 1: numerikus billentyűzet
 (8/4/6/2 + 0 = tűz), gamepad, vagy nyilak + jobb Ctrl (kapcsolható).
-TVC-n a PC Esc az ESC billentyűt, a magyar PC `í` billentyűje pedig az `í` karaktert adja.
+TVC-n a PC Esc az ESC billentyűt, a magyar PC `í` billentyűje pedig az `í` karaktert adja; az End/Pause a CTRL+ESC (STOP) kombinációt nyomja, mert a Ctrl+Esc-et a Windows a Start menünek tartja meg.
 
 ### Mobilon
 
