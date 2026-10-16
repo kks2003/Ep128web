@@ -281,8 +281,8 @@
   })();
   const CHARMAP_TVC = (() => {
     const m = Object.assign({}, CHARMAP_EP);
-    m.y = m.Y = [0x06, false];
-    m.z = m.Z = [0x12, false];
+    m.y = [0x06, false]; m.Y = [0x06, true];
+    m.z = [0x12, false]; m.Z = [0x12, true];
     m['0'] = [0x4B, false];
     m[':'] = [0x44, true];
     m['-'] = [0x43, false];
@@ -293,6 +293,13 @@
       '=': 0x18, '(': 0x28, ')': 0x2A, '?': 0x42, '$': 0x17, '`': 0x27 };
     for (const c in shifted) m[c] = [shifted[c], true];
     Object.assign(m, { ';': [0x17, false], '@': [0x27, false] });
+    // the keys of the TVC that the PC layout has elsewhere (found by typing
+    // every key through the TVC BASIC 1.2 ROM): < > beside Y, [ { ] } \ |
+    // ^ ~ on the right, # and & shifted
+    Object.assign(m, {
+      '<': [0x22, false], '>': [0x22, true], '[': [0x25, false], '{': [0x25, true],
+      ']': [0x21, false], '}': [0x21, true], '\\': [0x20, false], '|': [0x20, true],
+      '^': [0x23, false], '~': [0x23, true], '#': [0x24, true], '&': [0x4B, true] });
     // Hungarian letters
     const hu = { 'ö': 0x2C, 'ü': 0x2B, 'ó': 0x2D, 'ő': 0x4D, 'ú': 0x36,
       'é': 0x33, 'á': 0x35, 'ű': 0x01 };
@@ -304,7 +311,24 @@
   })();
   CHARMAP_EP._ = [0x2C, true];
   CHARMAP_TVC._ = [0x43, true];
+  CHARMAP_EP['#'] = [0x1D, true];   // the UK EXOS shows it as £
+  // the Hungarian Enterprise with hun.rom: the keys that differ from the UK
+  // layout, found by typing every key through its IS-BASIC (EXOS 2.32 HU
+  // keeps the UK layout)
+  const CHARMAP_EP_HU = Object.assign({}, CHARMAP_EP, {
+    "#": [0x36, false], "'": [0x2B, false], "*": [0x4D, true], "+": [0x4D, false], "-": [0x43, false],
+    "/": [0x18, true], ":": [0x44, true], ";": [0x42, true], "<": [0x01, true], "=": [0x2C, true],
+    ">": [0x01, false], "?": [0x2B, true], "@": [0x2D, true], "Y": [0x06, true], "Z": [0x12, true],
+    "[": [0x35, true], "\\": [0x33, true], "]": [0x4B, true], "^": [0x36, true], "_": [0x43, true],
+    "`": [0x2D, false], "y": [0x06, false], "z": [0x12, false], "{": [0x35, false], "|": [0x33, false],
+    "}": [0x4B, false], "~": [0x1D, true] });
   const CHARMAP = [CHARMAP_EP, CHARMAP_TVC];
+
+  // the character map of the current machine
+  function charMap() {
+    if (machine && machine.type === 1) return CHARMAP_TVC;
+    return (machine && machine.roms.some((r) => r[0] === 'hun.rom')) ? CHARMAP_EP_HU : CHARMAP_EP;
+  }
   const PAUSE = '\u0001';      // in autotyped text: wait 2.5 seconds
   const PRESS_ESC = '\u0002';  // in autotyped text: press the TVC ESC key
 
@@ -312,7 +336,8 @@
   // letters are typable, but the FILE: devices would not match them with
   // the host file name
   function isTypable(text, type) {
-    return /^[\x20-\x7e]*$/.test(text) && Array.from(text).every((ch) => CHARMAP[type][ch]);
+    const map = type === 1 ? CHARMAP_TVC : charMap();
+    return /^[\x20-\x7e]*$/.test(text) && Array.from(text).every((ch) => map[ch]);
   }
 
   // --------------------------------------------------------------------------
@@ -1221,7 +1246,7 @@ registerProcessor('ep-output', EPOutput);
                 [-1, 0, 50000]);
         continue;
       }
-      const k = CHARMAP[machine.type][ch];
+      const k = charMap()[ch];
       if (!k) continue;
       if (k[1]) ev.push([KEY_SHIFT, 1, 30000]);
       ev.push([k[0], 1, 60000]);
@@ -1992,19 +2017,19 @@ registerProcessor('ep-output', EPOutput);
       [['0', 0x4B], ['1', 0x19, "'"], ['2', 0x1E, '"'], ['3', 0x1D, '+'],
        ['4', 0x1B, '!'], ['5', 0x1C, '%'], ['6', 0x1A, '/'], ['7', 0x18, '='],
        ['8', 0x28, '('], ['9', 0x2A, ')'], ['Ö', 0x2C], ['Ü', 0x2B], ['Ó', 0x2D],
-       ['DEL', 0x2E, '', 'mod', 1.4]],
+       ['*', 0x24, '#'], ['^', 0x23, '~'], ['DEL', 0x2E, '', 'mod', 1.4]],
       [['ESC', 0x38, '', 'mod', 1.3]].concat(
         L('qwertzuiop', [0x11, 0x16, 0x15, 0x13, 0x14, 0x12, 0x10, 0x48, 0x4A, 0x4C]),
-        [['Ő', 0x4D], ['Ú', 0x36]]),
+        [['Ő', 0x4D], ['Ú', 0x36], ['[', 0x25, '{'], [']', 0x21, '}']]),
       [['LOCK', 0x09, '', 'mod', 1.5]].concat(
         L('asdfghjkl', [0x0E, 0x0D, 0x0B, 0x0C, 0x0A, 0x08, 0x30, 0x32, 0x34]),
         [['É', 0x33], ['Á', 0x35], ['Ű', 0x01], ['RETURN', 0x3E, '', 'mod', 1.8]]),
-      [['SHIFT', 0x07, '', 'mod sticky', 1.7]].concat(
+      [['SHIFT', 0x07, '', 'mod sticky', 1.7], ['<', 0x22, '>']].concat(
         L('yxcvbnm', [0x06, 0x05, 0x03, 0x04, 0x02, 0x00, 0x40]),
         [[',', 0x42, '?'], ['.', 0x44, ':'], ['-', 0x43, '_'],
          ['SHIFT', 0x45, '', 'mod sticky', 1.7]]),
       [['CTRL', 0x0F, '', 'mod sticky', 1.2], ['ALT', 0x3F, '', 'mod sticky', 1.1],
-       ['@', 0x27, '`'], [';', 0x17, '$'], ['SPACE', 0x46, '', '', 4.5],
+       ['@', 0x27, '`'], [';', 0x17, '$'], ['\\', 0x20, '|'], ['SPACE', 0x46, '', '', 4.5],
        ['INS', 0x47, '', 'mod'], ['←', 0x3D, '', 'mod'], ['↑', 0x3B, '', 'mod'],
        ['↓', 0x39, '', 'mod'], ['→', 0x3A, '', 'mod']]
     ]
@@ -2244,7 +2269,7 @@ registerProcessor('ep-output', EPOutput);
       $('typer-send').textContent = 'Beír + Enter';
       const text = inp.value.replace(/\r\n?/g, '\n').replace(/\t/g, ' ').replace(/\s+$/, '');
       if (!text) return;
-      const map = CHARMAP[machine.type];
+      const map = charMap();
       const bad = new Set(Array.from(text).filter((ch) => ch !== '\n' && !map[ch]));
       typeText(text + '\n');
       if (!autoTask) return;
