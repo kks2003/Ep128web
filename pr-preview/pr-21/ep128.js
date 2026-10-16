@@ -351,6 +351,22 @@
   let M = null;                 // Emscripten module
   let api = null;
   let imageData = null;
+  // TVC: the 48 pixels on both sides of the 768 pixel line are horizontal
+  // blanking (always black, a TV hides them), so they are not shown
+  const TVC_CROP_X = 48;
+  let cropX = 0;
+  function updateScreenCrop() {
+    if (!imageData) return;
+    cropX = (machine && machine.type === 1) ? TVC_CROP_X : 0;
+    const w = imageData.width - 2 * cropX;
+    if (canvas.width !== w) {
+      canvas.width = w;
+      ctx.putImageData(imageData, -cropX, 0);
+    }
+    // 768 pixels are 4:3 wide
+    const wrap = $('screen-wrap');
+    wrap.style.setProperty('--screen-ar', String(w / imageData.width * 4 / 3));
+  }
   let ready = false;            // ROMs loaded, machine running
   let paused = false;
   let turbo = false;
@@ -936,6 +952,7 @@
     updateMouseButton();
     renderJoyMap();               // the TVC has the GameCard joysticks too
     try { listFiles(); } catch (e) { }   // startable files depend on the machine
+    updateScreenCrop();
     if (vkbdType >= 0) renderKeyboard();
     const diskSlot = (m.type === 1 && m.diskCard) ? ensureTvcDiskCard(m.diskCard) : -1;
     const missing = missingROMs(m);
@@ -3054,7 +3071,7 @@ registerProcessor('ep-output', EPOutput);
       lastFrameCount = fc;
       const p = api.frameBuffer();
       imageData.data.set(M.HEAPU8.subarray(p, p + imageData.data.length));
-      ctx.putImageData(imageData, 0, 0);
+      ctx.putImageData(imageData, -cropX, 0);
       if (videoRec) drawRecCanvas();
     }
 
@@ -3141,6 +3158,7 @@ registerProcessor('ep-output', EPOutput);
     canvas.width = w;
     canvas.height = h;
     imageData = ctx.createImageData(w, h);
+    updateScreenCrop();
 
     // ROMs: epfileio.rom ships with ep128emu (GPL); the rest come from the
     // user's ROM package, stored in IndexedDB, or from roms/ on the server
