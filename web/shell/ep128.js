@@ -933,6 +933,7 @@
     updateCartridgeUI();
     updateMouseButton();
     renderJoyMap();               // the TVC has the GameCard joysticks too
+    try { listFiles(); } catch (e) { }   // startable files depend on the machine
     if (vkbdType >= 0) renderKeyboard();
     const diskSlot = (m.type === 1 && m.diskCard) ? ensureTvcDiskCard(m.diskCard) : -1;
     const missing = missingROMs(m);
@@ -1379,9 +1380,30 @@ registerProcessor('ep-output', EPOutput);
     try { M.FS.mkdir(path); } catch (e) { }
   }
 
+  // the FILE: directory; the programs can be started with a click
   function listFiles() {
-    const names = M.FS.readdir('/files').filter((n) => n !== '.' && n !== '..');
-    $('files-list').textContent = names.length ? names.join(', ') : 'üres';
+    const names = M.FS.readdir('/files').filter((n) => n !== '.' && n !== '..').sort();
+    const list = $('files-list');
+    list.textContent = names.length ? '' : 'üres';
+    names.forEach((n, i) => {
+      if (i) list.append(', ');
+      if (!isStartable(n)) { list.append(n); return; }
+      const b = document.createElement('a');
+      b.href = '#';
+      b.className = 'file-start';
+      b.textContent = n;
+      b.title = 'Indítás';
+      b.onclick = (e) => {
+        e.preventDefault();
+        if (!ready) return;
+        resumeAudio();
+        // every file in FILE: goes along (e.g. to the TVC256k++ PSRAM drive)
+        lastStoredFiles = names.slice();
+        startProgram(n);
+        canvas.focus();
+      };
+      list.append(b);
+    });
   }
 
   function download(bytes, name) {
@@ -2730,10 +2752,13 @@ registerProcessor('ep-output', EPOutput);
       download(M.FS.readFile('/disk/' + diskName), diskName);
       api.setDisk(0, '/disk/' + diskName);
     };
-    $('diskb-file').onchange = async (e) => {
+    // Betöltés… buttons of the drives: a disk image, or the first one in a ZIP
+    const diskInput = (load) => async (e) => {
       const file = e.target.files[0];
       e.target.value = '';
       if (!file) return;
+      if (!ready) { setMessage('Először a ROM-okat kell betölteni', true); return; }
+      resumeAudio();
       try {
         let bytes = new Uint8Array(await file.arrayBuffer());
         let name = file.name;
@@ -2743,7 +2768,31 @@ registerProcessor('ep-output', EPOutput);
           bytes = img.bytes;
           name = img.name;
         }
-        loadDiskFileB({ name, bytes });
+        load({ name, bytes });
+      } catch (err) {
+        setMessage(String(err.message || err), true);
+      }
+      canvas.focus();
+    };
+    $('disk-file').onchange = diskInput(loadDiskFile);
+    $('diskb-file').onchange = diskInput(loadDiskFileB);
+    // Betöltés… of FILE:: the files (ZIPs expanded) are only copied there,
+    // a program is started by clicking its name
+    $('files-file').onchange = async (e) => {
+      const fileList = Array.from(e.target.files);
+      e.target.value = '';
+      if (!fileList.length) return;
+      if (!ready) { setMessage('Először a ROM-okat kell betölteni', true); return; }
+      try {
+        const files = [];
+        for (const file of fileList) {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          if (extOf(file.name) === 'zip') files.push(...await unzip(bytes));
+          else files.push({ name: file.name, bytes });
+        }
+        const startable = storeProgramFiles(files);
+        setMessage('FILE: eszközre másolva: ' + files.map((f) => f.name).join(', ') +
+          (startable.length ? ' (indítás: kattints a nevére)' : ''));
       } catch (err) {
         setMessage(String(err.message || err), true);
       }

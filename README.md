@@ -30,10 +30,14 @@ letöltését külön kell betölteni.
 | `.cas` (TVC) | TVC módban: FILE eszköz, automatikus `LOAD` + `RUN` |
 | `.com`, `.bas`, egyéb | a `FILE:` eszközre kerül, a gép újraindul és automatikusan kiadja a `LOAD "FILE:név"` (BASIC-nél `RUN`) parancsot |
 | `.tap`, `.wav` | magnóba kerül, automatikus `LOAD "TAPE:"` + lejátszás, betöltés közben turbó |
-| `.img`, `.dsk` | A: lemezmeghajtó; TVC-n a 360 KiB és 720 KiB (nyers, 512 bájtos szektoros) képek is támogatottak; Enterprise-on szükség esetén EXDOS-os gépre vált; TVC-n a formátumnak megfelelő lemezkártyát (VT-DOS vagy UPM) teszi be; kilistázza a lemezt (`:DIR`, ill. `EXT 2` + `DIR`), UPM-lemeznél a programjai közül lehet választani. Két lemezkép egyszerre: a második a B: meghajtóba kerül; a B: panelen külön is betölthető (TVC: VT-DOS/UPM `B:`, EP: EXDOS `B:`). |
+| `.img`, `.dsk` | A: lemezmeghajtó; TVC-n a 360 KiB és 720 KiB (nyers, 512 bájtos szektoros) képek is támogatottak; Enterprise-on szükség esetén EXDOS-os gépre vált; TVC-n a formátumnak megfelelő lemezkártyát (VT-DOS vagy UPM) teszi be; kilistázza a lemezt (`:DIR`, ill. `EXT 2` + `DIR`), UPM-lemeznél a programjai közül lehet választani. Két lemezkép egyszerre: a második a B: meghajtóba kerül; az A: és a B: panelen a Betöltés… gombbal külön is betölthető (TVC: VT-DOS/UPM `B:`, EP: EXDOS `B:`). |
 | `.zip`, több fájl | minden fájl a `FILE:` eszközre kerül; ha több indítható program van, választani lehet |
 | `.ep128s` / `.ep128d` | ep128emu pillanatkép / demó |
 | `.bin` (ROM-csomag), `.rom` | ROM-ok telepítése |
+
+A FILE: panel Betöltés… gombja a fájlokat (ZIP-et kibontva) csak a `FILE:` eszközre
+másolja, indítás nélkül; a listában az indítható programok neve kattintható, a
+kattintás elindítja a programot.
 
 ### Utántöltős programok
 
