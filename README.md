@@ -102,8 +102,12 @@ géptípusra (Enterprise/TVC) vált.
 
 Enterprise-billentyűzet: Esc = ESC, Backspace = ERASE, Del = DEL, Ins = INS, End/Pause = STOP,
 Home = HOLD, Alt = ALT, F1–F8 = funkciógombok, CapsLock = LOCK; F11 = reset,
-Shift+F11 = hideg reset, F12 = turbó. Joystick 1: numerikus billentyűzet
-(8/4/6/2 + 0 = tűz), gamepad, vagy nyilak + jobb Ctrl (kapcsolható).
+Shift+F11 = hideg reset, F12 = turbó. Joystickok: a Joystick panelen
+minden bemenethez (numerikus 8/4/6/2 + 0, nyilak + jobb Ctrl, W A S D + Space,
+gamepad 1–4, érintős joystick) kiválasztható, melyik joystickot hajtja: TVC-n az
+1. portot (ugyanaz, mint a beépített kurzorjoystick), a 2. portot, vagy a GameCard
+3–4. joystickját; EP-n a két külső joystickot. Alapból: numerikus és gamepad 1 →
+1., gamepad 2 → 2., gamepad 3–4 → GameCard 3–4.; a beállítást a böngésző megjegyzi.
 TVC-n a PC Esc az ESC billentyűt, a magyar PC `í` billentyűje pedig az `í` karaktert adja; az End/Pause a CTRL+ESC (STOP) kombinációt nyomja, mert a Ctrl+Esc-et a Windows a Start menünek tartja meg.
 
 ### Mobilon

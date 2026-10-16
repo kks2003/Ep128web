@@ -399,3 +399,12 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 #usb-drop { color: var(--muted); font-size: 12px; margin-top: 4px; }
 #usb-group { grid-column: span 2; min-width: 0; }
 @media (max-width: 560px) { #usb-group { grid-column: auto; } }
+
+/* joystick panel: input name | joystick it drives */
+#joy-map {
+  width: 100%; display: grid; grid-template-columns: max-content 1fr;
+  gap: 4px 8px; align-items: center; font-size: 13px;
+}
+#joy-map .slot { display: contents; }
+#joy-map select { min-height: 28px; padding: 2px 6px; font-size: 13px; min-width: 0; }
+#cart-group { padding-bottom: 8px; margin-bottom: 2px; border-bottom: 1px solid var(--border); }
