@@ -24,7 +24,11 @@
     </label>
     <button id="btn-snap" title="Pillanatkép mentése (.ep128s)">Állapot mentése</button>
     <button id="btn-shot" title="A képernyő mentése képként (.png)">📷 Kép</button>
-    <button id="btn-video" title="Videó felvétele hanggal (.webm / .mp4); újra megnyomva leáll és letöltődik">● Videó</button>
+    <button id="btn-video" title="Videó felvétele hanggal; újra megnyomva leáll és letöltődik">● Videó</button>
+    <select id="video-fmt" title="A videó formátuma" aria-label="A videó formátuma" hidden>
+      <option value="mp4">MP4</option>
+      <option value="webm">WebM</option>
+    </select>
     <button id="btn-audio" title="Hang felvétele (.wav); újra megnyomva leáll és letöltődik">● Hang</button>
     <span class="vol">
       <button id="btn-mute" class="mute" title="Némítás" aria-pressed="false">🔊</button>
