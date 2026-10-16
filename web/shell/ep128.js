@@ -2155,9 +2155,14 @@ registerProcessor('ep-output', EPOutput);
   let muted = false;
   try { muted = localStorage.getItem('ep128web.muted') === '1'; } catch (e) { }
 
+  // the emulator's output volume goes down to 0.01 (-40 dB) only, so below
+  // that (and when muted) the page scales the samples itself
+  let outGain = 1;
+
   function applyVolume() {
     const v = muted ? 0 : Number($('volume').value) / 100;
     api.setVolume(v * v);
+    outGain = Math.min(1, v * v / 0.01);
     const b = $('btn-mute');
     if (b) {
       b.textContent = muted ? '🔇' : '🔊';
@@ -2632,7 +2637,9 @@ registerProcessor('ep-output', EPOutput);
     if (nFrames > 0) {
       if (audioRunning && !turbo && !autoTask && !tapeMoving && audioNode) {
         const p = api.audioBuffer() >> 2;
-        audioNode.port.postMessage(M.HEAPF32.slice(p, p + nFrames * 2));
+        const samples = M.HEAPF32.slice(p, p + nFrames * 2);
+        if (outGain < 1) for (let i = 0; i < samples.length; i++) samples[i] *= outGain;
+        audioNode.port.postMessage(samples);
       }
       api.audioClear();
     }
