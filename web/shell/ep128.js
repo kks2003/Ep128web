@@ -2104,12 +2104,44 @@ registerProcessor('ep-output', EPOutput);
         if (panel === 'vjoy' && !on) setJoyState(0);
       };
     }
+    // the text field types one line, or a whole pasted program line by line
+    const inp = $('typer-input');
+    const fit = () => { inp.rows = Math.min(12, Math.max(1, inp.value.split('\n').length)); };
+    inp.addEventListener('input', fit);
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        $('typer').requestSubmit();
+      }
+    });
     $('typer').addEventListener('submit', (e) => {
       e.preventDefault();
-      const inp = $('typer-input');
-      if (autoTask) return;
-      typeText(inp.value + '\n');
+      if (autoTask) {
+        if (autoTask.fromTyper) {       // the button stops a long typing
+          autoTask = null;
+          releaseAllKeys();
+          setMessage('Beírás leállítva');
+          $('typer-send').textContent = 'Beír + Enter';
+        }
+        return;
+      }
+      $('typer-send').textContent = 'Beír + Enter';
+      const text = inp.value.replace(/\r\n?/g, '\n').replace(/\t/g, ' ').replace(/\s+$/, '');
+      if (!text) return;
+      const map = CHARMAP[machine.type];
+      const bad = new Set(Array.from(text).filter((ch) => ch !== '\n' && !map[ch]));
+      typeText(text + '\n');
+      if (!autoTask) return;
+      autoTask.fromTyper = true;
+      const lines = text.split('\n').length;
+      if (lines > 1) {
+        $('typer-send').textContent = 'Leállítás';
+        autoTask.onTyped = () => { $('typer-send').textContent = 'Beír + Enter'; };
+      }
+      setMessage((lines > 1 ? lines + ' sor beírása…' : '') +
+        (bad.size ? ' Nem gépelhető karakterek kimaradnak: ' + Array.from(bad).join(' ') : ''), bad.size > 0);
       inp.value = '';
+      fit();
     });
     $('tb-full').onclick = () => { toggleFullscreen(); canvas.focus(); };
   }

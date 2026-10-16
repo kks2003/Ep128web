@@ -75,9 +75,9 @@
   </div>
 
   <form id="typer" hidden autocomplete="off">
-    <input id="typer-input" type="text" placeholder='pl. LOAD "FILE:GAME.COM"'
-           autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
-    <button type="submit">Beír + Enter</button>
+    <textarea id="typer-input" rows="1" placeholder='pl. LOAD "FILE:GAME.COM" – vagy illessz be egy teljes BASIC programot (Shift+Enter: új sor)'
+              autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send"></textarea>
+    <button type="submit" id="typer-send">Beír + Enter</button>
   </form>
 
   <div id="vjoy" hidden>
@@ -132,11 +132,6 @@
       <span id="files-list" class="name">üres</span>
       <button id="files-clear">Törlés</button>
     </div>
-    <div class="group" id="cart-group">
-      <h3>Cartridge</h3>
-      <span id="cart-name" class="name">nincs modul</span>
-      <button id="cart-eject">Kiadás</button>
-    </div>
     <div class="group" id="tvc-cards-group">
       <h3>TVC bővítőportok</h3>
       <label class="slot">Port 0 <select id="tvc-slot0"></select></label>
@@ -171,6 +166,11 @@
       <input type="file" id="usb-file" multiple hidden>
       <input type="file" id="usb-folder" webkitdirectory multiple hidden>
       <span class="name" id="usb-note"></span>
+    </div>
+    <div class="group" id="cart-group">
+      <h3>Cartridge</h3>
+      <span id="cart-name" class="name">nincs modul</span>
+      <button id="cart-eject">Kiadás</button>
     </div>
     <div class="group">
       <h3>Joystick</h3>
