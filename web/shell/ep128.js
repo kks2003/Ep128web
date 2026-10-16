@@ -351,6 +351,22 @@
   let M = null;                 // Emscripten module
   let api = null;
   let imageData = null;
+  // TVC: the 48 pixels on both sides of the 768 pixel line are horizontal
+  // blanking (always black, a TV hides them), so they are not shown
+  const TVC_CROP_X = 48;
+  let cropX = 0;
+  function updateScreenCrop() {
+    if (!imageData) return;
+    cropX = (machine && machine.type === 1) ? TVC_CROP_X : 0;
+    const w = imageData.width - 2 * cropX;
+    if (canvas.width !== w) {
+      canvas.width = w;
+      ctx.putImageData(imageData, -cropX, 0);
+    }
+    // 768 pixels are 4:3 wide
+    const wrap = $('screen-wrap');
+    wrap.style.setProperty('--screen-ar', String(w / imageData.width * 4 / 3));
+  }
   let ready = false;            // ROMs loaded, machine running
   let paused = false;
   let turbo = false;
@@ -362,6 +378,8 @@
   let audioLevel = 0;           // frames buffered in the AudioWorklet
   let audioRunning = false;
   let sampleRate = 48000;
+  let audioStreamDest = null;    // MediaStream of the sound, for video recording
+  let audioRec = null;           // WAV recording: { chunks: [Float32Array], frames }
   const pressedKeys = new Set();
   let tapeName = '';
   let diskName = '';
@@ -934,6 +952,7 @@
     updateMouseButton();
     renderJoyMap();               // the TVC has the GameCard joysticks too
     try { listFiles(); } catch (e) { }   // startable files depend on the machine
+    updateScreenCrop();
     if (vkbdType >= 0) renderKeyboard();
     const diskSlot = (m.type === 1 && m.diskCard) ? ensureTvcDiskCard(m.diskCard) : -1;
     const missing = missingROMs(m);
@@ -1037,6 +1056,11 @@ registerProcessor('ep-output', EPOutput);
       });
       audioNode.port.onmessage = (e) => { audioLevel = e.data; };
       audioNode.connect(audioCtx.destination);
+      // the sound track of the video recording
+      if (audioCtx.createMediaStreamDestination) {
+        audioStreamDest = audioCtx.createMediaStreamDestination();
+        audioNode.connect(audioStreamDest);
+      }
     } catch (e) {
       console.warn('Web Audio unavailable', e);
       audioCtx = null;
@@ -2005,6 +2029,158 @@ registerProcessor('ep-output', EPOutput);
   }
 
   // --------------------------------------------------------------------------
+  // Screenshot, video and sound recording
+
+  function stampName(ext) {
+    return 'ep128-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.' + ext;
+  }
+
+  // the screen at 4:3 (the canvas has half the lines, the page stretches it)
+  const recCanvas = document.createElement('canvas');
+  const recCtx = recCanvas.getContext('2d', { alpha: false });
+  function drawRecCanvas() {
+    if (recCanvas.width !== canvas.width || recCanvas.height !== canvas.height * 2) {
+      recCanvas.width = canvas.width;
+      recCanvas.height = canvas.height * 2;
+    }
+    recCtx.imageSmoothingEnabled = false;
+    recCtx.drawImage(canvas, 0, 0, recCanvas.width, recCanvas.height);
+  }
+
+  function saveScreenshot() {
+    if (!ready) return;
+    drawRecCanvas();
+    recCanvas.toBlob((blob) => {
+      if (blob) blob.arrayBuffer().then((b) => download(new Uint8Array(b), stampName('png')));
+    }, 'image/png');
+  }
+
+  const recTime = (t0) => {
+    const s = Math.floor((performance.now() - t0) / 1000);
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  };
+
+  // 16 bit stereo WAV from the recorded float samples
+  function wavFile(chunks, frames, rate) {
+    const out = new DataView(new ArrayBuffer(44 + frames * 4));
+    const str = (o, t) => { for (let i = 0; i < t.length; i++) out.setUint8(o + i, t.charCodeAt(i)); };
+    str(0, 'RIFF'); out.setUint32(4, 36 + frames * 4, true); str(8, 'WAVE');
+    str(12, 'fmt '); out.setUint32(16, 16, true); out.setUint16(20, 1, true);
+    out.setUint16(22, 2, true); out.setUint32(24, rate, true);
+    out.setUint32(28, rate * 4, true); out.setUint16(32, 4, true); out.setUint16(34, 16, true);
+    str(36, 'data'); out.setUint32(40, frames * 4, true);
+    let o = 44;
+    for (const c of chunks)
+      for (let i = 0; i < c.length; i++, o += 2)
+        out.setInt16(o, Math.round(Math.max(-1, Math.min(1, c[i])) * 32767), true);
+    return new Uint8Array(out.buffer);
+  }
+
+  let audioRecTimer = 0;
+  function toggleAudioRec() {
+    const btn = $('btn-audio');
+    if (audioRec) {
+      const rec = audioRec;
+      audioRec = null;
+      clearInterval(audioRecTimer);
+      btn.classList.remove('on');
+      btn.textContent = '● Hang';
+      if (rec.frames) download(wavFile(rec.chunks, rec.frames, sampleRate), stampName('wav'));
+      return;
+    }
+    if (!ready) return;
+    resumeAudio();
+    audioRec = { chunks: [], frames: 0 };
+    const t0 = performance.now();
+    btn.classList.add('on');
+    btn.textContent = '■ Hang 0:00';
+    audioRecTimer = setInterval(() => { btn.textContent = '■ Hang ' + recTime(t0); }, 500);
+  }
+
+  // the recording types the browser supports: { mp4, webm }
+  const VIDEO_TYPES = {
+    // H.264 only: a VP9 MP4 does not play everywhere, WebM is better then
+    mp4: ['video/mp4;codecs=avc1.42E01F,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2',
+          'video/mp4;codecs=avc1.42E01F,opus', 'video/mp4;codecs=avc1,opus'],
+    webm: ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+  };
+  function videoFormats() {
+    const r = {};
+    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return r;
+    for (const k in VIDEO_TYPES) {
+      const t = VIDEO_TYPES[k].find((x) => MediaRecorder.isTypeSupported(x));
+      if (t) r[k] = t;
+    }
+    return r;
+  }
+
+  // the format selector: shown when the browser can record both, MP4 by default
+  function setupVideoFormat() {
+    const sel = $('video-fmt');
+    const fmt = videoFormats();
+    for (const o of Array.from(sel.options)) o.disabled = !fmt[o.value];
+    let v = null;
+    try { v = localStorage.getItem('ep128web.videoFmt'); } catch (e) { }
+    sel.value = (v && fmt[v]) ? v : (fmt.mp4 ? 'mp4' : 'webm');
+    sel.hidden = !(fmt.mp4 && fmt.webm);
+    sel.onchange = () => {
+      try { localStorage.setItem('ep128web.videoFmt', sel.value); } catch (e) { }
+      canvas.focus();
+    };
+  }
+
+  let videoRec = null;
+  let videoRecTimer = 0;
+  function toggleVideoRec() {
+    const btn = $('btn-video');
+    if (videoRec) {
+      videoRec.stop();
+      return;
+    }
+    if (!ready) return;
+    if (!canvas.captureStream || !window.MediaRecorder) {
+      setMessage('Ez a böngésző nem tud videót felvenni', true);
+      return;
+    }
+    resumeAudio();
+    drawRecCanvas();
+    const stream = recCanvas.captureStream(50);
+    if (audioStreamDest)
+      for (const t of audioStreamDest.stream.getAudioTracks()) stream.addTrack(t);
+    const fmt = videoFormats();
+    const type = fmt[$('video-fmt').value] || fmt.mp4 || fmt.webm || '';
+    let rec;
+    try {
+      rec = new MediaRecorder(stream, type ? { mimeType: type, videoBitsPerSecond: 8000000 } : {});
+    } catch (e) {
+      setMessage('A videófelvétel nem indult el: ' + (e.message || e), true);
+      return;
+    }
+    const parts = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
+    rec.onstop = () => {
+      videoRec = null;
+      $('video-fmt').disabled = false;
+      clearInterval(videoRecTimer);
+      btn.classList.remove('on');
+      btn.textContent = '● Videó';
+      for (const t of stream.getVideoTracks()) t.stop();
+      const mime = rec.mimeType || type || 'video/webm';
+      const blob = new Blob(parts, { type: mime });
+      blob.arrayBuffer().then((b) =>
+        download(new Uint8Array(b), stampName(mime.includes('mp4') ? 'mp4' : 'webm')));
+    };
+    rec.start(1000);
+    videoRec = rec;
+    $('video-fmt').disabled = true;
+    const t0 = performance.now();
+    btn.classList.add('on');
+    btn.textContent = '■ Videó 0:00';
+    videoRecTimer = setInterval(() => { btn.textContent = '■ Videó ' + recTime(t0); }, 500);
+    setMessage('Videófelvétel: a hangerő és a némítás a felvételre is hat');
+  }
+
+  // --------------------------------------------------------------------------
   // Touch controls: on-screen keyboard, joystick, text input
 
   // keys: [label, matrix code, shifted label, css class, width]
@@ -2700,6 +2876,10 @@ registerProcessor('ep-output', EPOutput);
       download(M.FS.readFile('/tmp/save.ep128s'), 'ep128-' +
                new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.ep128s');
     };
+    $('btn-shot').onclick = () => { saveScreenshot(); canvas.focus(); };
+    $('btn-video').onclick = () => { toggleVideoRec(); canvas.focus(); };
+    setupVideoFormat();
+    $('btn-audio').onclick = () => { toggleAudioRec(); canvas.focus(); };
     $('btn-mute').onclick = () => { toggleMute(); canvas.focus(); };
     $('volume').oninput = (e) => {
       applyVolume();
@@ -2903,6 +3083,12 @@ registerProcessor('ep-output', EPOutput);
 
     // audio
     const nFrames = api.audioFrames();
+    if (nFrames > 0 && audioRec) {
+      // the full emulated sound, whatever the volume, mute or turbo
+      const p = api.audioBuffer() >> 2;
+      audioRec.chunks.push(M.HEAPF32.slice(p, p + nFrames * 2));
+      audioRec.frames += nFrames;
+    }
     if (nFrames > 0) {
       if (audioRunning && !turbo && !autoTask && !tapeMoving && audioNode) {
         const p = api.audioBuffer() >> 2;
@@ -2919,7 +3105,8 @@ registerProcessor('ep-output', EPOutput);
       lastFrameCount = fc;
       const p = api.frameBuffer();
       imageData.data.set(M.HEAPU8.subarray(p, p + imageData.data.length));
-      ctx.putImageData(imageData, 0, 0);
+      ctx.putImageData(imageData, -cropX, 0);
+      if (videoRec) drawRecCanvas();
     }
 
     if (speedAccMs >= 500) {
@@ -3005,6 +3192,7 @@ registerProcessor('ep-output', EPOutput);
     canvas.width = w;
     canvas.height = h;
     imageData = ctx.createImageData(w, h);
+    updateScreenCrop();
 
     // ROMs: epfileio.rom ships with ep128emu (GPL); the rest come from the
     // user's ROM package, stored in IndexedDB, or from roms/ on the server

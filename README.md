@@ -104,6 +104,16 @@ hiányzik a szükséges, szól).
 A pillanatképek (`.ep128s`) betöltésekor az oldal automatikusan a mentéskori
 géptípusra (Enterprise/TVC) vált.
 
+TVC-n a 768 pontos sor két szélén lévő 48–48 pont vízszintes kioltás. Ez mindig fekete, egy valódi tévé nem mutatja, ezért az oldal levágja, és a képarányt is ehhez igazítja.
+
+Felvétel a fejléc gombjaival:
+
+- **📷 Kép**: a képernyő mentése PNG-ként (EP: 768×576, TVC: 672×576).
+- **● Videó**: videó felvétele hanggal. Újra megnyomva leáll, és a fájl letöltődik. A hangerő és a némítás a videó hangjára is hat.
+  - Formátum: MP4 (H.264), ha a böngésző tudja, különben WebM.
+  - Ha mindkettőt tudja, a gomb melletti választóval lehet váltani. Az alapértelmezés MP4, a választást az oldal megjegyzi.
+- **● Hang**: az emulált hang felvétele WAV-ként (16 bit, sztereó). Újra megnyomva leáll, és a fájl letöltődik. A felvételre a hangerő és a némítás nem hat.
+
 Enterprise-billentyűzet: Esc = ESC, Backspace = ERASE, Del = DEL, Ins = INS, End/Pause = STOP,
 Home = HOLD, Alt = ALT, F1–F8 = funkciógombok, CapsLock = LOCK; F11 = reset,
 Shift+F11 = hideg reset, F12 = turbó. Joystickok: a Joystick panelen
