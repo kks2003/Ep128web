@@ -177,8 +177,11 @@
   const PAUSE = '\u0001';      // in autotyped text: wait 2.5 seconds
   const PRESS_ESC = '\u0002';  // in autotyped text: press the TVC ESC key
 
+  // can a file name be typed in a LOAD command? Only plain ASCII: accented
+  // letters are typable, but the FILE: devices would not match them with
+  // the host file name
   function isTypable(text, type) {
-    return Array.from(text).every((ch) => CHARMAP[type][ch]);
+    return /^[\x20-\x7e]*$/.test(text) && Array.from(text).every((ch) => CHARMAP[type][ch]);
   }
 
   // --------------------------------------------------------------------------
@@ -1147,7 +1150,9 @@ registerProcessor('ep-output', EPOutput);
 
   function sanitizeName(name) {
     // lower case, only characters that can be typed with the autostart code
-    let base = name.toLowerCase().replace(/[^a-z0-9.\-]/g, '');
+    // (accented letters lose their accents: ÁTTÖRÉS -> attores)
+    let base = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9.\-]/g, '');
     if (!base || base[0] === '.') base = 'file' + base;
     return base.slice(0, 28);
   }
@@ -1173,6 +1178,19 @@ registerProcessor('ep-output', EPOutput);
 
   // --- ZIP archives (stored and deflated entries) ---
 
+  const CP852_HIGH =
+    'ÇüéâäůćçłëŐőîŹÄĆÉĹĺôöĽľŚśÖÜŤťŁ×čáíóúĄąŽžĘę¬źČş«»░▒▓│┤ÁÂĚŞ╣║╗╝Żż┐' +
+    '└┴┬├─┼Ăă╚╔╩╦╠═╬¤đĐĎËďŇÍÎě┘┌█▄ŢŮ▀ÓßÔŃńňŠšŔÚŕŰýÝţ´\u00AD˝˛ˇ˘§÷¸°¨˙űŘř■\u00A0';
+
+  function decodeCp852(raw) {
+    // plain ASCII or valid UTF-8 (many tools leave the flag unset) as is
+    if (raw.every((b) => b < 0x80)) return String.fromCharCode(...raw);
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(raw); } catch (e) { }
+    let out = '';
+    for (const b of raw) out += b < 0x80 ? String.fromCharCode(b) : CP852_HIGH[b - 0x80];
+    return out;
+  }
+
   async function unzip(bytes) {
     const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     // find the end of central directory record
@@ -1192,7 +1210,10 @@ registerProcessor('ep-output', EPOutput);
       const extraLen = dv.getUint16(p + 30, true);
       const commentLen = dv.getUint16(p + 32, true);
       const local = dv.getUint32(p + 42, true);
-      const name = new TextDecoder().decode(bytes.subarray(p + 46, p + 46 + nameLen));
+      // names are UTF-8 if flag bit 11 is set, else in the DOS code page
+      // (Hungarian archives: CP852)
+      const rawName = bytes.subarray(p + 46, p + 46 + nameLen);
+      const name = (dv.getUint16(p + 8, true) & 0x800) ? new TextDecoder().decode(rawName) : decodeCp852(rawName);
       p += 46 + nameLen + extraLen + commentLen;
       if (name.endsWith('/')) continue;
       const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
@@ -1503,7 +1524,16 @@ registerProcessor('ep-output', EPOutput);
       b.onclick = () => { box.hidden = true; startProgram(n); canvas.focus(); };
       list.appendChild(b);
     }
+    showChooser(box);
+  }
+
+  // shows a chooser over the emulator screen, scrolled into view (the
+  // program catalog below the screen may be scrolled away from it)
+  function showChooser(box) {
     box.hidden = false;
+    box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const first = box.querySelector('button');
+    if (first) first.focus({ preventScroll: true });
   }
 
   function chooseCasOrWav(casFiles, wavFiles, onChoose) {
@@ -1537,7 +1567,7 @@ registerProcessor('ep-output', EPOutput);
       list.appendChild(b);
     }
 
-    box.hidden = false;
+    showChooser(box);
   }
 
   async function loadFiles(fileList) {
