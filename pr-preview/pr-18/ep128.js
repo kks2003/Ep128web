@@ -119,9 +119,6 @@
     KeyM: 0x40, Delete: 0x41, Comma: 0x42, Slash: 0x43, Period: 0x44,
     ShiftRight: 0x45, Space: 0x46, Insert: 0x47,
     KeyI: 0x48, KeyO: 0x4A, Backquote: 0x4B, KeyP: 0x4C, BracketLeft: 0x4D,
-    // external joystick 1
-    Numpad6: 0x70, Numpad4: 0x71, Numpad2: 0x72, Numpad8: 0x73, Numpad0: 0x74,
-    Numpad5: 0x72
   };
   const KEYMAP_TVC = Object.assign({}, KEYMAP, {
     Escape: 0x38, IntlBackslash: 0x1F, End: undefined, Pause: undefined
@@ -130,10 +127,118 @@
   // is taken by Windows for the Start menu)
   const TVC_STOP_KEYS = new Set(['End', 'Pause']);
   const TVC_STOP = [0x0F, 0x38];
-  const JOY_KEYMAP = {
-    ArrowRight: 0x70, ArrowLeft: 0x71, ArrowDown: 0x72, ArrowUp: 0x73,
-    ControlRight: 0x74
-  };
+
+  // --------------------------------------------------------------------------
+  // Joysticks: each input (key set, gamepad, touch joystick) drives one of the
+  // joysticks chosen on the Joystick panel. State bits: 0..4 = right, left,
+  // down, up, fire.
+  // TVC: 1 = port 1 (the same as the built-in cursor joystick), 2 = port 2,
+  // 3 and 4 = the GameCard's joysticks; Enterprise: 1 and 2 = external.
+  const JOY_SOURCES = [
+    { id: 'numpad', name: 'Num 8/4/6/2 + 0',
+      keys: { Numpad6: 1, Numpad4: 2, Numpad2: 4, Numpad5: 4, Numpad8: 8, Numpad0: 16 } },
+    { id: 'arrows', name: 'Nyilak + j.Ctrl',
+      keys: { ArrowRight: 1, ArrowLeft: 2, ArrowDown: 4, ArrowUp: 8, ControlRight: 16 } },
+    { id: 'wasd', name: 'WASD + Space',
+      keys: { KeyD: 1, KeyA: 2, KeyS: 4, KeyW: 8, Space: 16 } },
+    { id: 'gp1', name: 'Gamepad 1' }, { id: 'gp2', name: 'Gamepad 2' },
+    { id: 'gp3', name: 'Gamepad 3' }, { id: 'gp4', name: 'Gamepad 4' },
+    { id: 'touch', name: 'Érintős' }
+  ];
+  const JOY_DEFAULT = { numpad: 1, arrows: 0, wasd: 0, gp1: 1, gp2: 2, gp3: 3, gp4: 4, touch: 1 };
+  let joyTarget = Object.assign({}, JOY_DEFAULT);
+  try {
+    const v = JSON.parse(localStorage.getItem('ep128web.joymap'));
+    if (v && typeof v === 'object') Object.assign(joyTarget, v);
+  } catch (e) { }
+  const joySource = {};             // current state of each input
+  const joyOut = [0, 0, 0, 0, 0];   // state sent to joystick 1..4
+
+  function joyCount() { return machine && machine.type === 1 ? 4 : 2; }
+
+  function joyName(t) {
+    if (machine && machine.type === 1)
+      return ['nincs', '1. port', '2. port', 'GameCard 3', 'GameCard 4'][t];
+    return ['nincs', 'külső 1', 'külső 2'][t];
+  }
+
+  // sends the changes of the joystick states to the machine
+  function updateJoysticks() {
+    for (let t = 1; t <= 4; t++) {
+      let state = 0;
+      if (t <= joyCount()) {
+        for (const src of JOY_SOURCES)
+          if (joyTarget[src.id] === t) state |= joySource[src.id] || 0;
+      }
+      const old = joyOut[t];
+      if (state === old) continue;
+      joyOut[t] = state;
+      if (t <= 2) {
+        const base = t === 1 ? 0x70 : 0x78;
+        for (let i = 0; i < 5; i++) {
+          const bit = 1 << i;
+          if ((state & bit) && !(old & bit)) keyDown(base + i);
+          else if (!(state & bit) && (old & bit)) keyUp(base + i);
+        }
+      } else if (api && api.setTvcExtJoy) {
+        // GameCard: active low, bits up, down, left, right, fire
+        let b = 0xFF;
+        if (state & 8) b &= ~1;
+        if (state & 4) b &= ~2;
+        if (state & 2) b &= ~4;
+        if (state & 1) b &= ~8;
+        if (state & 16) b &= ~16;
+        api.setTvcExtJoy(t - 3, b);
+      }
+    }
+  }
+
+  // the key-set input a key belongs to, if that input drives a joystick
+  function joyKeySource(code) {
+    for (const src of JOY_SOURCES) {
+      if (src.keys && src.keys[code] !== undefined) {
+        const t = joyTarget[src.id];
+        return (t > 0 && t <= joyCount()) ? src : null;
+      }
+    }
+    return null;
+  }
+
+  function setJoySource(id, state) {
+    if ((joySource[id] || 0) === state) return;
+    joySource[id] = state;
+    updateJoysticks();
+  }
+
+  function renderJoyMap() {
+    const box = $('joy-map');
+    if (!box) return;
+    box.textContent = '';
+    for (const src of JOY_SOURCES) {
+      const row = document.createElement('label');
+      row.className = 'slot';
+      const name = document.createElement('span');
+      name.textContent = src.name;
+      const sel = document.createElement('select');
+      for (let t = 0; t <= joyCount(); t++) {
+        const o = document.createElement('option');
+        o.value = String(t);
+        o.textContent = joyName(t);
+        sel.appendChild(o);
+      }
+      sel.value = String(Math.min(joyTarget[src.id] || 0, joyCount()));
+      sel.onchange = () => {
+        joyTarget[src.id] = Number(sel.value);
+        try { localStorage.setItem('ep128web.joymap', JSON.stringify(joyTarget)); } catch (e) { }
+        for (const k of Object.keys(joySource)) joySource[k] = 0;
+        updateJoysticks();
+        canvas.focus();
+      };
+      row.appendChild(name);
+      row.appendChild(sel);
+      box.appendChild(row);
+    }
+  }
   const SCROLL_KEYS = new Set(['PageUp', 'PageDown', 'Home', 'End', 'Space',
     'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
   const KEY_SHIFT = 0x07;
@@ -233,7 +338,6 @@
   let audioRunning = false;
   let sampleRate = 48000;
   const pressedKeys = new Set();
-  let arrowsAsJoystick = false;
   let tapeName = '';
   let diskName = '';
   let diskNameB = '';           // drive B: (image in /diskb)
@@ -803,6 +907,7 @@
     }
     updateCartridgeUI();
     updateMouseButton();
+    renderJoyMap();               // the TVC has the GameCard joysticks too
     if (vkbdType >= 0) renderKeyboard();
     const diskSlot = (m.type === 1 && m.diskCard) ? ensureTvcDiskCard(m.diskCard) : -1;
     const missing = missingROMs(m);
@@ -973,6 +1078,9 @@ registerProcessor('ep-output', EPOutput);
   }
 
   function releaseAllKeys() {
+    for (const k of Object.keys(joySource)) joySource[k] = 0;
+    joyOut.fill(0);
+    if (api && api.setTvcExtJoy) { api.setTvcExtJoy(0, 0xFF); api.setTvcExtJoy(1, 0xFF); }
     keyQueue.length = 0;
     for (const code of Array.from(pressedKeys)) {
       pressedKeys.delete(code);
@@ -986,8 +1094,6 @@ registerProcessor('ep-output', EPOutput);
   }
 
   function mapKey(e) {
-    if (arrowsAsJoystick && JOY_KEYMAP[e.code] !== undefined)
-      return JOY_KEYMAP[e.code];
     return (machine && machine.type === 1 ? KEYMAP_TVC : KEYMAP)[e.code];
   }
 
@@ -1004,6 +1110,13 @@ registerProcessor('ep-output', EPOutput);
       return;
     }
     if (e.metaKey) return;      // leave Cmd+... shortcuts to the browser
+    const joySrc = joyKeySource(e.code);
+    if (joySrc) {
+      e.preventDefault();
+      resumeAudio();
+      if (!autoTask) setJoySource(joySrc.id, (joySource[joySrc.id] || 0) | joySrc.keys[e.code]);
+      return;
+    }
     if (machine && machine.type === 1 && TVC_STOP_KEYS.has(e.code)) {
       e.preventDefault();
       resumeAudio();
@@ -1025,6 +1138,12 @@ registerProcessor('ep-output', EPOutput);
 
   document.addEventListener('keyup', (e) => {
     if (isTextInput(e.target)) return;
+    const joySrc = joyKeySource(e.code);
+    if (joySrc) {
+      e.preventDefault();
+      setJoySource(joySrc.id, (joySource[joySrc.id] || 0) & ~joySrc.keys[e.code]);
+      return;
+    }
     if (machine && machine.type === 1 && TVC_STOP_KEYS.has(e.code)) {
       e.preventDefault();
       TVC_STOP.forEach(keyUp);
@@ -1065,32 +1184,8 @@ registerProcessor('ep-output', EPOutput);
       if (b(0) || b(1) || b(2) || b(3)) state |= 16;
 
       if (state !== padState[pIdx]) {
-        if (pIdx === 0) {
-          const codes = [0x70, 0x71, 0x72, 0x73, 0x74];
-          codes.forEach((c, i) => {
-            const bit = 1 << i;
-            if ((state & bit) && !(padState[0] & bit)) api.setKey(c, 1);
-            else if (!(state & bit) && (padState[0] & bit)) api.setKey(c, 0);
-          });
-        } else if (pIdx === 1) {
-          const codes = [0x78, 0x79, 0x7A, 0x7B, 0x7C];
-          codes.forEach((c, i) => {
-            const bit = 1 << i;
-            if ((state & bit) && !(padState[1] & bit)) api.setKey(c, 1);
-            else if (!(state & bit) && (padState[1] & bit)) api.setKey(c, 0);
-          });
-        } else if (pIdx === 2 || pIdx === 3) {
-          if (api && api.setTvcExtJoy) {
-            let extByte = 0xFF;
-            if (state & 8) extByte &= ~1;   // up
-            if (state & 4) extByte &= ~2;   // down
-            if (state & 2) extByte &= ~4;   // left
-            if (state & 1) extByte &= ~8;   // right
-            if (state & 16) extByte &= ~16; // fire
-            api.setTvcExtJoy(pIdx - 2, extByte);
-          }
-        }
         padState[pIdx] = state;
+        setJoySource('gp' + (pIdx + 1), state);
       }
     }
     $('pad-status').textContent = names.length ? 'Gamepad: ' + names[0] + (names.length > 1 ? ' (+' + (names.length - 1) + ')' : '') : '';
@@ -2002,6 +2097,12 @@ registerProcessor('ep-output', EPOutput);
   let vjoyState = 0;
 
   function setJoyState(state) {
+    if (vjoyMode === 'joy1') {
+      if (state !== vjoyState && (state & ~vjoyState)) vibrate();
+      vjoyState = state;
+      setJoySource('touch', state);
+      return;
+    }
     const codes = JOY_CODES[vjoyMode];
     for (let i = 0; i < 5; i++) {
       const bit = 1 << i;
@@ -2643,11 +2744,7 @@ registerProcessor('ep-output', EPOutput);
     const cartEject = $('cart-eject');
     if (cartEject) cartEject.onclick = ejectCartridge;
     $('tape-fast').onchange = (e) => { tapeFast = e.target.checked; canvas.focus(); };
-    $('arrows-joy').onchange = (e) => {
-      releaseAllKeys();
-      arrowsAsJoystick = e.target.checked;
-      canvas.focus();
-    };
+    renderJoyMap();
     setupTvcSlotsUI();
 
     const wrap = $('screen-wrap');
