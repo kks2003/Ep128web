@@ -71,6 +71,7 @@
   for (const m of MACHINES) m.type = m.type || 0;
   // machine ids of earlier versions (VT-DOS is a card in a slot now)
   const DEFAULT_TVC = 'tvc64-12';   // the default machine, and the TVC switched to for TVC files
+  let lastPlainTvc = DEFAULT_TVC;    // the last TVC without a system cartridge
   const MACHINE_ALIASES = { 'tvc64p-22-vtdos': 'tvc64p-22', 'tvc64-12-vtdos': 'tvc64-12' };
 
   // TVC expansion cards; the ids are those of ep_set_tvc_slot(), except for
@@ -767,6 +768,7 @@
 
   function applyMachine(m, coldReset) {
     machine = m;
+    if (m.type === 1 && !m.cart) lastPlainTvc = m.id;
     const sel = $('machine');
     if (sel && sel.value !== m.id) sel.value = m.id;
     updateLoadButton();
@@ -2318,6 +2320,15 @@ registerProcessor('ep-output', EPOutput);
     }
   }
 
+  // catalog programs marked "(DOS)" or "(UPM)" in their title run with the
+  // VT-DOS or UPM system cartridge; the others on a TVC without one
+  function catalogMachine(item) {
+    const t = item.title || '';
+    if (/\(dos\)/i.test(t)) return 'tvc64p-22-vtdoscart';
+    if (/\(upm\)/i.test(t)) return 'tvc64p-12-upm';
+    return machine.cart ? lastPlainTvc : machine.id;
+  }
+
   async function launchCatalogItem(item) {
     const fileName = item.file_name || (item.title ? item.title + '.zip' : 'program.zip');
     // Use dl.php on homeserver which provides Access-Control-Allow-Origin: *
@@ -2337,6 +2348,13 @@ registerProcessor('ep-output', EPOutput);
       }
 
       const blob = await res.blob();
+      const id = catalogMachine(item);
+      const m = MACHINES.find((x) => x.id === id);
+      if (m && m !== machine) {
+        autoTask = null;
+        releaseAllKeys();
+        applyMachine(m);
+      }
       const file = new File([blob], fileName, {
         type: blob.type || 'application/octet-stream'
       });

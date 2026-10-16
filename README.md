@@ -56,7 +56,9 @@ Gépkonfigurációk:
   (`tvcupm_c.rom`, CP/M-kompatibilis operációs rendszer). Mindkét cartridge
   a ROM-csomagban van; a géphez kellő lemezkártyát az oldal beteszi egy portba
   (VT-DOS, ill. UPM). Az UPM cartridge a `*` után RETURN-re vár, ezt
-  lemezkép betöltésekor az oldal leüti, és kilistázza a lemezt. A négy
+  lemezkép betöltésekor az oldal leüti, és kilistázza a lemezt. A
+  programkatalógus „(DOS)”, ill. „(UPM)” jelölésű programjai magukat ezen a
+  gépen indítják, a többi a legutóbbi cartridge nélküli TVC-n. A négy
   bővítőport mindegyikébe választható kártya (lásd lent). A `.cas` programok a
   FILE: kártya (`tvcfileio.rom`) eszközére kerülnek és automatikusan betöltődnek
   (`LOAD "név"`). A billentyűzet a magyar PC-kiosztást követi (QWERTZ, `0` az
