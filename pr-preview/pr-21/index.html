@@ -6,13 +6,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610161804-16b3955">
-<meta name="build" content="202610161804-16b3955">
+<link rel="stylesheet" href="style.css?v=202610161813-c810434">
+<meta name="build" content="202610161813-c810434">
 </head>
 <body>
-<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #21 előnézete, nem az éles oldal · fordítva: 2026.10.16 20:04 · 16b3955 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #21 előnézete, nem az éles oldal · fordítva: 2026.10.16 20:13 · c810434 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.16 20:04 · 16b3955</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.16 20:13 · c810434</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -26,7 +26,11 @@
     </label>
     <button id="btn-snap" title="Pillanatkép mentése (.ep128s)">Állapot mentése</button>
     <button id="btn-shot" title="A képernyő mentése képként (.png)">📷 Kép</button>
-    <button id="btn-video" title="Videó felvétele hanggal (.webm / .mp4); újra megnyomva leáll és letöltődik">● Videó</button>
+    <button id="btn-video" title="Videó felvétele hanggal; újra megnyomva leáll és letöltődik">● Videó</button>
+    <select id="video-fmt" title="A videó formátuma" aria-label="A videó formátuma" hidden>
+      <option value="mp4">MP4</option>
+      <option value="webm">WebM</option>
+    </select>
     <button id="btn-audio" title="Hang felvétele (.wav); újra megnyomva leáll és letöltődik">● Hang</button>
     <span class="vol">
       <button id="btn-mute" class="mute" title="Némítás" aria-pressed="false">🔊</button>
@@ -250,7 +254,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610161804-16b3955"></script>
-<script src="ep128.js?v=202610161804-16b3955"></script>
+<script src="ep128emu.js?v=202610161813-c810434"></script>
+<script src="ep128.js?v=202610161813-c810434"></script>
 </body>
 </html>

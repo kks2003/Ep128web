@@ -2097,6 +2097,38 @@ registerProcessor('ep-output', EPOutput);
     audioRecTimer = setInterval(() => { btn.textContent = '■ Hang ' + recTime(t0); }, 500);
   }
 
+  // the recording types the browser supports: { mp4, webm }
+  const VIDEO_TYPES = {
+    // H.264 only: a VP9 MP4 does not play everywhere, WebM is better then
+    mp4: ['video/mp4;codecs=avc1.42E01F,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2',
+          'video/mp4;codecs=avc1.42E01F,opus', 'video/mp4;codecs=avc1,opus'],
+    webm: ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+  };
+  function videoFormats() {
+    const r = {};
+    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return r;
+    for (const k in VIDEO_TYPES) {
+      const t = VIDEO_TYPES[k].find((x) => MediaRecorder.isTypeSupported(x));
+      if (t) r[k] = t;
+    }
+    return r;
+  }
+
+  // the format selector: shown when the browser can record both, MP4 by default
+  function setupVideoFormat() {
+    const sel = $('video-fmt');
+    const fmt = videoFormats();
+    for (const o of Array.from(sel.options)) o.disabled = !fmt[o.value];
+    let v = null;
+    try { v = localStorage.getItem('ep128web.videoFmt'); } catch (e) { }
+    sel.value = (v && fmt[v]) ? v : (fmt.mp4 ? 'mp4' : 'webm');
+    sel.hidden = !(fmt.mp4 && fmt.webm);
+    sel.onchange = () => {
+      try { localStorage.setItem('ep128web.videoFmt', sel.value); } catch (e) { }
+      canvas.focus();
+    };
+  }
+
   let videoRec = null;
   let videoRecTimer = 0;
   function toggleVideoRec() {
@@ -2115,9 +2147,8 @@ registerProcessor('ep-output', EPOutput);
     const stream = recCanvas.captureStream(50);
     if (audioStreamDest)
       for (const t of audioStreamDest.stream.getAudioTracks()) stream.addTrack(t);
-    const type = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm',
-                  'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4']
-      .find((t) => MediaRecorder.isTypeSupported(t)) || '';
+    const fmt = videoFormats();
+    const type = fmt[$('video-fmt').value] || fmt.mp4 || fmt.webm || '';
     let rec;
     try {
       rec = new MediaRecorder(stream, type ? { mimeType: type, videoBitsPerSecond: 8000000 } : {});
@@ -2129,6 +2160,7 @@ registerProcessor('ep-output', EPOutput);
     rec.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
     rec.onstop = () => {
       videoRec = null;
+      $('video-fmt').disabled = false;
       clearInterval(videoRecTimer);
       btn.classList.remove('on');
       btn.textContent = '● Videó';
@@ -2140,6 +2172,7 @@ registerProcessor('ep-output', EPOutput);
     };
     rec.start(1000);
     videoRec = rec;
+    $('video-fmt').disabled = true;
     const t0 = performance.now();
     btn.classList.add('on');
     btn.textContent = '■ Videó 0:00';
@@ -2845,6 +2878,7 @@ registerProcessor('ep-output', EPOutput);
     };
     $('btn-shot').onclick = () => { saveScreenshot(); canvas.focus(); };
     $('btn-video').onclick = () => { toggleVideoRec(); canvas.focus(); };
+    setupVideoFormat();
     $('btn-audio').onclick = () => { toggleAudioRec(); canvas.focus(); };
     $('btn-mute').onclick = () => { toggleMute(); canvas.focus(); };
     $('volume').oninput = (e) => {
