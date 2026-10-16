@@ -311,7 +311,24 @@
   })();
   CHARMAP_EP._ = [0x2C, true];
   CHARMAP_TVC._ = [0x43, true];
+  CHARMAP_EP['#'] = [0x1D, true];   // the UK EXOS shows it as £
+  // the Hungarian Enterprise with hun.rom: the keys that differ from the UK
+  // layout, found by typing every key through its IS-BASIC (EXOS 2.32 HU
+  // keeps the UK layout)
+  const CHARMAP_EP_HU = Object.assign({}, CHARMAP_EP, {
+    "#": [0x36, false], "'": [0x2B, false], "*": [0x4D, true], "+": [0x4D, false], "-": [0x43, false],
+    "/": [0x18, true], ":": [0x44, true], ";": [0x42, true], "<": [0x01, true], "=": [0x2C, true],
+    ">": [0x01, false], "?": [0x2B, true], "@": [0x2D, true], "Y": [0x06, true], "Z": [0x12, true],
+    "[": [0x35, true], "\\": [0x33, true], "]": [0x4B, true], "^": [0x36, true], "_": [0x43, true],
+    "`": [0x2D, false], "y": [0x06, false], "z": [0x12, false], "{": [0x35, false], "|": [0x33, false],
+    "}": [0x4B, false], "~": [0x1D, true] });
   const CHARMAP = [CHARMAP_EP, CHARMAP_TVC];
+
+  // the character map of the current machine
+  function charMap() {
+    if (machine && machine.type === 1) return CHARMAP_TVC;
+    return (machine && machine.roms.some((r) => r[0] === 'hun.rom')) ? CHARMAP_EP_HU : CHARMAP_EP;
+  }
   const PAUSE = '\u0001';      // in autotyped text: wait 2.5 seconds
   const PRESS_ESC = '\u0002';  // in autotyped text: press the TVC ESC key
 
@@ -319,7 +336,8 @@
   // letters are typable, but the FILE: devices would not match them with
   // the host file name
   function isTypable(text, type) {
-    return /^[\x20-\x7e]*$/.test(text) && Array.from(text).every((ch) => CHARMAP[type][ch]);
+    const map = type === 1 ? CHARMAP_TVC : charMap();
+    return /^[\x20-\x7e]*$/.test(text) && Array.from(text).every((ch) => map[ch]);
   }
 
   // --------------------------------------------------------------------------
@@ -1228,7 +1246,7 @@ registerProcessor('ep-output', EPOutput);
                 [-1, 0, 50000]);
         continue;
       }
-      const k = CHARMAP[machine.type][ch];
+      const k = charMap()[ch];
       if (!k) continue;
       if (k[1]) ev.push([KEY_SHIFT, 1, 30000]);
       ev.push([k[0], 1, 60000]);
@@ -2251,7 +2269,7 @@ registerProcessor('ep-output', EPOutput);
       $('typer-send').textContent = 'Beír + Enter';
       const text = inp.value.replace(/\r\n?/g, '\n').replace(/\t/g, ' ').replace(/\s+$/, '');
       if (!text) return;
-      const map = CHARMAP[machine.type];
+      const map = charMap();
       const bad = new Set(Array.from(text).filter((ch) => ch !== '\n' && !map[ch]));
       typeText(text + '\n');
       if (!autoTask) return;
