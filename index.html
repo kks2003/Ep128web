@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610161537-e4969d7">
-<meta name="build" content="202610161537-e4969d7">
+<link rel="stylesheet" href="style.css?v=202610161819-f43a620">
+<meta name="build" content="202610161819-f43a620">
 </head>
 <body>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.16 17:37 · e4969d7</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.16 20:19 · f43a620</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -23,6 +23,13 @@
       <input type="file" id="file-any" multiple>
     </label>
     <button id="btn-snap" title="Pillanatkép mentése (.ep128s)">Állapot mentése</button>
+    <button id="btn-shot" title="A képernyő mentése képként (.png)">📷 Kép</button>
+    <button id="btn-video" title="Videó felvétele hanggal; újra megnyomva leáll és letöltődik">● Videó</button>
+    <select id="video-fmt" title="A videó formátuma" aria-label="A videó formátuma" hidden>
+      <option value="mp4">MP4</option>
+      <option value="webm">WebM</option>
+    </select>
+    <button id="btn-audio" title="Hang felvétele (.wav); újra megnyomva leáll és letöltődik">● Hang</button>
     <span class="vol">
       <button id="btn-mute" class="mute" title="Némítás" aria-pressed="false">🔊</button>
       <input type="range" id="volume" min="0" max="100" value="70" title="Hangerő" aria-label="Hangerő">
@@ -245,7 +252,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610161537-e4969d7"></script>
-<script src="ep128.js?v=202610161537-e4969d7"></script>
+<script src="ep128emu.js?v=202610161819-f43a620"></script>
+<script src="ep128.js?v=202610161819-f43a620"></script>
 </body>
 </html>
