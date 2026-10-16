@@ -228,8 +228,14 @@
 
   // value of the cassette device redirect ($0B05/$0B0D) that points at the
   // slot of a card, or 0 if the card is not installed
-  // device for the LOAD / RUN buttons: the TVC256k++ card if present, else FILE:
+  // device for the LOAD / RUN buttons: the tape if one is loaded, else the
+  // card the last loaded program or disk was started from (e.g. VT-DOS after
+  // a disk image), else the TVC256k++ card if present, else FILE:
+  let tvcLastLoadCard = -1;
+
   function defaultTvcLoadRedirect() {
+    if (tapeName) return 5;
+    if (tvcLastLoadCard >= 0 && tvcSlotOf(tvcLastLoadCard) >= 0) return tvcRedirectFor(tvcLastLoadCard);
     return tvcSlotOf(SLOT_CARD256) >= 0 ? tvcRedirectFor(SLOT_CARD256) : tvcRedirectFor(SLOT_FILEIO);
   }
 
@@ -1047,6 +1053,8 @@ registerProcessor('ep-output', EPOutput);
       tvcRedirect: tvcRedirect !== undefined ? tvcRedirect
         : (isTvcTape ? 5 : tvcRedirectFor(SLOT_FILEIO))
     };
+    if (machine.type === 1 && (autoTask.tvcRedirect & 0x80))
+      tvcLastLoadCard = tvcSlots[autoTask.tvcRedirect & 3];
     setMessage('Indítás…');
   }
 
@@ -2240,14 +2248,14 @@ registerProcessor('ep-output', EPOutput);
     $('btn-turbo').onclick = toggleTurbo;
     $('btn-load').onclick = () => {
       if (machine.type === 1)
-        setTvcRedirect(tapeName ? 5 : defaultTvcLoadRedirect());
+        setTvcRedirect(defaultTvcLoadRedirect());
       typeText('load"*"\n');
       canvas.focus();
     };
     const btnRun = $('btn-run');
     if (btnRun) btnRun.onclick = () => {
       if (machine.type === 1)
-        setTvcRedirect(tapeName ? 5 : defaultTvcLoadRedirect());
+        setTvcRedirect(defaultTvcLoadRedirect());
       typeText('run\n');
       canvas.focus();
     };
