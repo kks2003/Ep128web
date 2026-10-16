@@ -43,6 +43,11 @@
              ['epfileio.rom', [0x10]], ['exdos14isdos10uk.rom', [0x20, 0x21]]]
     },
     {
+      id: 'ep2048uk-tape', name: 'EP 2048K · EXOS 2.4 (UK) · csak magnó', ram: 2048,
+      roms: [['exos24uk.rom', [0x00, 0x01, 0x02, 0x03]],
+             ['epfileio.rom', [0x10]]]
+    },
+    {
       id: 'tvc64p-22', type: 1, name: 'TVC 64k+ · BASIC 2.2', ram: 128,
       roms: [['tvc22_sys.rom', [0x00]], ['tvc22_ext.rom', [0x02]]]
     },

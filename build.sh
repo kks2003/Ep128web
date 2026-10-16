@@ -87,15 +87,25 @@ SOURCES="
   web/src/main.cpp
 "
 
+# an object is rebuilt when its source or one of the headers it includes
+# (listed by the compiler in $obj.d) is newer
+needs_build() {
+  [ -f "$obj" ] && [ -f "$obj.d" ] && [ ! "$src" -nt "$obj" ] || return 0
+  for dep in $(sed -e 's/\\$//' -e 's/^[^:]*://' "$obj.d"); do
+    [ "$dep" -nt "$obj" ] && return 0
+  done
+  return 1
+}
+
 OBJS=""
 for src in $SOURCES; do
   obj="$OBJDIR/$(echo "$src" | tr '/' '_' | sed -E 's/\.(cpp|c)$/.o/')"
   OBJS="$OBJS $obj"
-  if [ ! -f "$obj" ] || [ "$src" -nt "$obj" ]; then
+  if needs_build; then
     echo "CXX $src"
     case "$src" in
-      web/src/card/*.c|web/src/card/*/*.c) emcc -O3 -w -DHAVE_STDINT_H -DLFS_NO_ASSERT -Iweb/src -c "$src" -o "$obj" ;;  # vendored C code
-      *) em++ $CFLAGS -c "$src" -o "$obj" ;;
+      web/src/card/*.c|web/src/card/*/*.c) emcc -O3 -w -DHAVE_STDINT_H -DLFS_NO_ASSERT -Iweb/src -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;  # vendored C code
+      *) em++ $CFLAGS -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;
     esac
   fi
 done
