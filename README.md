@@ -30,7 +30,7 @@ letöltését külön kell betölteni.
 | `.cas` (TVC) | TVC módban: FILE eszköz, automatikus `LOAD` + `RUN` |
 | `.com`, `.bas`, egyéb | a `FILE:` eszközre kerül, a gép újraindul és automatikusan kiadja a `LOAD "FILE:név"` (BASIC-nél `RUN`) parancsot |
 | `.tap`, `.wav` | magnóba kerül, automatikus `LOAD "TAPE:"` + lejátszás, betöltés közben turbó |
-| `.img`, `.dsk` | A: lemezmeghajtó; TVC-n a 360 KiB és 720 KiB (nyers, 512 bájtos szektoros) képek is támogatottak; Enterprise-on szükség esetén EXDOS-os gépre vált; TVC-n VT-DOS kártya kell valamelyik portba; kilistázza a lemezt (`:DIR`, ill. `EXT 2` + `DIR`) |
+| `.img`, `.dsk` | A: lemezmeghajtó; TVC-n a 360 KiB és 720 KiB (nyers, 512 bájtos szektoros) képek is támogatottak; Enterprise-on szükség esetén EXDOS-os gépre vált; TVC-n a formátumnak megfelelő lemezkártyát (VT-DOS vagy UPM) teszi be; kilistázza a lemezt (`:DIR`, ill. `EXT 2` + `DIR`), UPM-lemeznél a programjai közül lehet választani |
 | `.zip`, több fájl | minden fájl a `FILE:` eszközre kerül; ha több indítható program van, választani lehet |
 | `.ep128s` / `.ep128d` | ep128emu pillanatkép / demó |
 | `.bin` (ROM-csomag), `.rom` | ROM-ok telepítése |
@@ -50,7 +50,16 @@ Gépkonfigurációk:
 - **Enterprise**: EP128 (UK/magyar) EXDOS-szal vagy csak magnóval, EP 640K
   EXOS 2.32-vel (UK/magyar), EP 2048K EXOS 2.4-gyel. Mindegyikben benne van az
   ep128emu `epfileio.rom` bővítése (`FILE:` eszköz).
-- **Videoton TVC**: TVC 64k+ BASIC 2.2, TVC 64k és 32k BASIC 1.2. A négy
+- **Videoton TVC**: TVC 64k+ BASIC 2.2, TVC 64k és 32k BASIC 1.2, valamint
+  rendszer-cartridge-dzsel: TVC 64k+ BASIC 2.2 · VT-DOS (`tvc_dos12c.rom`, a
+  „(DOS)” programok rendszerlemezéhez) és TVC 64k+ BASIC 1.2 · UPM
+  (`tvcupm_c.rom`, CP/M-kompatibilis operációs rendszer). Mindkét cartridge
+  a ROM-csomagban van; a géphez kellő lemezkártyát az oldal beteszi egy portba
+  (VT-DOS, ill. UPM). Az UPM cartridge a `*` után RETURN-re vár, ezt
+  lemezkép betöltésekor az oldal leüti, és kilistázza a lemezt. A
+  programkatalógus „(DOS)”, ill. „(UPM)” jelölésű programjai ezen a gépen
+  indulnak, a „(64k+)” jelölésűek a TVC 64k+ BASIC 2.2-n, a többi a
+  gépválasztóban kiválasztott TVC-n. A négy
   bővítőport mindegyikébe választható kártya (lásd lent). A `.cas` programok a
   FILE: kártya (`tvcfileio.rom`) eszközére kerülnek és automatikusan betöltődnek
   (`LOAD "név"`). A billentyűzet a magyar PC-kiosztást követi (QWERTZ, `0` az
@@ -59,9 +68,11 @@ Gépkonfigurációk:
 ### TVC bővítőportok
 
 A „TVC bővítőportok” panelen mind a négy porthoz (0–3) kiválasztható a kártya:
-üres, VT-DOS (lemez), FILE: (`.cas` fájlok), GameCard (SN76489 + 3–4. joystick),
-Multichip Soundcard (SN76489, SAA1099, OPL2) vagy TVC256k++. Egy kártya csak egy
-portban lehet. A választás csak a **Portok betöltése, újraindítás** gombbal lép
+üres, VT-DOS (lemez), UPM (lemez), FILE: (`.cas` fájlok), GameCard (SN76489 +
+3–4. joystick), Multichip Soundcard (SN76489, SAA1099, OPL2) vagy TVC256k++. Egy
+kártya csak egy portban lehet, és lemezkártya (VT-DOS vagy UPM) csak egy. Az UPM
+kártya ugyanaz a floppy-csatoló, mint a VT-DOS, az UPM-kompatibilis ROM-mal
+(`tvcupm_d.rom`): BASIC alól `LOAD "NÉV"`-vel tölt UPM formátumú lemezről. A választás csak a **Portok betöltése, újraindítás** gombbal lép
 életbe (a kártyák ROM-jai betöltődnek, a gép hidegen újraindul); a beállítást a
 böngésző megjegyzi.
 
@@ -76,8 +87,15 @@ A VT-DOS (`EXT 2`) és a TVC256k++ (`EXT` + a port száma) parancssora csak akko
 működik, ha az alapértelmezett tároló rájuk mutat. Ezért az alapbeállítás:
 **0: FILE:, 1: VT-DOS, 2: GameCard, 3: üres** – így bootolás után a VT-DOS az
 alapértelmezett. Lemezkép betöltésekor az oldal a VT-DOS-ra, `.cas` program
-indításakor a FILE:-ra, kazettánál a magnóra állítja át az átirányítást; a
-portokat viszont sosem cseréli magától (ha hiányzik a szükséges kártya, szól).
+indításakor a FILE:-ra, kazettánál a magnóra állítja át az átirányítást.
+
+Lemezkép betöltésekor az oldal felismeri a formátumát: a FAT-os (boot szektoros)
+lemez VT-DOS-é, az UPM-lemez első 4 pályája üres, utána CP/M-katalógus jön. A
+lemezkártyát ehhez igazítja: ha a másik van bent, ugyanabba a portba cseréli
+(ha egyik sincs, az első üres portba teszi), és hidegen újraindít. VT-DOS-lemeznél
+`EXT 2` + `DIR`, UPM-lemeznél a lemezen lévő `.CAS` programok közül lehet
+választani (`LOAD "NÉV"`). A többi kártyát az oldal sosem cseréli magától (ha
+hiányzik a szükséges, szól).
 
 A pillanatképek (`.ep128s`) betöltésekor az oldal automatikusan a mentéskori
 géptípusra (Enterprise/TVC) vált.
