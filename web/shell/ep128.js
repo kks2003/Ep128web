@@ -281,8 +281,8 @@
   })();
   const CHARMAP_TVC = (() => {
     const m = Object.assign({}, CHARMAP_EP);
-    m.y = m.Y = [0x06, false];
-    m.z = m.Z = [0x12, false];
+    m.y = [0x06, false]; m.Y = [0x06, true];
+    m.z = [0x12, false]; m.Z = [0x12, true];
     m['0'] = [0x4B, false];
     m[':'] = [0x44, true];
     m['-'] = [0x43, false];
@@ -293,6 +293,13 @@
       '=': 0x18, '(': 0x28, ')': 0x2A, '?': 0x42, '$': 0x17, '`': 0x27 };
     for (const c in shifted) m[c] = [shifted[c], true];
     Object.assign(m, { ';': [0x17, false], '@': [0x27, false] });
+    // the keys of the TVC that the PC layout has elsewhere (found by typing
+    // every key through the TVC BASIC 1.2 ROM): < > beside Y, [ { ] } \ |
+    // ^ ~ on the right, # and & shifted
+    Object.assign(m, {
+      '<': [0x22, false], '>': [0x22, true], '[': [0x25, false], '{': [0x25, true],
+      ']': [0x21, false], '}': [0x21, true], '\\': [0x20, false], '|': [0x20, true],
+      '^': [0x23, false], '~': [0x23, true], '#': [0x24, true], '&': [0x4B, true] });
     // Hungarian letters
     const hu = { 'ö': 0x2C, 'ü': 0x2B, 'ó': 0x2D, 'ő': 0x4D, 'ú': 0x36,
       'é': 0x33, 'á': 0x35, 'ű': 0x01 };
@@ -1992,19 +1999,19 @@ registerProcessor('ep-output', EPOutput);
       [['0', 0x4B], ['1', 0x19, "'"], ['2', 0x1E, '"'], ['3', 0x1D, '+'],
        ['4', 0x1B, '!'], ['5', 0x1C, '%'], ['6', 0x1A, '/'], ['7', 0x18, '='],
        ['8', 0x28, '('], ['9', 0x2A, ')'], ['Ö', 0x2C], ['Ü', 0x2B], ['Ó', 0x2D],
-       ['DEL', 0x2E, '', 'mod', 1.4]],
+       ['*', 0x24, '#'], ['^', 0x23, '~'], ['DEL', 0x2E, '', 'mod', 1.4]],
       [['ESC', 0x38, '', 'mod', 1.3]].concat(
         L('qwertzuiop', [0x11, 0x16, 0x15, 0x13, 0x14, 0x12, 0x10, 0x48, 0x4A, 0x4C]),
-        [['Ő', 0x4D], ['Ú', 0x36]]),
+        [['Ő', 0x4D], ['Ú', 0x36], ['[', 0x25, '{'], [']', 0x21, '}']]),
       [['LOCK', 0x09, '', 'mod', 1.5]].concat(
         L('asdfghjkl', [0x0E, 0x0D, 0x0B, 0x0C, 0x0A, 0x08, 0x30, 0x32, 0x34]),
         [['É', 0x33], ['Á', 0x35], ['Ű', 0x01], ['RETURN', 0x3E, '', 'mod', 1.8]]),
-      [['SHIFT', 0x07, '', 'mod sticky', 1.7]].concat(
+      [['SHIFT', 0x07, '', 'mod sticky', 1.7], ['<', 0x22, '>']].concat(
         L('yxcvbnm', [0x06, 0x05, 0x03, 0x04, 0x02, 0x00, 0x40]),
         [[',', 0x42, '?'], ['.', 0x44, ':'], ['-', 0x43, '_'],
          ['SHIFT', 0x45, '', 'mod sticky', 1.7]]),
       [['CTRL', 0x0F, '', 'mod sticky', 1.2], ['ALT', 0x3F, '', 'mod sticky', 1.1],
-       ['@', 0x27, '`'], [';', 0x17, '$'], ['SPACE', 0x46, '', '', 4.5],
+       ['@', 0x27, '`'], [';', 0x17, '$'], ['\\', 0x20, '|'], ['SPACE', 0x46, '', '', 4.5],
        ['INS', 0x47, '', 'mod'], ['←', 0x3D, '', 'mod'], ['↑', 0x3B, '', 'mod'],
        ['↓', 0x39, '', 'mod'], ['→', 0x3A, '', 'mod']]
     ]
