@@ -2336,11 +2336,18 @@ registerProcessor('ep-output', EPOutput);
   }
 
   // catalog programs marked "(DOS)" or "(UPM)" in their title run with the
-  // VT-DOS or UPM system cartridge; the others on a TVC without one
+  // VT-DOS or UPM system cartridge, "(64k+)" ones on the TVC 64k+ with
+  // BASIC 2.2; the others on the TVC the user chose (when the catalog had
+  // switched away from it), else on the current one without a cartridge
+  let userTvc = DEFAULT_TVC;        // the TVC without a cartridge the user chose
+  let catalogSwitched = false;      // the catalog chose the current machine
+
   function catalogMachine(item) {
     const t = item.title || '';
     if (/\(dos\)/i.test(t)) return 'tvc64p-22-vtdoscart';
     if (/\(upm\)/i.test(t)) return 'tvc64p-12-upm';
+    if (/\(64k\+\)/i.test(t)) return 'tvc64p-22';
+    if (catalogSwitched) return userTvc;
     return machine.cart ? plainTvc().id : machine.id;
   }
 
@@ -2370,6 +2377,7 @@ registerProcessor('ep-output', EPOutput);
         releaseAllKeys();
         applyMachine(m);
       }
+      catalogSwitched = machine.id !== userTvc;
       const file = new File([blob], fileName, {
         type: blob.type || 'application/octet-stream'
       });
@@ -2435,6 +2443,8 @@ registerProcessor('ep-output', EPOutput);
     sel.value = machine.id;
     sel.addEventListener('change', () => {
       const m = MACHINES.find((x) => x.id === sel.value);
+      if (m.type === 1 && !m.cart) userTvc = m.id;
+      catalogSwitched = false;
       autoTask = null;
       releaseAllKeys();
       applyMachine(m);
@@ -2763,6 +2773,7 @@ registerProcessor('ep-output', EPOutput);
     try { id = localStorage.getItem('ep128web.machine'); } catch (e) { }
     id = MACHINE_ALIASES[id] || id;
     machine = MACHINES.find((m) => m.id === id) || MACHINES.find((m) => m.id === DEFAULT_TVC);
+    if (machine.type === 1 && !machine.cart) userTvc = machine.id;
     setupUI();
     listFiles();
     applyMachine(machine);
