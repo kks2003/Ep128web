@@ -131,9 +131,11 @@ a PSRAM drive megszűnik, a flash drive útvonala visszaáll a gyökérre.
 - **flash drive**: a kártya firmware-ének saját fájlkezelő kódja (`tvc-lfs.c`, littlefs) fut
   az emulátorban (`web/src/card/`), így a `REG_USB_MSC_CMD` fájlparancsok (megnyitás,
   olvasás, könyvtárlistázás, `CD`, `LOAD`) pontosan úgy működnek, mint a valódi kártyán.
-  A flash drive képét (`flash-root-*.bin`, vagy a `flash-root-*-bin.zip`) ráejtheted az
-  oldalra; a böngésző megjegyzi. Utána `EXT <port>` → `DS`, `DIR`, `CD games`, `X`, majd
-  `LOAD "aircraft"`, `RUN`;
+  Alapból a kártya repójában közzétett flash-kép (`binaries/flash-root-1.3-bin.zip`, a
+  launcherrel és a TVC programokkal) kerül rá: ha a kártya be van téve, az oldal egyszer
+  letölti a GitHubról, és a böngésző megjegyzi. Saját képet (`flash-root-*.bin`, vagy
+  `flash-root-*-bin.zip`) az oldalra ejtve tölthetsz be helyette. Utána `EXT <port>`,
+  `DIR`, `CD games`, `X`, majd `LOAD "aircraft"`, `RUN`;
 - **grafika**: a firmware rajzoló kódja (`tvc-graphics.c`) soronként kiszámolja a 256×240-es
   overlay-t, amit az emulátor a TVC képére rak (a papír területére, a TVC VSYNC/BORDER
   jeleihez igazítva, mint a kártya). Megy mind a négy mód (üres, 2 színű és 16 színű

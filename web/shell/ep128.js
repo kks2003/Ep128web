@@ -246,6 +246,30 @@
   function applyTvcSlots() {
     if (api && api.setTvcSlot) tvcSlots.forEach((card, slot) => api.setTvcSlot(slot, card));
     applyTvcUsb();
+    if (tvcSlotOf(SLOT_CARD256) >= 0) fetchDefaultCardFlash();
+  }
+
+  // The TVC256k++ flash drive: unless the user loaded an image, the one
+  // published in the card's repository (GPL-3.0, with the TVC programs on it)
+  // is downloaded from there once, like a real card shipping with it
+  const CARD_FLASH_URL = 'https://raw.githubusercontent.com/dikdom/tvc256kplusplus/main/binaries/flash-root-1.3-bin.zip';
+  let cardFlashLoaded = false, cardFlashFetching = false;
+
+  async function fetchDefaultCardFlash() {
+    if (cardFlashLoaded || cardFlashFetching) return;
+    cardFlashFetching = true;
+    try {
+      const r = await fetch(CARD_FLASH_URL);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const f = (await unzip(new Uint8Array(await r.arrayBuffer())))
+        .find((e) => fileKind(e) === 'cardflash');
+      if (!f) throw new Error('nincs benne flash-kép');
+      if (!cardFlashLoaded) loadCardFlash(f);
+    } catch (e) {
+      console.warn(e);
+      setMessage('A TVC256k++ flash drive képe nem tölthető le (' + (e.message || e) + '); ráhúzhatod a flash-root-*-bin.zip fájlt', true);
+    }
+    cardFlashFetching = false;
   }
 
   // --------------------------------------------------------------------------
@@ -1214,6 +1238,7 @@ registerProcessor('ep-output', EPOutput);
     try { M.FS.mkdir('/card'); } catch (e) { }
     M.FS.writeFile('/card/flash.bin', f.bytes);
     check(api.loadTvcCardFlash('/card/flash.bin'), 'TVC256k++ flash drive kép');
+    cardFlashLoaded = true;
     db.put('cardflash', f.bytes);
     setMessage('TVC256k++ flash drive kép betöltve' + (tvcSlotOf(SLOT_CARD256) >= 0 ? '' : ' – tedd a kártyát egy bővítőportba'));
   }
@@ -2501,7 +2526,7 @@ registerProcessor('ep-output', EPOutput);
         else if (key === 'cardflash') {
           try { M.FS.mkdir('/card'); } catch (e) { }
           M.FS.writeFile('/card/flash.bin', value);
-          api.loadTvcCardFlash('/card/flash.bin');
+          cardFlashLoaded = (api.loadTvcCardFlash('/card/flash.bin') === 0);
         }
       } catch (e) { console.warn(e); }
     }
