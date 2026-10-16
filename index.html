@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610160912-4c66312">
-<meta name="build" content="202610160912-4c66312">
+<link rel="stylesheet" href="style.css?v=202610161058-948b795">
+<meta name="build" content="202610161058-948b795">
 </head>
 <body>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.16 11:12 · 4c66312</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.16 12:58 · 948b795</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -19,14 +19,10 @@
     <button id="btn-cold" title="Hideg reset / bekapcsolás (Shift+F11)">Hideg reset</button>
     <button id="btn-pause" title="Szünet (Pause)">Szünet</button>
     <button id="btn-turbo" title="Gyorsítás (F12)">Turbó</button>
-    <button id="btn-load" title='load"*" + Enter (TVC)' hidden>load"*"</button>
-    <button id="btn-run" title='RUN + Enter'>Run</button>
     <label class="file">Fájl betöltése…
       <input type="file" id="file-any" multiple>
     </label>
     <button id="btn-snap" title="Pillanatkép mentése (.ep128s)">Állapot mentése</button>
-    <button id="btn-full" title="Teljes képernyő">⛶</button>
-    <button id="btn-mouse" title="Egér a TVC256k++ kártyának (kilépés: Esc)" hidden>🖱</button>
     <span class="vol">
       <button id="btn-mute" class="mute" title="Némítás" aria-pressed="false">🔊</button>
       <input type="range" id="volume" min="0" max="100" value="70" title="Hangerő" aria-label="Hangerő">
@@ -72,6 +68,9 @@
     <button id="tb-kbd" aria-pressed="false">⌨ Billentyűzet</button>
     <button id="tb-joy" aria-pressed="false">🕹 Joystick</button>
     <button id="tb-text" aria-pressed="false">Aa Szöveg beírása</button>
+    <button id="btn-load" title='load"*" + Enter (TVC)' hidden>load"*"</button>
+    <button id="btn-run" title='RUN + Enter'>Run</button>
+    <button id="btn-mouse" title="Egér a TVC256k++ kártyának (kilépés: Esc)" hidden>🖱</button>
     <button id="tb-full" title="Teljes képernyő">⛶</button>
   </div>
 
@@ -231,7 +230,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610160912-4c66312"></script>
-<script src="ep128.js?v=202610160912-4c66312"></script>
+<script src="ep128emu.js?v=202610161058-948b795"></script>
+<script src="ep128.js?v=202610161058-948b795"></script>
 </body>
 </html>
