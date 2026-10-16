@@ -5,11 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=__BUILD_V__">
+<meta name="build" content="__BUILD_V__">
 </head>
 <body>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">__BUILD__</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -25,9 +26,11 @@
     </label>
     <button id="btn-snap" title="Pillanatkép mentése (.ep128s)">Állapot mentése</button>
     <button id="btn-full" title="Teljes képernyő">⛶</button>
-    <label class="vol" title="Hangerő">🔊
-      <input type="range" id="volume" min="0" max="100" value="70">
-    </label>
+    <button id="btn-mouse" title="Egér a TVC256k++ kártyának (kilépés: Esc)" hidden>🖱</button>
+    <span class="vol">
+      <button id="btn-mute" class="mute" title="Némítás" aria-pressed="false">🔊</button>
+      <input type="range" id="volume" min="0" max="100" value="70" title="Hangerő" aria-label="Hangerő">
+    </span>
   </nav>
 </header>
 
@@ -127,9 +130,39 @@
       <button id="cart-eject">Kiadás</button>
     </div>
     <div class="group" id="tvc-cards-group">
-      <h3>TVC bővítőkártyák</h3>
-      <label class="name"><input type="checkbox" id="tvc-gamecard"> GameCard (SN76489 + Joy 3-4)</label>
-      <label class="name"><input type="checkbox" id="tvc-multisound"> Multichip Soundcard (SN, SAA, OPL2)</label>
+      <h3>TVC bővítőportok</h3>
+      <label class="slot">Port 0 <select id="tvc-slot0"></select></label>
+      <label class="slot">Port 1 <select id="tvc-slot1"></select></label>
+      <label class="slot">Port 2 <select id="tvc-slot2"></select></label>
+      <label class="slot">Port 3 <select id="tvc-slot3"></select></label>
+      <button id="tvc-slots-apply" title="A kártyák betöltése és hideg újraindítás">Portok betöltése, újraindítás</button>
+      <button id="tvc-slots-default" title="FILE:, VT-DOS, GameCard, üres (betöltés a gombbal)">Alapbeállítás</button>
+      <span class="name" id="tvc-slots-note"></span>
+      <span class="name">A VT-DOS, a FILE: és a TVC256k++ közül a legnagyobb sorszámú portban lévő lesz
+        az alapértelmezett tároló; a parancssoruk csak így működik. VT-DOS: <code>EXT 2</code>,
+        TVC256k++: <code>EXT</code> + a port száma (pl. 3-as portban <code>EXT 3</code>).
+        TVC256k++ flash drive: ejtsd rá a <code>flash-root-*.bin</code> / <code>.zip</code> fájlt.</span>
+    </div>
+    <div class="group" id="usb-group" hidden>
+      <h3>USB pendrive (TVC256k++)</h3>
+      <label title="A pendrive a TVC256k++ kártya USB-portjában: bootoláskor ez lesz az aktív meghajtó, és a képre húzott programok is erre kerülnek">
+        <input type="checkbox" id="usb-on"> Bedugva</label>
+      <label class="slot">Méret <select id="usb-size">
+        <option value="32">32 MB</option><option value="64">64 MB</option>
+        <option value="128">128 MB</option><option value="256">256 MB</option></select></label>
+      <span class="name" id="usb-space"></span>
+      <div id="usb-browser">
+        <div id="usb-path"></div>
+        <ul id="usb-list"></ul>
+        <div id="usb-drop">Húzd ide a fájlokat (bármilyen típus; a ZIP kibontva, mappastruktúrával kerül fel)</div>
+      </div>
+      <button id="usb-add">Fájlok hozzáadása…</button>
+      <button id="usb-add-dir">Mappa hozzáadása…</button>
+      <button id="usb-mkdir">Új mappa</button>
+      <button id="usb-clear" title="A pendrive teljes tartalmának törlése">Pendrive törlése</button>
+      <input type="file" id="usb-file" multiple hidden>
+      <input type="file" id="usb-folder" webkitdirectory multiple hidden>
+      <span class="name" id="usb-note"></span>
     </div>
     <div class="group">
       <h3>Joystick</h3>
@@ -198,7 +231,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js"></script>
-<script src="ep128.js"></script>
+<script src="ep128emu.js?v=__BUILD_V__"></script>
+<script src="ep128.js?v=__BUILD_V__"></script>
 </body>
 </html>

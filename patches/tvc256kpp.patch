@@ -1,0 +1,213 @@
+--- a/src/tvc64vm.cpp
++++ b/src/tvc64vm.cpp
+@@ -33,6 +33,7 @@
+ #  include "sdext.hpp"
+ #endif
+ #include "tvc_soundcards.hpp"
++#include "tvc256kpp.hpp"
+ 
+ #include <vector>
+ 
+@@ -567,6 +568,11 @@
+   {
+     if (getPage(uint8_t(addr >> 14)) == 0x02) { // EXT
+       if (EP128EMU_UNLIKELY(getPaging() & 0xC000)) {
++        if (vm.card256) {
++          uint8_t cardVal = 0xFF;
++          if (vm.card256->handleSlotROMRead(addr, getPaging() & 0xC000, cardVal))
++            return cardVal;
++        }
+         if (vm.soundCards) {
+           uint8_t romVal = 0xFF;
+           if (vm.soundCards->handleSlotROMRead(addr, getPaging() & 0xC000, romVal))
+@@ -588,6 +594,11 @@
+   {
+     if (getPage(uint8_t(addr >> 14)) == 0x02) { // EXT
+       if (EP128EMU_UNLIKELY(getPaging() & 0xC000)) {
++        if (vm.card256) {
++          uint8_t cardVal = 0xFF;
++          if (vm.card256->handleSlotROMRead(addr, getPaging() & 0xC000, cardVal))
++            return cardVal;
++        }
+         if (vm.soundCards) {
+           uint8_t romVal = 0xFF;
+           if (vm.soundCards->handleSlotROMRead(addr, getPaging() & 0xC000, romVal))
+@@ -607,8 +618,11 @@
+                                                           uint8_t value)
+   {
+     if (getPage(uint8_t(addr >> 14)) == 0x02) { // EXT
+-      if (EP128EMU_UNLIKELY(getPaging() & 0xC000))
++      if (EP128EMU_UNLIKELY(getPaging() & 0xC000)) {
++        if (vm.card256)
++          vm.card256->handleSlotROMWrite(addr, getPaging() & 0xC000, value);
+         return;                         // IOMEM 0 is not paged in
++      }
+       if (EP128EMU_EXPECT((addr & 0x1000) != 0))
+         extensionRAM[addr & 0x0FFF] = value;
+     }
+@@ -712,6 +726,11 @@
+   {
+     TVC64VM&  vm = *(reinterpret_cast<TVC64VM *>(userData));
+     addr = addr & 0x7F;
++    if (vm.card256) {
++      uint8_t cardVal = 0xFF;
++      if (vm.card256->handleRead(addr, cardVal))
++        return cardVal;
++    }
+     if (vm.soundCards) {
+       uint8_t scVal = 0xFF;
+       if (vm.soundCards->handleRead(addr, scVal))
+@@ -823,6 +842,8 @@
+   {
+     TVC64VM&  vm = *(reinterpret_cast<TVC64VM *>(userData));
+     addr = addr & 0x7F;
++    if (vm.card256 && vm.card256->handleWrite(addr, value))
++      return;
+     if (vm.soundCards && vm.soundCards->handleWrite(addr, value))
+       return;
+     switch (addr) {
+@@ -1360,8 +1381,10 @@
+       tapeSamplesPerCRTCCycle(0L),
+       tapeSamplesRemaining(-1L),
+       crtcFrequency(1562500),
+-      soundCards(new TVCSoundCards())
++      soundCards(new TVCSoundCards()),
++      card256(new TVC256kpp())
+   {
++    card256->setPagingCallback(&TVC64VM::card256PagingChanged, this);
+     for (size_t i = 0;
+          i < (sizeof(callbacks) / sizeof(TVC64VMCallback));
+          i++) {
+@@ -1394,6 +1417,11 @@
+ 
+   TVC64VM::~TVC64VM()
+   {
++    if (card256) {
++      card256->setPagingCallback((void (*)(void *)) 0, (void *) 0);
++      delete card256;
++      card256 = (TVC256kpp *) 0;
++    }
+     if (soundCards) {
+       delete soundCards;
+       soundCards = (TVCSoundCards *) 0;
+@@ -1480,6 +1508,8 @@
+ #endif
+     if (soundCards)
+       soundCards->reset();
++    if (card256)
++      card256->reset(isColdReset);
+   }
+ 
+   void TVC64VM::resetMemoryConfiguration(size_t memSize)
+@@ -1998,6 +2028,26 @@
+     return z80.getReg();
+   }
+ 
++  void TVC64VM::card256PagingChanged(void *userData)
++  {
++    TVC64VM&  vm = *(reinterpret_cast<TVC64VM *>(userData));
++    if (vm.card256)
++      vm.memory.setExpansionRAM(vm.card256->getPage(0),
++                                vm.card256->getPage(1));
++  }
++
++  void TVC64VM::setCard256Enabled(bool enabled)
++  {
++    if (card256)
++      card256->setEnabled(enabled);
++  }
++
++  void TVC64VM::setCard256Slot(int slot)
++  {
++    if (card256)
++      card256->setSlot(slot);
++  }
++
+   void TVC64VM::setGameCardEnabled(bool enabled)
+   {
+     if (soundCards)
+--- a/src/tvc64vm.hpp
++++ b/src/tvc64vm.hpp
+@@ -41,6 +41,7 @@
+ }
+ 
+ class TVCSoundCards;
++class TVC256kpp;
+ 
+ namespace TVC64 {
+ 
+@@ -218,6 +219,10 @@
+                      bool isEnabled);
+    public:
+     TVCSoundCards *soundCards;
++    TVC256kpp *card256;         // TVC256k++ IO card (RAM expansion, ...)
++    static void card256PagingChanged(void *userData);
++    void setCard256Enabled(bool enabled);
++    void setCard256Slot(int slot);
+     void setGameCardEnabled(bool enabled);
+     void setMultiSoundEnabled(bool enabled);
+     void setExtJoyState(int joyIndex, uint8_t state);
+--- a/src/tvcmem.cpp
++++ b/src/tvcmem.cpp
+@@ -99,7 +99,9 @@
+       haveBreakPoints(false),
+       breakPointPriorityThreshold(0),
+       videoMemory((uint8_t *) 0),
+-      dummyMemory((uint8_t *) 0)
++      dummyMemory((uint8_t *) 0),
++      extRAMPage2((uint8_t *) 0),
++      extRAMPage3((uint8_t *) 0)
+   {
+     for (int i = 0; i < 4; i++)
+       pageTable[i] = 0x00;
+@@ -436,6 +438,16 @@
+       pageAddressTableR[i + 1] = pageAddressTableR[i];
+       pageAddressTableW[i + 1] = pageAddressTableW[i];
+     }
++    if (extRAMPage2 && pageTable[2] == 0xFA) {
++      // U2 is provided by the RAM expansion card
++      pageAddressTableR[4] = pageAddressTableW[4] = extRAMPage2 - 0x8000L;
++      pageAddressTableR[5] = pageAddressTableW[5] = extRAMPage2 - 0x8000L;
++    }
++    if (extRAMPage3 && pageTable[3] == 0xFB) {
++      // U3 is provided by the RAM expansion card
++      pageAddressTableR[6] = pageAddressTableW[6] = extRAMPage3 - 0xC000L;
++      pageAddressTableR[7] = pageAddressTableW[7] = extRAMPage3 - 0xC000L;
++    }
+     if (pageTable[3] == 0x02) {
+       // IOMEM is special case
+       pageAddressTableR[6] = (uint8_t *) 0;
+@@ -443,6 +455,13 @@
+     }
+   }
+ 
++  void Memory::setExpansionRAM(uint8_t *page2, uint8_t *page3)
++  {
++    extRAMPage2 = page2;
++    extRAMPage3 = page3;
++    setPaging(currentPaging);
++  }
++
+   bool Memory::checkIgnoreBreakPoint(uint16_t addr) const
+   {
+     const uint8_t *tbl = breakPointTable;
+--- a/src/tvcmem.hpp
++++ b/src/tvcmem.hpp
+@@ -45,6 +45,8 @@
+     uint8_t   breakPointPriorityThreshold;
+     uint8_t   *videoMemory; // 64K for segments FC to FF; always RAM
+     uint8_t   *dummyMemory; // 2*16K dummy memory for invalid reads and writes
++    uint8_t   *extRAMPage2; // RAM expansion card (TVC256k++) page for U2
++    uint8_t   *extRAMPage3; // ... and for U3 (null: the TVC's own RAM)
+     uint8_t   *pageAddressTableR[8];
+     uint8_t   *pageAddressTableW[8];
+     void allocateSegment(uint8_t n, bool isROM);
+@@ -99,6 +101,8 @@
+     //          02:       IOMEM page 2
+     //          03:       IOMEM page 3
+     void setPaging(uint16_t n);
++    // RAM expansion card: 16K buffers seen instead of U2 / U3 (or null)
++    void setExpansionRAM(uint8_t *page2, uint8_t *page3);
+     inline uint16_t getPaging() const;
+     inline uint8_t getPage(uint8_t page) const;
+     // get current video RAM page for display

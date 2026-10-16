@@ -1,0 +1,107 @@
+diff --git a/src/tvc64vm.cpp b/src/tvc64vm.cpp
+index ab06f25..c4816a1 100644
+--- a/src/tvc64vm.cpp
++++ b/src/tvc64vm.cpp
+@@ -166,11 +166,18 @@ namespace TVC64 {
+         uint32_t  tmp = uint32_t(tapeInputSignal + tapeOutputSignal) << 12;
+         if (((toneGenCnt2 | 0xF7) + uint8_t(toneGenEnabled)) & 0xFF)
+           tmp += uint32_t(audioOutputLevelTable[audioOutputLevel]);
+-        if (soundCards) {
++        if (soundCards && (soundCards->isGameCardEnabled()
++                           || soundCards->isMultiSoundEnabled()
++                           || (card256 && card256->isEnabled()))) {
+           int32_t extL = 0, extR = 0;
+           soundCards->renderAudio(extL, extR);
+-          int32_t l = int32_t(tmp) + extL;
+-          int32_t r = int32_t(tmp) + extR;
++          if (card256)
++            card256->renderAudio(extL, extR);     // TVC256k++ vSID
++          // the cards' signals swing around zero: mix them around a middle
++          // level, so that the negative half is not cut off at 0 (the DC
++          // level is removed by the audio converter's DC blocking filter)
++          int32_t l = int32_t(tmp) * 3 / 4 + extL / 2 + 16384;
++          int32_t r = int32_t(tmp) * 3 / 4 + extR / 2 + 16384;
+           if (l < 0) l = 0; else if (l > 65535) l = 65535;
+           if (r < 0) r = 0; else if (r > 65535) r = 65535;
+           soundOutputSignal = (uint32_t(l) & 0xFFFF) | ((uint32_t(r) & 0xFFFF) << 16);
+@@ -664,8 +671,18 @@ namespace TVC64 {
+ 
+   void TVC64VM::TVCVideo_::drawLine(const uint8_t *buf, size_t nBytes)
+   {
++    if (vm.card256 && vm.card256->isEnabled()) {
++      // TVC256k++ overlay: computed for each line, shown by the display
++      vm.card256->videoLine(paperStartPos < 0 ? -1 : (paperStartPos * 8));
++      if (vm.card256->irqActive()) {
++        uint8_t m = uint8_t(1 << vm.card256->getSlot());
++        if (vm.irqEnableMask & m)
++          vm.irqState = vm.irqState | m;
++      }
++    }
+     if (vm.getIsDisplayEnabled())
+       vm.display.drawLine(buf, nBytes);
++    TVC256kpp::clearOverlay();
+     if (vm.videoCapture)
+       vm.videoCapture->horizontalSync(buf, nBytes);
+   }
+@@ -673,6 +690,8 @@ namespace TVC64 {
+   void TVC64VM::TVCVideo_::vsyncStateChange(bool newState,
+                                             unsigned int currentSlot_)
+   {
++    if (newState && vm.card256)
++      vm.card256->videoVSync();
+     if (vm.getIsDisplayEnabled())
+       vm.display.vsyncStateChange(newState, currentSlot_);
+     if (vm.videoCapture)
+diff --git a/src/tvcvideo.cpp b/src/tvcvideo.cpp
+index 291735f..beebe2e 100644
+--- a/src/tvcvideo.cpp
++++ b/src/tvcvideo.cpp
+@@ -62,7 +62,8 @@ namespace TVC64 {
+       borderColor(0x00),
+       videoMode(0),
+       hSyncLen(8),
+-      hSyncPos(10)
++      hSyncPos(10),
++      paperStartPos(-1)
+   {
+     videoDelayBuf[0] = 0U;
+     videoDelayBuf[1] = 0U;
+@@ -116,6 +117,7 @@ namespace TVC64 {
+           drawLine(lineBuf, size_t(lineBufPtr - lineBuf));
+           lineBufPtr = lineBuf;
+           hSyncCnt = -2;
++          paperStartPos = -1;
+         }
+       }
+       else if (crtcHSyncCnt == 17) {
+@@ -134,6 +136,8 @@ namespace TVC64 {
+     if (EP128EMU_EXPECT((unsigned int) hSyncCnt < 96U)) {
+       const unsigned char *delayPtr =
+           reinterpret_cast< unsigned char * >(&(videoDelayBuf[0]));
++      if (delayPtr[1] > delayPtr[0] && paperStartPos < 0)
++        paperStartPos = hSyncCnt;
+       if (!(hSyncCnt & 1U)) {
+         if (delayPtr[1] > delayPtr[0]) {
+           uint8_t videoByte = delayPtr[3];
+@@ -284,6 +288,7 @@ namespace TVC64 {
+       drawLine(lineBuf, size_t(lineBufPtr - lineBuf));
+       lineBufPtr = lineBuf;
+       hSyncCnt = -2;
++      paperStartPos = -1;
+     }
+     videoDelayBuf[0] = videoDelayBuf[1];
+     (reinterpret_cast<unsigned char *>(&(videoDelayBuf[0])))[0] =
+diff --git a/src/tvcvideo.hpp b/src/tvcvideo.hpp
+index 6d7ca9f..8756b54 100644
+--- a/src/tvcvideo.hpp
++++ b/src/tvcvideo.hpp
+@@ -44,6 +44,9 @@ namespace TVC64 {
+     uint8_t   videoMode;
+     uint8_t   hSyncLen;
+     uint8_t   hSyncPos;
++    // position of the first displayed (paper) pixel in the current line,
++    // in units of 8 pixels of the 768 pixel wide line, or -1 if none
++    int       paperStartPos;
+     // --------
+     /*!
+      * drawLine() is called after rendering each line.

@@ -20,10 +20,12 @@
 #include "nick.hpp"
 #include "tvc64vm.hpp"
 #include "tvc_soundcards.hpp"
+#include "tvc256kpp.hpp"
 #include "decompm2.hpp"
 
 #include <emscripten/emscripten.h>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -163,6 +165,14 @@ namespace {
       int   y = ((curLine + 1) >> 1) - 1;
       if (y >= 0 && y < frameHeight) {
         decodeLine(&(lineBuf[0]), buf);
+        // TVC256k++ card: its overlay replaces the TVC's pixels
+        const uint8_t *ov = TVC256kpp::currentOverlay();
+        if (ov) {
+          for (int x = 0; x < frameWidth && x < 768; x++) {
+            if (ov[x] != 0xFF)
+              lineBuf[x] = ov[x];
+          }
+        }
         uint32_t  *p = &(backBuffer[size_t(y) * size_t(frameWidth)]);
         for (int x = 0; x < frameWidth; x++)
           p[x] = palette[lineBuf[x]];
@@ -251,8 +261,12 @@ namespace {
   Ep128Emu::VirtualMachine  *vm = (Ep128Emu::VirtualMachine *) 0;
   int             machineType = -1;
   std::string     lastError;
-  bool            tvcGameCardEnabled = false;
-  bool            tvcMultiSoundEnabled = false;
+  // TVC: card in each expansion slot (TVC64VM::SLOT_*), as in ep128emu by
+  // default: VT-DOS in slot 0, FILE: in slot 1
+  int             tvcSlotCards[4] = {
+    TVC64::TVC64VM::SLOT_VTDOS, TVC64::TVC64VM::SLOT_FILEIO,
+    TVC64::TVC64VM::SLOT_EMPTY, TVC64::TVC64VM::SLOT_EMPTY
+  };
   uint8_t         tvcJoy3State = 0xFF;
   uint8_t         tvcJoy4State = 0xFF;
 
@@ -300,8 +314,8 @@ EMSCRIPTEN_KEEPALIVE int ep_set_machine_type(int type)
       tvc->setCPUFrequency(3125000);
       tvc->setVideoFrequency(1562500);
       tvc->setSoundClockFrequency(390625);
-      tvc->setGameCardEnabled(tvcGameCardEnabled);
-      tvc->setMultiSoundEnabled(tvcMultiSoundEnabled);
+      for (int i = 0; i < 4; i++)
+        tvc->setSlotCard(i, tvcSlotCards[i]);
       tvc->setExtJoyState(0, tvcJoy3State);
       tvc->setExtJoyState(1, tvcJoy4State);
       vm = tvc;
@@ -397,6 +411,11 @@ EMSCRIPTEN_KEEPALIVE void ep_set_key(int keyCode, int isPressed)
 
 EMSCRIPTEN_KEEPALIVE void ep_set_mouse(int dX, int dY, int buttons, int wheel)
 {
+  if (machineType == 1) {
+    // TVC: the TVC256k++ card's USB mouse (buttons: 1 left, 2 middle, 4 right)
+    TVC256kpp::mouseInput(dX, dY, buttons);
+    return;
+  }
   vm->setMouseState(int8_t(dX), int8_t(dY), uint8_t(buttons), uint8_t(wheel));
 }
 
@@ -696,21 +715,201 @@ EMSCRIPTEN_KEEPALIVE int ep_unpack_rom_package(const char *pkgName,
   }
 }
 
-EMSCRIPTEN_KEEPALIVE void ep_set_tvc_gamecard(int enabled)
+// TVC: installs a card in an expansion slot (0..3). card: 0 empty,
+// 1 VT-DOS, 2 FILE:, 3 GameCard, 4 Multichip Soundcard, 5 TVC256k++. A card
+// type can only be in one slot (it is removed from the others). The TVC has
+// to be reset (cold) afterwards so that its OS detects the cards.
+EMSCRIPTEN_KEEPALIVE void ep_set_tvc_slot(int slot, int card)
 {
-  tvcGameCardEnabled = (enabled != 0);
+  if (slot < 0 || slot > 3)
+    return;
+  if (card < TVC64::TVC64VM::SLOT_EMPTY || card > TVC64::TVC64VM::SLOT_CARD256)
+    card = TVC64::TVC64VM::SLOT_EMPTY;
+  if (card != TVC64::TVC64VM::SLOT_EMPTY) {
+    for (int i = 0; i < 4; i++) {
+      if (tvcSlotCards[i] == card)
+        tvcSlotCards[i] = TVC64::TVC64VM::SLOT_EMPTY;
+    }
+  }
+  tvcSlotCards[slot] = card;
   if (vm && machineType == 1) {
     TVC64::TVC64VM *tvc = static_cast<TVC64::TVC64VM *>(vm);
-    tvc->setGameCardEnabled(tvcGameCardEnabled);
+    for (int i = 0; i < 4; i++)
+      tvc->setSlotCard(i, tvcSlotCards[i]);
   }
 }
 
-EMSCRIPTEN_KEEPALIVE void ep_set_tvc_multisound(int enabled)
+// Loads the flash drive image of the TVC256k++ card (flash-root-*.bin, a 15 MB
+// littlefs image) from a file of the virtual file system. The image is shared
+// by all card instances. Returns 0 on success, -1 on error.
+EMSCRIPTEN_KEEPALIVE int ep_load_tvc_card_flash(const char *path)
 {
-  tvcMultiSoundEnabled = (enabled != 0);
-  if (vm && machineType == 1) {
-    TVC64::TVC64VM *tvc = static_cast<TVC64::TVC64VM *>(vm);
-    tvc->setMultiSoundEnabled(tvcMultiSoundEnabled);
+  std::FILE *f = std::fopen(path, "rb");
+  if (!f) {
+    lastError = std::string("cannot open ") + path;
+    return -1;
+  }
+  std::vector<unsigned char> buf;
+  static unsigned char chunk[65536];   // not on the stack: 64 kB is the whole wasm stack
+  size_t n;
+  while ((n = std::fread(chunk, 1, sizeof(chunk), f)) > 0)
+    buf.insert(buf.end(), chunk, chunk + n);
+  std::fclose(f);
+  if (!TVC256kpp::loadFlashImage(&buf[0], buf.size())) {
+    lastError = "not a valid littlefs flash image";
+    return -1;
+  }
+  return 0;
+}
+
+// Copies a file of the virtual file system to the TVC256k++ card's USB
+// pendrive if one is plugged in, else to its PSRAM drive (formatted first if
+// needed), and makes that the card's current drive.
+// Returns 0 on success, -1 on error.
+EMSCRIPTEN_KEEPALIVE int ep_tvc_card_put_file(const char *name, const char *path)
+{
+  std::FILE *f = std::fopen(path, "rb");
+  if (!f) {
+    lastError = std::string("cannot open ") + path;
+    return -1;
+  }
+  std::vector<unsigned char> buf;
+  static unsigned char chunk[65536];   // not on the stack: 64 kB is the whole wasm stack
+  size_t n;
+  while ((n = std::fread(chunk, 1, sizeof(chunk), f)) > 0)
+    buf.insert(buf.end(), chunk, chunk + n);
+  std::fclose(f);
+  const uint8_t *data = buf.empty() ? (const uint8_t *) "" : &buf[0];
+  if (TVC256kpp::usbPendrivePresent()) {
+    // with a pendrive plugged in, the files go there (the boot selects it)
+    if (!TVC256kpp::putUsbFile(name, data, buf.size())) {
+      lastError = "the pendrive is full";
+      return -1;
+    }
+    return 0;
+  }
+  if (!TVC256kpp::putPsramFile(name, data, buf.size())) {
+    lastError = "the card's PSRAM drive is full";
+    return -1;
+  }
+  return 0;
+}
+
+// Selects the TVC256k++ card's current drive (0 USB, 1 PSRAM, 2 flash, 3 DSK)
+EMSCRIPTEN_KEEPALIVE void ep_tvc_card_select_drive(int drive)
+{
+  TVC256kpp::selectDrive(drive);
+}
+
+// Plugs an empty USB pendrive of sizeMB megabytes into the TVC256k++ card
+// (formatted FAT), or unplugs it (0). Returns 0 on success.
+EMSCRIPTEN_KEEPALIVE int ep_tvc_card_usb(int sizeMB)
+{
+  if (!TVC256kpp::setUsbPendrive(uint32_t(sizeMB < 0 ? 0 : sizeMB))) {
+    lastError = "cannot create the pendrive";
+    return -1;
+  }
+  return 0;
+}
+
+// TVC256k++ USB pendrive file manager (paths relative to the root, '/')
+static bool readVfsFile(const char *path, std::vector<unsigned char> &buf)
+{
+  std::FILE *f = std::fopen(path, "rb");
+  if (!f)
+    return false;
+  static unsigned char chunk[65536];   // not on the (64 kB) wasm stack
+  size_t n;
+  buf.clear();
+  while ((n = std::fread(chunk, 1, sizeof(chunk), f)) > 0)
+    buf.insert(buf.end(), chunk, chunk + n);
+  std::fclose(f);
+  return true;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *ep_usb_list(const char *path)
+{
+  static std::string s;
+  s = TVC256kppFS::usbList(path);
+  return s.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE int ep_usb_put(const char *path, const char *src)
+{
+  std::vector<unsigned char> buf;
+  if (!readVfsFile(src, buf)) {
+    lastError = std::string("cannot open ") + src;
+    return -1;
+  }
+  if (!TVC256kppFS::putUsbFile(path, buf.empty() ? (const uint8_t *) "" : &buf[0], buf.size())) {
+    lastError = "the pendrive is full, or the name is not valid";
+    return -1;
+  }
+  return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int ep_usb_get(const char *path, const char *dst)
+{
+  std::vector<uint8_t> data;
+  if (!TVC256kppFS::usbGetFile(path, data)) {
+    lastError = std::string("cannot read ") + path;
+    return -1;
+  }
+  std::FILE *f = std::fopen(dst, "wb");
+  if (!f)
+    return -1;
+  bool ok = data.empty() || std::fwrite(&data[0], 1, data.size(), f) == data.size();
+  std::fclose(f);
+  return ok ? 0 : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int ep_usb_mkdir(const char *path)
+{
+  return TVC256kppFS::usbMkdirs(path) ? 0 : -1;
+}
+
+// the pendrive's current directory, as the card's CD command sets it
+EMSCRIPTEN_KEEPALIVE int ep_usb_chdir(const char *path)
+{
+  return TVC256kppFS::usbChdir(path) ? 0 : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int ep_usb_delete(const char *path)
+{
+  return TVC256kppFS::usbDelete(path) ? 0 : -1;
+}
+
+extern uint32_t card_usb_writes;        // card/diskio-emu.c
+
+// 0: size in kB, 1: free space in kB, 2: number of sector writes so far
+EMSCRIPTEN_KEEPALIVE double ep_usb_info(int which)
+{
+  if (which == 2)
+    return double(card_usb_writes);
+  uint32_t total = 0, freeKB = 0;
+  if (!TVC256kppFS::usbSpace(total, freeKB))
+    return -1;
+  return which == 0 ? double(total) : double(freeKB);
+}
+
+// Counters of the card's file system (0: files opened, 1: bytes read), for tests
+EMSCRIPTEN_KEEPALIVE int ep_tvc_card_fs_stat(int which)
+{
+  return int(TVC256kpp::fsStat(which));
+}
+
+// Enables (in the given slot, 0..3) or removes the TVC256k++ card; kept for
+// the native tests, the web page uses ep_set_tvc_slot().
+EMSCRIPTEN_KEEPALIVE void ep_set_tvc_card256(int enabled, int slot)
+{
+  if (enabled) {
+    ep_set_tvc_slot(slot, TVC64::TVC64VM::SLOT_CARD256);
+  }
+  else {
+    for (int i = 0; i < 4; i++) {
+      if (tvcSlotCards[i] == TVC64::TVC64VM::SLOT_CARD256)
+        ep_set_tvc_slot(i, TVC64::TVC64VM::SLOT_EMPTY);
+    }
   }
 }
 

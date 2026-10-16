@@ -63,6 +63,25 @@ SOURCES="
   web/src/emu76489.c
   web/src/opl3.c
   web/src/tvc_soundcards.cpp
+  web/src/tvc256kpp.cpp
+  web/src/tvc256kpp_rom.cpp
+  web/src/tvc256kpp_fs.cpp
+  web/src/card/tvc-lfs.c
+  web/src/card/tvc-graphics.c
+  web/src/card/tvc-routines.c
+  web/src/card/tvc-io-regs.c
+  web/src/card/tvc-card-data.c
+  web/src/card/zx7Compress.c
+  web/src/card/tvc-sid.c
+  web/src/card/tvc-sound-emu.c
+  web/src/card/tvc-fatfs.c
+  web/src/card/tvc-fatfs-pendrive.c
+  web/src/card/tvc-fatfs-dskdrive.c
+  web/src/card/diskio-emu.c
+  web/src/card/fatfs/ff.c
+  web/src/card/fatfs/ffunicode.c
+  web/src/card/littlefs/lfs.c
+  web/src/card/littlefs/lfs_util.c
   web/src/soundio_web.cpp
   web/src/sndfile_wav.cpp
   web/src/main.cpp
@@ -74,7 +93,10 @@ for src in $SOURCES; do
   OBJS="$OBJS $obj"
   if [ ! -f "$obj" ] || [ "$src" -nt "$obj" ]; then
     echo "CXX $src"
-    em++ $CFLAGS -c "$src" -o "$obj"
+    case "$src" in
+      web/src/card/*.c|web/src/card/*/*.c) emcc -O3 -w -DHAVE_STDINT_H -DLFS_NO_ASSERT -Iweb/src -c "$src" -o "$obj" ;;  # vendored C code
+      *) em++ $CFLAGS -c "$src" -o "$obj" ;;
+    esac
   fi
 done
 
@@ -88,6 +110,13 @@ em++ -O3 $OBJS -o dist/ep128emu.js \
   -lidbfs.js
 
 cp web/shell/* dist/
+# build id in the page header (time of the build, commit), also used to make
+# browsers load the new scripts and .wasm after an update
+BUILD_TIME=$(TZ=Europe/Budapest date '+%Y.%m.%d %H:%M')
+BUILD_SHA=$(echo "${BUILD_COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo dev)}" | cut -c1-7)
+BUILD_V=$(TZ=UTC date '+%Y%m%d%H%M')-$BUILD_SHA
+sed -i -e "s|__BUILD__|$BUILD_TIME · $BUILD_SHA|" -e "s|__BUILD_V__|$BUILD_V|g" dist/index.html
+echo "$BUILD_TIME · $BUILD_SHA" > dist/build.txt
 mkdir -p dist/catalog
 cp web/catalog/* dist/catalog/ 2>/dev/null || true
 cp "$E/roms/epfileio.rom" "$E/roms/tvcfileio.rom" dist/

@@ -51,6 +51,7 @@ header {
 }
 h1 { font-size: 17px; margin: 0; white-space: nowrap; }
 h1 span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 6px; }
+h1 small { color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 6px; }
 
 #toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 button, .file, select {
@@ -67,6 +68,8 @@ button.on { background: var(--accent); color: var(--accent-text); border-color: 
 .sel { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
 .vol { display: inline-flex; align-items: center; gap: 4px; }
 .vol input { width: 90px; }
+.vol .mute { padding: 2px 6px; min-height: 28px; background: transparent; border-color: transparent; font-size: 16px; }
+.vol .mute[aria-pressed="true"] { border-color: var(--accent); }
 
 main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 
@@ -241,6 +244,10 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
   padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
 }
 .group h3 { width: 100%; margin: 0 0 2px; font-size: 13px; }
+.group .slot {
+  width: 100%; display: flex; align-items: center; gap: 8px; font-size: 13px;
+}
+.group .slot select { flex: 1 1 auto; min-width: 0; min-height: 28px; padding: 2px 6px; font-size: 13px; }
 .group .name {
   width: 100%; color: var(--muted); font-size: 12px;
   overflow-wrap: anywhere;
@@ -372,3 +379,19 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
   }
 }
 
+
+/* USB pendrive file manager */
+#usb-browser { flex-basis: 100%; border: 1px solid var(--border, #ccc); border-radius: 6px; padding: 6px 8px; }
+#usb-browser.drag { outline: 2px dashed var(--accent); }
+#usb-path { font-family: monospace; font-size: 13px; margin-bottom: 4px; }
+#usb-path a { cursor: pointer; color: var(--accent); text-decoration: none; }
+#usb-list { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow: auto; font-size: 13px; }
+#usb-list li { display: flex; align-items: center; gap: 6px; padding: 2px 0; border-bottom: 1px solid rgba(128,128,128,0.15); }
+#usb-list li .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#usb-list li .n.dir { cursor: pointer; font-weight: 600; }
+#usb-list li .n.run { cursor: pointer; color: var(--accent); }
+#usb-list li .s { color: var(--muted); font-variant-numeric: tabular-nums; }
+#usb-list li button { padding: 0 6px; min-height: 0; }
+#usb-drop { color: var(--muted); font-size: 12px; margin-top: 4px; }
+#usb-group { grid-column: span 2; min-width: 0; }
+@media (max-width: 560px) { #usb-group { grid-column: auto; } }
