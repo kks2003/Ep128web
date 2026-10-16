@@ -729,7 +729,11 @@
     const grp = $('cart-group');
     const nameEl = $('cart-name');
     if (grp) grp.hidden = !(machine && machine.type === 1);
-    if (nameEl) nameEl.textContent = cartridgeName || 'nincs modul';
+    // the machines with a system cartridge show it, else the loaded .crt
+    const sys = machine && machine.cart && machine.roms.find((r) => r[1][0] === 0x01);
+    if (nameEl) nameEl.textContent = sys
+      ? (machine.cart === 'upm' ? 'UPM' : 'VT-DOS') + ' rendszer (' + sys[0] + ')'
+      : (cartridgeName || 'nincs modul');
     updateTvcCardsUI();
   }
 
@@ -739,7 +743,21 @@
     renderUsb();
   }
 
+  // a TVC without a system cartridge (the last one used)
+  function plainTvc() {
+    return MACHINES.find((x) => x.id === lastPlainTvc) || MACHINES.find((x) => x.id === DEFAULT_TVC);
+  }
+
   function ejectCartridge() {
+    if (machine && machine.cart) {
+      // the system cartridge goes with its machine
+      autoTask = null;
+      releaseAllKeys();
+      applyMachine(plainTvc());
+      setMessage('Cartridge eltávolítva');
+      canvas.focus();
+      return;
+    }
     if (!cartridgeName) return;
     cartridgeName = '';
     if (machine && machine.type === 1) {
@@ -753,10 +771,7 @@
   }
 
   function loadCartridgeFile(f) {
-    if (machine.type !== 1) {
-      const tvc = MACHINES.find((x) => x.id === DEFAULT_TVC) || MACHINES.find((x) => x.type === 1);
-      if (tvc) applyMachine(tvc);
-    }
+    if (machine.type !== 1 || machine.cart) applyMachine(plainTvc());
     cartridgeName = sanitizeName(f.name) || 'cartridge.crt';
     M.FS.writeFile('/roms/' + cartridgeName, f.bytes);
     check(api.loadRom(1, '/roms/' + cartridgeName, 0), 'cartridge');
@@ -2326,7 +2341,7 @@ registerProcessor('ep-output', EPOutput);
     const t = item.title || '';
     if (/\(dos\)/i.test(t)) return 'tvc64p-22-vtdoscart';
     if (/\(upm\)/i.test(t)) return 'tvc64p-12-upm';
-    return machine.cart ? lastPlainTvc : machine.id;
+    return machine.cart ? plainTvc().id : machine.id;
   }
 
   async function launchCatalogItem(item) {
