@@ -104,6 +104,12 @@ hiányzik a szükséges, szól).
 A pillanatképek (`.ep128s`) betöltésekor az oldal automatikusan a mentéskori
 géptípusra (Enterprise/TVC) vált.
 
+Felvétel a fejléc gombjaival:
+
+- **📷 Kép**: a képernyő mentése PNG-ként (768×576).
+- **● Videó**: videó felvétele hanggal. A formátum WebM, Safariban MP4. Újra megnyomva leáll, és a fájl letöltődik. A hangerő és a némítás a videó hangjára is hat.
+- **● Hang**: az emulált hang felvétele WAV-ként (16 bit, sztereó). Újra megnyomva leáll, és a fájl letöltődik. A felvételre a hangerő és a némítás nem hat.
+
 Enterprise-billentyűzet: Esc = ESC, Backspace = ERASE, Del = DEL, Ins = INS, End/Pause = STOP,
 Home = HOLD, Alt = ALT, F1–F8 = funkciógombok, CapsLock = LOCK; F11 = reset,
 Shift+F11 = hideg reset, F12 = turbó. Joystickok: a Joystick panelen
