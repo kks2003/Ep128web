@@ -86,6 +86,16 @@ A katalógus a tvc.homeserver.hu programoldalairól készül (`scripts/build_cat
 
 Frissítés gombbal: GitHub → **Actions** → **Update TVC catalog** → **Run workflow**. Ha a lista változott, a munkafolyamat a main ágra commitolja, és elindítja az éles oldal fordítását.
 
+A típusszűrő „Gép, bővítés” csoportja a programnevekben lévő szavak alapján válogat. Ezek a programok a megfelelő beállítással indulnak:
+
+- **DOS:** VT-DOS cartridge-dzsel (64k+, BASIC 2.2).
+- **UPM:** UPM cartridge-dzsel.
+- **256k++:** a TVC256k++ kártyával. A kártya az első üres portba kerül, a 2dfx kikapcsol.
+- **2dfx:** a 2dfx kártyával. A TVC256k++ kikerül, ha bent volt.
+- **64k+:** a TVC 64k+ géppel, BASIC 2.2-vel.
+
+A tvc.homeserver.hu a tanúsítványa mellől nem küldi el a ZeroSSL köztes tanúsítványát, ezért a szkript a `scripts/certs/` mappából adja hozzá, és teljes ellenőrzéssel csatlakozik.
+
 A munkafolyamat nem írja felül a listát, ha egyetlen oldal sem tölthető le, vagy ha a programok száma a korábbinak a felénél kevesebb lenne. Szándékos csökkenésnél a „force” jelölővel mégis felülírja.
 
 ### TVC bővítőportok
