@@ -267,7 +267,7 @@ A 2dfx Vaczkó Károly grafikus kártyája Enterprise-hoz és TVC-hez. Az oldal 
 - **Portok:** F8h (parancs, státusz) és F9h (adat).
 - **Kép:** a kártya képe a gép képe fölé kerül. EP-n a NICK aktuális palettáján, TVC-n a TVC színein jelenik meg.
 - **Megszakítás:** a raszter-megszakítás EP-n a DAVE megszakításával VAGY-kapcsolatban, TVC-n a többi megszakítás mellett jut a Z80-hoz.
-- **Bekapcsolás:** a kártya a gép hideg resetjekor kap tápot. Ébresztése a `50h` paranccsal történik (`OUT 248,80`, majd `OUT 249,1`). A firmware-oldal az `OUT 248,142` paranccsal jelenik meg, a beépített demók a `C0h`–`DFh` parancsokkal indulnak (pl. `OUT 248,193`).
+- **Reset:** a gép reset vonala a kártya mikrovezérlőjének reset lábára is rá van kötve, ezért a meleg és a hideg reset is újraindítja a kártyát, mintha most kapcsolták volna be. Ébresztése a `50h` paranccsal történik (`OUT 248,80`, majd `OUT 249,1`). A firmware-oldal az `OUT 248,142` paranccsal jelenik meg, a beépített demók a `C0h`–`DFh` parancsokkal indulnak (pl. `OUT 248,193`).
 - **TVC256k++:** TVC-n a kettő együtt nem működik. A 2dfx bekapcsolása kiveszi a TVC256k++ kártyát a portjából, a TVC256k++ betöltése pedig kikapcsolja a 2dfx-et.
 - **Pillanatkép:** a 2dfx állapotát az ep128emu pillanatképe (.ep128s) nem tartalmazza.
 
