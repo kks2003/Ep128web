@@ -1,71 +1,71 @@
-# ep128emu integration contract
+# Portable 2dfx — ep128emu host integration
 
-**For Zoltán Balogh and Károly Kiss equally.** Integrate the same portable C99 library into Enterprise and/or TVC VM code; no 2dfx internals need to be reimplemented. Maintain existing TVC256+++ pathways independently.
-
-## Compile and link
-
-All required production files live in `src/`. Add these C99 translation units to your VM build:
+The C99 core has no dependency on ep128emu. Compile it as the `twodfx_emu` CMake target or include the following **28 production C translation units** in your build:
 
 ```text
 src/core/twodfx_emu.c
 src/core/twodfx_raster.c
 src/core/twodfx_3d.c
-src/core/twodfx_firmware_page.c
 src/assets/logo_2dfx_asset.c
+src/firmware_eggs/firmware_page.c
+src/firmware_eggs/egg_C0_logo.c
+src/firmware_eggs/egg_C1_benchmark.c
+src/firmware_eggs/egg_C2_primitives.c
+src/firmware_eggs/egg_C3_text.c
+src/firmware_eggs/egg_C4_blit.c
+src/firmware_eggs/egg_C5_pattern.c
+src/firmware_eggs/egg_C6_tilemap.c
+src/firmware_eggs/egg_C7_pong_basic.c
+src/firmware_eggs/egg_C8_pong_wow.c
+src/firmware_eggs/egg_C9_wriggler.c
+src/firmware_eggs/egg_CA_boulder.c
+src/firmware_eggs/egg_CB_arcpie_benchmark.c
+src/firmware_eggs/egg_CC_diag.c
+src/firmware_eggs/egg_CD_blit_full.c
+src/firmware_eggs/egg_CE_layer.c
+src/firmware_eggs/egg_CF_tvc_bitpattern.c
+src/firmware_eggs/egg_D0_tvc_crisp_tearing.c
+src/firmware_eggs/egg_D1_ruler.c
+src/firmware_eggs/egg_D2_xy_offset.c
+src/firmware_eggs/egg_D3_elite_showcase.c
+src/firmware_eggs/egg_D4_3d_scope.c
+src/firmware_eggs/egg_D5_public_mesh.c
+src/firmware_eggs/egg_DF_graphics_test.c
 ```
 
-Search paths: `src/include`, `src/core`, `src/assets` (the implementation uses relative includes under `src/eggs` and `src/assets/eggs`). Link the C math library where required. Alternatively use the root CMake project and link `twodfx_emu`; as a subproject it does not build tests by default.
+Use C99 with include paths `src/include`, `src/core`, `src/assets`, `src/firmware_eggs`, `src/firmware_eggs/portable`; link the C math library (`-lm` on Unix-like hosts). `twodfx_public_api_adapter.inc` and `twodfx_source_eggs.inc` are compiled into `twodfx_emu.c` via local `#include` and **must not be compiled independently**. Assets and original headers reside entirely under `src/`.
 
-Use `src/include/twodfx_emu.h` directly from C or the C++11 header-only `src/adapter/ep128emu_twodfx_adapter.hpp`. This adapter deliberately has **no ep128emu header dependencies** and no separate compilation unit.
+The C++11 header-only adapter `src/adapter/ep128emu_twodfx_adapter.hpp` is an optional convenience layer with no ep128emu headers; a host may instead use `src/include/twodfx_emu.h` directly.
 
-## VM events and connections
+## Device event contract
 
-| Event / wire | Function / integration rule |
+| Host event | Library call / requirement |
 |---|---|
-| Create peripheral | `twodfx_emu_create(TWODFX_EMU_ENTERPRISE)` or `TWODFX_EMU_TVC`; `destroy` on teardown |
-| Physical peripheral power cycle | `twodfx_emu_power_cycle()`; distinguish from a guest Z80 soft reset |
-| Z80 OUT `F8h` | `twodfx_emu_write_f8()`; preserve byte order |
-| Z80 OUT `F9h` | `twodfx_emu_write_f9()`; preserve byte order |
-| Z80 IN `F8h` | `twodfx_emu_read_f8()` (active-low status) |
-| Z80 IN `F9h` | Not a 2dfx data-return port; retain correct bus/default behavior |
-| Every physical video VSYNC | `twodfx_emu_vsync()` **50 times per second**, including in logical 25-fps mode |
-| Every video scanline | `twodfx_emu_hsync(device, raw_scanline)` with physical raw index, not viewport-local Y |
-| IRQ level | `twodfx_emu_irq_asserted()`; combine logically with other VM interrupt sources, never erase unrelated IRQs |
-| Overlay | `twodfx_emu_overlay_raw_line()` for raw scanout coords (or `twodfx_emu_overlay_line()` for framebuffer-local); returns 4-bit colour indices and coverage masks |
-| Save/load VM state | `twodfx_emu_snapshot_size/save_snapshot/load_snapshot`, as a distinct version-13 device chunk; recompute combined IRQ after restore |
+| Create Enterprise or TVC device | `twodfx_emu_create(TWODFX_EMU_ENTERPRISE)` or `TWODFX_EMU_TVC` |
+| Dispose | `twodfx_emu_destroy()` |
+| Z80 OUT F8h | `twodfx_emu_write_f8()` |
+| Z80 OUT F9h | `twodfx_emu_write_f9()` |
+| Z80 IN F8h | `twodfx_emu_read_f8()`; active-low result |
+| Z80 IN F9h | Not a 2dfx result port; use host's normal bus handling |
+| Every physical VSYNC | `twodfx_emu_vsync()`, at the computer's 50 Hz cadence including 25-fps engine setting |
+| Every raw scanline | `twodfx_emu_hsync(device, raw_scanline)` |
+| Interrupt | OR `twodfx_emu_irq_asserted()` with other VM IRQ contributors |
+| Scanout | `twodfx_emu_overlay_raw_line()` on raw coordinates, or `twodfx_emu_overlay_line()` for device framebuffer-local coordinates |
+| Physical card power cycle | `twodfx_emu_power_cycle()`; distinct from CPU soft reset |
+| Device state | `twodfx_emu_snapshot_size/save_snapshot/load_snapshot` as a separate v13 chunk |
 
-### Video and coordinates
+### Coordinate and pixel contract
 
-Colours are **indices** 0–15 and coverage is 0/1, not RGB pixels. The host must integrate indices/coverage into its **NICK (Enterprise)** or **TVC** palette and scanout path, observing `OFF`, `NORMAL` (transparent key) and `FORCED` (overlay covers even transparent-colour indices). Composition precedes final RGB/display conversion.
+`overlay_line` uses local framebuffer coordinates: Enterprise local (0,0) is raw (88,16), TVC local (0,0) is raw (0,41). `overlay_raw_line` accepts raw host coordinates and handles the stored-frame offset. The C API returns indexed 4-bit colours and a 0/1 coverage mask. Composite the overlay **before** the machine's indexed-to-RGB conversion; preserve Enterprise NICK and TVC palette semantics. Respect OFF, NORMAL (transparent key) and FORCED modes. The VM decides the final viewport and priority relative to unrelated overlays.
 
-`overlay_line` uses device framebuffer-local origin; Enterprise local (0,0) = raw (88,16), TVC local (0,0) = raw (0,41). The raw-line helper clips as needed. Consult API macros for the implementation's stored bitmap sizes. The host is responsible for accurately mapping the visible region and preserving other expansion overlays.
+### Shadow publication
 
-Rendering is **enabled on creation/reset by default**. `twodfx_emu_set_render_enabled()` is a diagnostic switch only, not an activation step for a real VM.
+Sprite, descriptor and BG/FG 2DPT writes update shadow state; publication occurs at accepted VSYNC frames. Camera pose is likewise frame latched. The original eggs use public `twodfx_api.h` against that same model. Resource RAM is a logical 8 MiB address space; no Pico SDK or MCU timing services are needed by the host.
 
-### VM integration hints
+### Snapshots and lifecycle
 
-In the provided ep128emu TVC VM source, the existing 2dfx F8/F9 dispatch and `combineLine2dfx` live in the **TVC 2dfx path** alongside older SpriteExt logic; route only the 2dfx selection to this module. Do **not** replace the TVC256+++ implementation. Enterprise requires its own F8/F9 routing, NICK line compositing, profile and IRQ participation. Keep the video line's ep128emu-native format conversions inside the VM-specific bridge.
+The saved peripheral chunk uses **format v13 only**. A state of another format is not a valid v13 chunk; reject it explicitly. The original egg modules use file-static internal animation state not completely serialized by the device API; avoid promising mid-egg resumption or concurrently independent egg state until that limitation is resolved. A guest soft reset should not automatically invoke `twodfx_emu_power_cycle()`.
 
-The integrator decides lifetime and host reset semantics. A guest soft reset is not necessarily a physical 2dfx power cycle. Do not unconditionally reset device state on CPU soft reset.
+### Integration guidance
 
-### State and status
-
-Use `docs/SNAPSHOT_FORMAT.md` for the canonical snapshot v13 contract. A previous v12 state is **not loadable**; report an incompatible state rather than silently losing 2dfx data. The protocol header offers state inspection for diagnostics; do not bypass the normal F8/F9 bus to implement guest writes.
-
-**No device-specific CPU cycle clock, PIO/DMA, dual-core scheduling, private firmware resources or wall-clock render-overrun simulation is required or allowed.** IRQ, scene and collision behavior is frame logical; do not synthesize hardware performance counters.
-
-## Example lifecycle (C++)
-
-```cpp
-#include "ep128emu_twodfx_adapter.hpp"
-Ep128emuTwoDfxAdapter fx(TWODFX_EMU_ENTERPRISE);
-// VM OUT F8/F9 -> fx.writePort(port, byte)
-// VM IN F8     -> fx.readPort(port)
-// each VSYNC   -> fx.videoVSync()
-// every HSYNC  -> fx.videoHSync(rawScanline)
-// IRQ OR       -> hostIRQ || fx.wantsInterrupt()
-// scanout      -> fx.readOverlayRawLine(rawX, rawY, indices, mask, width)
-// state chunk  -> fx.saveSnapshot(), fx.loadSnapshot()
-```
-
-There is no tested patch against either developer's current ep128emu branch in this package; each VM owns these integration hooks. The entire device implementation resides in `src/`.
+Use separate Enterprise and TVC VM-port hooks but the same core. Preserve and regress TVC256+++ and unrelated expansion-card code. The supplied module does **not** alter ep128emu source or require a particular version of the VM; adapt the host to its current I/O, VSYNC/HSYNC, compositor and snapshot abstractions.

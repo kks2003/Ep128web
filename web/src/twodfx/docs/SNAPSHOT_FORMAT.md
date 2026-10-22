@@ -1,6 +1,6 @@
 # Device snapshot contract — format 13
 
-This document is the **canonical** on-disk / VM-chunk description of `twodfx_emu_save_snapshot()` and `twodfx_emu_load_snapshot()`; `src/core/twodfx_emu.c` is authoritative if any discrepancy is found. Device snapshots are **complete 2dfx state only**, not entire Enterprise/TVC VM snapshots.
+This document is the **canonical** on-disk / VM-chunk description of `twodfx_emu_save_snapshot()` and `twodfx_emu_load_snapshot()`; `src/core/twodfx_emu.c` is authoritative if any discrepancy is found. Device snapshots contain the **emulated device state**, not entire Enterprise/TVC VM snapshots or all egg-private file-static animation variables.
 
 ## Public C ABI
 
@@ -30,9 +30,9 @@ The serializer `snap_body()` writes a deterministic and architecture-neutral str
 - Machine selection, physical wake/session/parser state including partially received commands and F9 upload bytes.
 - Resource memory (8 MiB), resource job and descriptors for fonts/bitmaps/patterns/tilesets/tilemaps.
 - Background and foreground 2DPT **shadow and active** entries, sprites/collision state, engine modes and frame controls.
-- Video/framebuffer pixel colours and per-pixel coverage; logo overrides, SHOW_FW and egg animation/input state.
+- Video/framebuffer pixel colours and per-pixel coverage; logo overrides, SHOW_FW status and device-managed egg input/state. Original egg module file-static animation variables are not all captured.
 - 3D resources/descriptors and **shadow/active** camera and projection settings, keeping frame publication deterministic.
-- D4/D5 tunnel controls and animation state, saved as: `tunnel_mode` (u8, 0–5), `tunnel_profile` (u8, 0–2), `tunnel_ship` (u8, 0–1), `tunnel_zoom` (u8, 0–1), `tunnel_auto` (u8, 0–1), `tunnel_phase` (u16 LE, 0–399), `tunnel_travel` (u32 LE). These **11 bytes are at the end of the v13 body**. All preceding field encoding is defined by `snap_body`, and is intentionally **not** a supported per-field patch API.
+- D4/D5 tunnel controls and animation state, saved as: `tunnel_mode` (u8, 0–5), `tunnel_profile` (u8, 0–2), `tunnel_ship` (u8, 0–1), `tunnel_zoom` (u8, 0–1), `tunnel_auto` (u8, 0–1), `tunnel_phase` (u16 LE, 0–399), `tunnel_travel` (u32 LE). These **11 bytes are at the end of the v13 body**. The full field encoding is defined by `snap_body` and is intentionally **not** a supported per-field patch API.
 
 The shared controls are valid only in their associated egg lifecycle. The loader additionally verifies parser boundaries, descriptor geometry, ranges, frame buffer indices, and other invariants even if the CRC is correct.
 
@@ -42,7 +42,7 @@ The shared controls are valid only in their associated egg lifecycle. The loader
 2. Save/restore the host VM time reference consistently; the device chunk does **not** contain the host's NICK/TVC scheduler, palette, display or other interrupt sources.
 3. After a successful load, recompute the VM combined IRQ state from all sources including `twodfx_emu_irq_asserted()`.
 4. Keep device profile consistent: Enterprise snapshots cannot be loaded into a TVC device and vice versa.
-5. Device images of format **12 or earlier are deliberately rejected**, not upgraded or silently coerced. Hosts may handle this gracefully as an incompatible saved device chunk.
+5. Only **format 13** is recognized. Any chunk using a different format identifier is rejected with no partial restore; hosts should report an incompatible peripheral state chunk.
 6. Restore at an appropriate host execution boundary so the saved device scene and VM display timeline remain consistent.
 
-Deliberately **not serialized or emulated:** physical MCU render-time/overrun duration or any RP2354B DMA/PIO/core schedule. Device state is versioned independently of ep128emu's own snapshot schema.
+Deliberately **not serialized or emulated:** original egg-private process-global variables, physical MCU render-time/overrun duration, RP2354B DMA/PIO/core schedule. A snapshot taken during an egg animation is not guaranteed to resume identically. Device state is versioned independently of ep128emu's own snapshot schema.

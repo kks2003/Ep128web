@@ -48,13 +48,13 @@ void twodfx_3d_define(twodfx_3d_scene *s,unsigned id,uint32_t address,
   s->mesh_shadow[id].faces=(uint16_t)(vertices>0u && vertices<=256u &&
     faces>0u && faces<=512u && address<8388608u && bytes<=8388608u-address?faces:0u);
 }
-void twodfx_3d_set_projection(twodfx_3d_scene *s,uint16_t fx,
+void twodfx_3d_scene_set_projection(twodfx_3d_scene *s,uint16_t fx,
                               uint16_t fy,uint16_t near_z,uint16_t far_z) {
   if(!s||!fx||!fy||!near_z||far_z<=near_z)return;
   s->projection_shadow.fx=fx;s->projection_shadow.fy=fy;
   s->projection_shadow.near_z=near_z;s->projection_shadow.far_z=far_z;
 }
-void twodfx_3d_set_camera(twodfx_3d_scene *s,const uint8_t p[10]) {
+void twodfx_3d_scene_set_camera(twodfx_3d_scene *s,const uint8_t p[10]) {
   if(!s||!p)return;
   s->camera_shadow.x=i16(p);
   s->camera_shadow.y=i16(p+2);

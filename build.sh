@@ -85,8 +85,9 @@ SOURCES="
   web/src/twodfx/core/twodfx_emu.c
   web/src/twodfx/core/twodfx_raster.c
   web/src/twodfx/core/twodfx_3d.c
-  web/src/twodfx/core/twodfx_firmware_page.c
   web/src/twodfx/assets/logo_2dfx_asset.c
+  web/src/twodfx/firmware_eggs/firmware_page.c
+  $(ls web/src/twodfx/firmware_eggs/egg_*.c)
   web/src/twodfx_bridge.cpp
   web/src/soundio_web.cpp
   web/src/sndfile_wav.cpp
@@ -111,7 +112,7 @@ for src in $SOURCES; do
     echo "CXX $src"
     case "$src" in
       web/src/card/*.c|web/src/card/*/*.c) emcc -O3 -w -DHAVE_STDINT_H -DLFS_NO_ASSERT -Iweb/src -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;  # vendored C code
-      web/src/twodfx/*/*.c) emcc -O3 -std=c99 -w -Iweb/src/twodfx/include -Iweb/src/twodfx/core -Iweb/src/twodfx/assets -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;  # 2dfx module (MIT)
+      web/src/twodfx/*/*.c) emcc -O3 -std=c99 -w -Iweb/src/twodfx/include -Iweb/src/twodfx/core -Iweb/src/twodfx/assets -Iweb/src/twodfx/firmware_eggs -Iweb/src/twodfx/firmware_eggs/portable -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;  # 2dfx module (MIT)
       *) em++ $CFLAGS -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;
     esac
   fi

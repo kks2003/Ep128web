@@ -1,25 +1,24 @@
-# Portable 2dfx behavioural emulator
+# Portable 2dfx emulator — Enterprise and TVC
 
-A single, self-contained C99 2dfx module for **Enterprise** and **TVC** emulation in ep128emu; the same package is intended for **Zoltán Balogh** and **Károly Kiss**.
+This package contains a complete, portable **C99 behavioural emulator** of the public 2dfx expansion-card interface, with a small optional C++11 connector for emulator hosts such as **ep128emu**. The publicly supported 2dfx v1.1.0 C Easter eggs and SHOW_FW use the portable implementation of `twodfx_api.h` and the same raster engine as host commands.
 
-**Original 2dfx creator:** Károly Vaczkó. **ep128emu creator:** István Varga.
+**Author:** Károly Vaczkó, original 2dfx hardware/firmware creator. Portable emulator produced with AI-assisted development. MIT license applies to original-owned and independently implemented code only; see `src/firmware_eggs/LICENSE_SCOPE.md` for the egg-source grant and `ASSET_LICENSES.md` for restrictions affecting third-party game artwork.
 
-The portable C99/C++ implementation and 2dfx-owned public content are offered under **MIT** (`LICENSE`). Certain authentic *Elite* and *Wriggler* showcase assets are included but **are not covered by MIT**: read `ASSET_LICENSES.md` before redistributing.
-
-## Included
+## Package contents
 
 | Location | Contents |
 |---|---|
-| `src/` | Every code file and asset required to build the portable module, grouped under `core/`, `include/`, `assets/`, `eggs/`, `adapter/`. The 23 egg IDs have individual `.inc` runtime implementations. |
-| `docs/INTEGRATION.md` | C and C++ APIs, Enterprise/TVC VM lifecycle, ports, video, IRQ and state hooks. |
-| `docs/COMMAND_REFERENCE.md` | Public v1.1.0 command protocol reference. |
-| `docs/SNAPSHOT_FORMAT.md` | Single canonical device snapshot **v13** description. |
-| `docs/COMPATIBILITY.md` | Feature scope, deliberate exclusions and evidence/limitations. |
-| `docs/TESTING.md` | Builds, test cases, trace runner and reproducibility. |
-| `tests/`, `tools/` | Optional test programs and fixtures; never compiled into production VM. |
-| `LICENSE`, `CREDITS.md`, `ASSET_LICENSES.md` | Terms, origins and credits. |
+| `src/include/twodfx_emu.h` | Public, stable C99 host ABI |
+| `src/core/` | Command parser, resources, sprites, drawing, 3D, public API adapter, renderer |
+| `src/firmware_eggs/` | All 23 original v1.1.0 egg C implementations and SHOW_FW, original headers/assets, public `twodfx_api.h`, provenance manifest, portable dependency shims |
+| `src/assets/` | Logo and original artwork used by the module |
+| `src/adapter/` | Optional C++11 header-only VM connector |
+| `docs/` | Integration, public commands, snapshots, compatibility, testing and provenance |
+| `tests/` | Native smoke tests, not compiled into the production library |
 
-## Build
+**Every source or asset required to compile the production library is contained in `src/`.** No Pico SDK, RP2354 hardware source, generated code download, or external firmware archive is needed.
+
+## Build and test
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -27,18 +26,18 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-To embed in a larger CMake project, use `add_subdirectory` and link `twodfx_emu`; test tools are disabled by default when embedded. Non-CMake builds require the **five production `.c` files** listed in `docs/INTEGRATION.md`, headers/assets reachable from `src/`, a C99 compiler and the C math library where applicable. The header-only C++ adapter requires C++11 and the public header.
+The production target is `twodfx_emu` (a static C99 library). When embedded with CMake `add_subdirectory`, tests are off by default; use `-DTWODFX_BUILD_TESTS=ON` to enable them explicitly. For non-CMake builds, see `docs/INTEGRATION.md` for the exact source list and include paths. C99 and the C math library are required; the adapter requires C++11 but the engine itself does not.
 
-## Core capability
+## Emulator interface
 
-F8h/F9h bus/session handling, 8 MiB resource RAM, RAW/NICK/TVC conversion and ZX1 uploads, descriptors, sprites and collision state, background/foreground 256-entry 2DPT, raster IRQ, 2D graphics/fonts/patterns, scene and camera frame latching, 10-bit public 3D mesh transforms, engine composition, logo, SHOW_FW and built-in egg command IDs C0–CF, D0–D5 and DF. Normal rendering is **enabled by default**. Device state uses validated, CRC-protected snapshot format **v13**.
+The host routes Z80 F8h/F9h port accesses, 50 Hz VSYNC, scanline HSYNC, IRQ levels and output colour indices/coverage through the documented API. Shadow state is published at accepted frame boundaries. Device state snapshots use format v13. The VM is responsible for scanout timing, palette/NICK/TVC compositing and reset-lifecycle wiring; see `docs/INTEGRATION.md`.
 
-A demo's runtime implementation **does not by itself establish pixel-perfect parity** with physical firmware v1.1.0. In particular the specialized D3/D4/D5 choreography and some 2D/egg edge effects remain approximations, as noted in `docs/COMPATIBILITY.md`.
+## Fidelity and scope
 
-## Host responsibility and scope
+The source-controlled eggs are the original 2dfx **v1.1.0 C programs** (including Cobra Mk III, Asp Mk II, Sidewinder, Viper and Krait data). Their public `twodfx_api` calls are implemented over the normal emulator state. On **22 October 2026**, the original hardware creator reported a manual visual comparison of all applicable egg commands on browser-emulated Enterprise and TVC against physical 2dfx hardware and found the visuals identical. This is a manual visual observation, not an automated pixel-diff or timing certification.
 
-The module includes all 2dfx internals; ep128emu maintainers wire **port routing, 50 Hz VSYNC, per-scanline HSYNC, IRQ OR-ing, indexed video composition, VM lifecycle and versioned device-state chunks**. Keep TVC256+++ code independent. Actual integration and hardware-capture comparisons are the VM developers' responsibility.
+The emulator models **behaviour**, not RP2354 CPU execution time. Real-time MCU PIO, DMA, core scheduling, fast paths and render-overrun duration are intentionally absent. Running eggs use process-global module static state; concurrent independent cards and snapshot restores in the middle of an egg animation are not guaranteed to preserve all egg-private state. Details: `docs/COMPATIBILITY.md`.
 
-The emulator intentionally **does not emulate RP2354B execution timing, render-overrun duration or MCU-specific fast paths**; the original hardware firmware is private and is not distributed in this package.
+This is a standalone device-library source distribution. The host developers integrate the documented connector into their own Enterprise/TVC VM branches; the library does not replace or modify TVC256+++ or unrelated peripherals.
 
-This is a complete **portable source-module handoff** rather than an already integrated ep128emu binary. Software tests validate the module; hardware-pixel identity and live VM integration must be assessed separately.
+Read `START_HERE.md`, then `COMPLETE_2DFX_HANDOFF.md` for integration steps and deliverable details.

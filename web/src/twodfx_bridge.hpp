@@ -29,8 +29,11 @@ namespace TwoDfx {
   // coordinate of the first pixel of the 768 pixel wide display line;
   // the card can only replace the pixels of the display area of the line
   // (from 'activeStart' to 'activeEnd', in display pixels), never the
-  // border, like on the real machines (NICK / CRTC display enable)
-  void line(const uint8_t *palette, int rawX0, int activeStart, int activeEnd);
+  // border, like on the real machines (NICK / CRTC display enable);
+  // with 'pixelStep' 2 only every second 2dfx pixel is shown, doubled (the
+  // TVC in its 4 and 16 colour modes)
+  void line(const uint8_t *palette, int rawX0, int activeStart, int activeEnd,
+            int pixelStep);
   // the raster interrupt request
   bool irqActive();
   // 768 colour bytes and coverage flags (1 = 2dfx pixel) of the scanline

@@ -530,12 +530,10 @@ additional persistent SRAM. If its very large finite internal span stack were
 ever exhausted by a deliberately pathological region, the operation degrades
 safely to a partial fill rather than risking MCU memory corruption.
 
-### `75h` / `76h` — TRIANGLE / FILL_TRIANGLE (v1.0.4 re-encoding)
+### `75h` / `76h` — TRIANGLE / FILL_TRIANGLE
 
-Same drawing behaviour as v1.0.3; fixes the public encoding by using two
-highbits bytes instead of putting the third vertex Y high bit in the opcode.
-The triangle rasterizer and D3/Cobra geometry are otherwise unchanged.
-**Nine F9h bytes after the opcode**:
+Triangle coordinates are encoded using two highbits bytes, including the
+third vertex Y high bit. **Nine F9h bytes after the opcode**:
 
 | F9h byte | Meaning |
 |---|---|
@@ -549,9 +547,9 @@ The triangle rasterizer and D3/Cobra geometry are otherwise unchanged.
 `75h` draws three 1-pixel lines; `76h` fills. Foreground `F5h`/`F6h`.
 All coordinates have X=0..1023, Y=0..511 and all three obey the current
 `SET_XY_OFFSET`. Both windings accepted, no implicit culling; zero-area fill
-is empty. Existing v1.0.3 edge artefacts are intentionally not fixed here.
+is empty. Boundary and edge pixels depend on the rasterizer. 
 
-### `77h` / `F7h` — CROP_BLIT (new)
+### `77h` / `F7h` — CROP_BLIT
 
 Copies a bitmap subrectangle at its native size. **Ten F9h bytes**:
 
@@ -598,7 +596,7 @@ is no longer rounded down. An odd bitmap width is preserved: rows are now
 `ceil(width/2)` bytes, with the final high nibble unused for odd widths.
 Even-aligned copies retain the optimized fast copy/transparent-run path.
 
-### `79h` / `F9h` — SET_CLIP_RECT (v1.0.5)
+### `79h` / `F9h` — SET_CLIP_RECT
 
 Seven Z80 OUT instructions: `opcode, slot, highbits, X low, Y low, W low,
 H low`. Highbits bits 5:4 carry X9:8; bit 3 Y8; bits 2:1 W9:8;
@@ -735,9 +733,8 @@ The actual **Resource RAM geometry bytes are not latched**: do not overwrite a
 mesh region while a render may read it. A safe animation pattern uploads into
 an unused resource bank and switches the mesh descriptor after completion.
 
-The extension opcodes `7Eh/FEh` remain reserved and unimplemented. Earlier
-v1.0.7/v1.0.7a 8-bit experimental 3D angle packets are NOT compatible with
-v1.1.0; v1.0.7b's 10-bit wire format is compatible.
+The extension opcodes `7Eh/FEh` are reserved and unimplemented. The supported
+public 3D angle representation is a 10-bit turn (0..1023).
 
 ## 11. F8h readback / STATUS bit map
 

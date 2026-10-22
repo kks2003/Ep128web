@@ -36,9 +36,9 @@ void twodfx_3d_reset(twodfx_3d_scene *s);
 void twodfx_3d_latch(twodfx_3d_scene *s);
 void twodfx_3d_define(twodfx_3d_scene *s, unsigned id, uint32_t address,
                        unsigned vertices, unsigned faces);
-void twodfx_3d_set_projection(twodfx_3d_scene *s, uint16_t fx,
+void twodfx_3d_scene_set_projection(twodfx_3d_scene *s, uint16_t fx,
                               uint16_t fy, uint16_t near_z, uint16_t far_z);
-void twodfx_3d_set_camera(twodfx_3d_scene *s, const uint8_t params[10]);
+void twodfx_3d_scene_set_camera(twodfx_3d_scene *s, const uint8_t params[10]);
 void twodfx_3d_unpack_angles(const uint8_t wire[4],
                             uint16_t *roll, uint16_t *yaw, uint16_t *pitch);
 /* DRAW_MESH entries contain 11 bytes after the 2DPT slot: mesh ID,
