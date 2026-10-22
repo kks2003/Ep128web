@@ -11,8 +11,9 @@ on:
 permissions:
   contents: write
 
+# its own queue, apart from the PR previews (see preview.yml)
 concurrency:
-  group: gh-pages-deploy
+  group: gh-pages-live
   cancel-in-progress: false
 
 jobs:
@@ -33,3 +34,4 @@ jobs:
           branch: gh-pages
           clean-exclude: pr-preview/
           force: false
+          attempt-limit: 5             # a preview may push to gh-pages meanwhile
