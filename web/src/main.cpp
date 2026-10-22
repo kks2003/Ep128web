@@ -406,8 +406,9 @@ EMSCRIPTEN_KEEPALIVE int ep_reset(int isColdReset)
 {
   try {
     vm->reset(isColdReset != 0);
-    if (isColdReset)
-      TwoDfx::powerCycle();             // the card is powered with the machine
+    // the machine's RESET line is wired to the 2dfx microcontroller's reset
+    // pin: a warm reset restarts the card just like switching it on
+    TwoDfx::powerCycle();
     return 0;
   }
   catch (...) {
