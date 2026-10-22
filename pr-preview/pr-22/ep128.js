@@ -465,6 +465,47 @@
     writeMemory(2829, value);
   }
 
+  // --- 2dfx graphics card (Enterprise and TVC, ports F8h/F9h) ---
+  // On the TVC it does not work together with the TVC256k++ card.
+  let fxOn = false;
+  try { fxOn = localStorage.getItem('ep128web.2dfx') === '1'; } catch (e) { }
+
+  function fxBlocked() {
+    return !!(machine && machine.type === 1 && tvcSlotOf(SLOT_CARD256) >= 0);
+  }
+  function apply2dfx() {
+    if (api && api.set2dfx) api.set2dfx(fxOn && !fxBlocked() ? 1 : 0);
+    const cb = $('fx-on');
+    if (cb) cb.checked = fxOn;
+    const note = $('fx-note');
+    if (note) note.textContent = fxOn && fxBlocked() ? 'a TVC256k++ mellett nem működik' : '';
+  }
+  function setup2dfx() {
+    const cb = $('fx-on');
+    if (!cb) return;
+    cb.onchange = () => {
+      fxOn = cb.checked;
+      try { localStorage.setItem('ep128web.2dfx', fxOn ? '1' : '0'); } catch (e) { }
+      if (fxOn && fxBlocked()) {
+        // the two cards do not work together: the TVC256k++ is taken out
+        const slot = tvcSlotOf(SLOT_CARD256);
+        tvcSlots = tvcSlots.slice();
+        tvcSlots[slot] = SLOT_EMPTY;
+        try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots)); } catch (e) { }
+        refreshTvcSlotsUI();
+        autoTask = null;
+        releaseAllKeys();
+        applyMachine(machine);          // without the card, cold reset
+        setMessage('2dfx bekapcsolva; a TVC256k++ kártya kikerült a ' + slot + '. portból (a kettő együtt nem működik)');
+      } else {
+        apply2dfx();
+        setMessage(fxOn ? '2dfx kártya bekapcsolva (F8h/F9h)' : '2dfx kártya kikapcsolva');
+      }
+      canvas.focus({ preventScroll: true });
+    };
+    apply2dfx();
+  }
+
   function applyTvcSlots() {
     if (api && api.setTvcSlot) tvcSlots.forEach((card, slot) => {
       const c = TVC_CARDS.find((x) => x.id === card);
@@ -952,6 +993,7 @@
     updateCartridgeUI();
     updateMouseButton();
     renderJoyMap();               // the TVC has the GameCard joysticks too
+    apply2dfx();
     try { listFiles(); } catch (e) { }   // startable files depend on the machine
     updateScreenCrop();
     if (vkbdType >= 0) renderKeyboard();
@@ -2751,6 +2793,11 @@ registerProcessor('ep-output', EPOutput);
       tvcSlots = p;
       try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots)); } catch (e) { }
       update();
+      if (fxOn && tvcSlotOf(SLOT_CARD256) >= 0) {
+        fxOn = false;
+        try { localStorage.setItem('ep128web.2dfx', '0'); } catch (e) { }
+        setMessage('A 2dfx kártya kikapcsolva: a TVC256k++ mellett nem működik');
+      }
       if (machine.type === 1) {
         autoTask = null;
         releaseAllKeys();
@@ -3180,6 +3227,7 @@ registerProcessor('ep-output', EPOutput);
     $('tape-fast').onchange = (e) => { tapeFast = e.target.checked; canvas.focus({ preventScroll: true }); };
     renderJoyMap();
     setupTvcSlotsUI();
+    setup2dfx();
 
     const wrap = $('screen-wrap');
     wrap.addEventListener('dragover', (e) => { e.preventDefault(); wrap.classList.add('drag'); });
@@ -3369,7 +3417,8 @@ registerProcessor('ep-output', EPOutput);
       usbDelete: c('ep_usb_delete', 'number', ['string']),
       usbChdir: c('ep_usb_chdir', 'number', ['string']),
       usbInfo: c('ep_usb_info', 'number', ['number']),
-      setTvcExtJoy: c('ep_set_tvc_ext_joy', null, ['number', 'number'])
+      setTvcExtJoy: c('ep_set_tvc_ext_joy', null, ['number', 'number']),
+      set2dfx: c('ep_set_2dfx', null, ['number'])
     };
     for (const d of ['/roms', '/files', '/tmp', '/disk', '/diskb', '/tape']) ensureDir(d);
 

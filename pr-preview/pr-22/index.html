@@ -6,13 +6,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610221318-0208723">
-<meta name="build" content="202610221318-0208723">
+<link rel="stylesheet" href="style.css?v=202610221333-fc1f3e2">
+<meta name="build" content="202610221333-fc1f3e2">
 </head>
 <body>
-<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #22 előnézete, nem az éles oldal · fordítva: 2026.10.22 15:18 · 0208723 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #22 előnézete, nem az éles oldal · fordítva: 2026.10.22 15:33 · fc1f3e2 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.22 15:18 · 0208723</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.22 15:33 · fc1f3e2</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -178,6 +178,10 @@
         <span id="cart-name" class="name">nincs modul</span>
         <button id="cart-eject">Kiadás</button>
       </div>
+      <div class="slot" id="fx-group">
+        <label title="2dfx grafikus kártya (F8h/F9h portok), Enterprise-on és TVC-n"><input type="checkbox" id="fx-on"> <b>2dfx</b> grafikus kártya</label>
+        <span id="fx-note" class="name"></span>
+      </div>
       <h3 title="TVC: az 1. port ugyanaz, mint a beépített kurzorjoystick">Joystick</h3>
       <div id="joy-map"></div>
       <span class="name" id="pad-status"></span>
@@ -244,7 +248,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610221318-0208723"></script>
-<script src="ep128.js?v=202610221318-0208723"></script>
+<script src="ep128emu.js?v=202610221333-fc1f3e2"></script>
+<script src="ep128.js?v=202610221333-fc1f3e2"></script>
 </body>
 </html>
