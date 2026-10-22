@@ -232,7 +232,7 @@
         try { localStorage.setItem('ep128web.joymap', JSON.stringify(joyTarget)); } catch (e) { }
         for (const k of Object.keys(joySource)) joySource[k] = 0;
         updateJoysticks();
-        canvas.focus();
+        canvas.focus({ preventScroll: true });
       };
       row.appendChild(name);
       row.appendChild(sel);
@@ -465,6 +465,47 @@
     writeMemory(2829, value);
   }
 
+  // --- 2dfx graphics card (Enterprise and TVC, ports F8h/F9h) ---
+  // On the TVC it does not work together with the TVC256k++ card.
+  let fxOn = false;
+  try { fxOn = localStorage.getItem('ep128web.2dfx') === '1'; } catch (e) { }
+
+  function fxBlocked() {
+    return !!(machine && machine.type === 1 && tvcSlotOf(SLOT_CARD256) >= 0);
+  }
+  function apply2dfx() {
+    if (api && api.set2dfx) api.set2dfx(fxOn && !fxBlocked() ? 1 : 0);
+    const cb = $('fx-on');
+    if (cb) cb.checked = fxOn;
+    const note = $('fx-note');
+    if (note) note.textContent = fxOn && fxBlocked() ? 'a TVC256k++ mellett nem működik' : '';
+  }
+  function setup2dfx() {
+    const cb = $('fx-on');
+    if (!cb) return;
+    cb.onchange = () => {
+      fxOn = cb.checked;
+      try { localStorage.setItem('ep128web.2dfx', fxOn ? '1' : '0'); } catch (e) { }
+      if (fxOn && fxBlocked()) {
+        // the two cards do not work together: the TVC256k++ is taken out
+        const slot = tvcSlotOf(SLOT_CARD256);
+        tvcSlots = tvcSlots.slice();
+        tvcSlots[slot] = SLOT_EMPTY;
+        try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots)); } catch (e) { }
+        refreshTvcSlotsUI();
+        autoTask = null;
+        releaseAllKeys();
+        applyMachine(machine);          // without the card, cold reset
+        setMessage('2dfx bekapcsolva; a TVC256k++ kártya kikerült a ' + slot + '. portból (a kettő együtt nem működik)');
+      } else {
+        apply2dfx();
+        setMessage(fxOn ? '2dfx kártya bekapcsolva (F8h/F9h)' : '2dfx kártya kikapcsolva');
+      }
+      canvas.focus({ preventScroll: true });
+    };
+    apply2dfx();
+  }
+
   function applyTvcSlots() {
     if (api && api.setTvcSlot) tvcSlots.forEach((card, slot) => {
       const c = TVC_CARDS.find((x) => x.id === card);
@@ -693,7 +734,7 @@
       api.cardSelectDrive(0);
       api.usbChdir(dir);
     });
-    canvas.focus();
+    canvas.focus({ preventScroll: true });
   }
 
   // deletes everything from the pendrive (it is formatted again)
@@ -818,6 +859,7 @@
     }
     return {
       put: (key, value) => tx('readwrite', (s) => s.put(value, key)).catch(() => {}),
+      del: (key) => tx('readwrite', (s) => s.delete(key)).catch(() => {}),
       getAll: async () => {
         try {
           const d = await open();
@@ -912,7 +954,7 @@
       releaseAllKeys();
       applyMachine(plainTvc());
       setMessage('Cartridge eltávolítva');
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
       return;
     }
     if (!cartridgeName) return;
@@ -924,7 +966,7 @@
     }
     updateCartridgeUI();
     setMessage('Cartridge eltávolítva');
-    canvas.focus();
+    canvas.focus({ preventScroll: true });
   }
 
   function loadCartridgeFile(f) {
@@ -951,6 +993,7 @@
     updateCartridgeUI();
     updateMouseButton();
     renderJoyMap();               // the TVC has the GameCard joysticks too
+    apply2dfx();
     try { listFiles(); } catch (e) { }   // startable files depend on the machine
     updateScreenCrop();
     if (vkbdType >= 0) renderKeyboard();
@@ -1424,7 +1467,7 @@ registerProcessor('ep-output', EPOutput);
         // every file in FILE: goes along (e.g. to the TVC256k++ PSRAM drive)
         lastStoredFiles = names.slice();
         startProgram(n);
-        canvas.focus();
+        canvas.focus({ preventScroll: true });
       };
       list.append(b);
     });
@@ -1676,28 +1719,249 @@ registerProcessor('ep-output', EPOutput);
       b.onclick = () => {
         box.hidden = true;
         startAutostart('load "' + n + '"\n', null, false, tvcRedirectFor(SLOT_UPM));
-        canvas.focus();
+        canvas.focus({ preventScroll: true });
       };
       list.appendChild(b);
     }
     showChooser(box);
   }
 
+  // --- disk drives A: and B:, three slots each ---
+  // The active slot is the disk in the drive; the images (and the active
+  // slots) are kept in the browser (IndexedDB, localStorage).
+
+  const DISK_SLOTS = 3;
+  const drives = [0, 1].map((d) => ({
+    dir: d ? '/diskb' : '/disk', active: 0, slots: new Array(DISK_SLOTS).fill(null)
+  }));
+
+  function slotRel(d, i) {
+    const s = drives[d].slots[i];
+    return s ? 's' + i + '/' + s.file : '';
+  }
+  function slotPath(d, i) {
+    return slotRel(d, i) ? drives[d].dir + '/' + slotRel(d, i) : '';
+  }
+  // diskName / diskNameB: the active image (relative to /disk, /diskb)
+  function syncDiskNames() {
+    diskName = slotRel(0, drives[0].active);
+    diskNameB = slotRel(1, drives[1].active);
+  }
+  function saveDiskActive() {
+    try {
+      localStorage.setItem('ep128web.diskActive', drives.map((x) => x.active).join(','));
+    } catch (e) { }
+  }
+  // a quick checksum, to save only changed images
+  function sumOf(b) {
+    let h = 2166136261 ^ b.length;
+    for (let k = 0; k < b.length; k += 4) h = Math.imul(h ^ (b[k] | (b[k + 1] << 8) | (b[k + 2] << 16) | (b[k + 3] << 24)), 16777619);
+    return h >>> 0;
+  }
+  function putSlot(d, i, bytes) {
+    const s = drives[d].slots[i];
+    const sum = sumOf(bytes);
+    if (s.sum === sum) return;
+    s.sum = sum;
+    db.put('disk:' + d + i, { name: s.name, bytes });
+  }
+
+  function storeSlot(d, i, f) {
+    const old = slotPath(d, i);
+    if (old && drives[d].active === i) api.setDisk(d, '');
+    if (old) { try { M.FS.unlink(old); } catch (e) { } }
+    ensureDir(drives[d].dir);
+    ensureDir(drives[d].dir + '/s' + i);
+    drives[d].slots[i] = { name: f.name, file: sanitizeName(f.name) };
+    M.FS.writeFile(slotPath(d, i), f.bytes);
+    putSlot(d, i, f.bytes);
+  }
+  // keeps what the machine wrote to the disk (image not in the drive)
+  function persistSlot(d, i) {
+    const p = slotPath(d, i);
+    if (!p) return;
+    try { putSlot(d, i, M.FS.readFile(p)); } catch (e) { }
+  }
+  // the content of a slot; the disk in the drive is closed and reopened, so
+  // that everything written is in the file
+  function slotBytes(d, i) {
+    const p = slotPath(d, i);
+    if (drives[d].active === i && ready) {
+      api.setDisk(d, '');
+      const b = M.FS.readFile(p);
+      api.setDisk(d, p);
+      return b;
+    }
+    return M.FS.readFile(p);
+  }
+  function mountDrive(d) {
+    syncDiskNames();
+    if (!ready) return;
+    const p = slotPath(d, drives[d].active);
+    check(api.setDisk(d, p), d ? 'lemez (B:)' : 'lemez');
+  }
+  // selecting a slot puts its disk in the drive at once
+  function selectSlot(d, i) {
+    const old = drives[d].active;
+    if (old === i) return;
+    drives[d].active = i;
+    mountDrive(d);                      // closes the old image
+    persistSlot(d, old);
+    saveDiskActive();
+    renderDrives();
+    const s = drives[d].slots[i];
+    setMessage((d ? 'B:' : 'A:') + ' ' + (i + 1) + '. lemez: ' + (s ? s.name : 'üres'));
+  }
+  function clearSlot(d, i) {
+    const p = slotPath(d, i);
+    if (!p) return;
+    if (drives[d].active === i) api.setDisk(d, '');
+    try { M.FS.unlink(p); } catch (e) { }
+    drives[d].slots[i] = null;
+    db.del('disk:' + d + i);
+    syncDiskNames();
+    renderDrives();
+  }
+  // saves the disks in the drives, e.g. when the page is closed
+  function persistDrives() {
+    if (!ready) return;
+    for (let d = 0; d < 2; d++) {
+      const i = drives[d].active;
+      if (!slotPath(d, i)) continue;
+      try { putSlot(d, i, slotBytes(d, i)); } catch (e) { }
+    }
+  }
+  // when a drive's LED has gone off after some activity, its buffered track
+  // is already in the image file: the changed image is saved
+  let ledAccUs = 0;
+  let ledState = 0;
+  const diskSeen = [0, 0];
+  const diskUsed = [false, false];
+  function checkDiskActivity() {
+    if (!ready) return;
+    const led = ledState;
+    const now = performance.now();
+    for (let d = 0; d < 2; d++) {
+      if ((led >>> (8 * d)) & 0xFF) {
+        diskSeen[d] = now;
+        diskUsed[d] = true;
+      } else if (diskUsed[d] && now - diskSeen[d] > 500) {
+        diskUsed[d] = false;
+        persistSlot(d, drives[d].active);
+      }
+    }
+  }
+  function restoreDisk(key, value) {
+    const d = Number(key[5]), i = Number(key[6]);
+    if (!(d >= 0 && d < 2 && i >= 0 && i < DISK_SLOTS) || !value || !value.bytes) return;
+    ensureDir(drives[d].dir);
+    ensureDir(drives[d].dir + '/s' + i);
+    drives[d].slots[i] = { name: value.name, file: sanitizeName(value.name), sum: sumOf(value.bytes) };
+    M.FS.writeFile(slotPath(d, i), value.bytes);
+  }
+  function restoreDiskActive() {
+    try {
+      const v = (localStorage.getItem('ep128web.diskActive') || '').split(',').map(Number);
+      v.forEach((a, d) => { if (d < 2 && a >= 0 && a < DISK_SLOTS) drives[d].active = a; });
+    } catch (e) { }
+    syncDiskNames();
+  }
+
+  function renderDrives() {
+    for (let d = 0; d < 2; d++) {
+      const box = $(d ? 'drive-b' : 'drive-a');
+      if (!box) continue;
+      box.textContent = '';
+      for (let i = 0; i < DISK_SLOTS; i++) {
+        const s = drives[d].slots[i];
+        const row = document.createElement('div');
+        row.className = 'dslot' + (drives[d].active === i ? ' active' : '');
+        const pick = document.createElement('label');
+        pick.className = 'dpick';
+        pick.title = 'Ez a lemez legyen a meghajtóban';
+        const r = document.createElement('input');
+        r.type = 'radio';
+        r.name = 'drive' + d;
+        r.checked = drives[d].active === i;
+        r.onchange = () => { selectSlot(d, i); canvas.focus({ preventScroll: true }); };
+        const nm = document.createElement('span');
+        nm.className = 'dname';
+        nm.textContent = (i + 1) + '. ' + (s ? s.name : 'üres');
+        nm.title = s ? s.name : '';
+        pick.append(r, nm);
+        const open = document.createElement('label');
+        open.className = 'file';
+        open.title = 'Megnyitás: lemezkép feltöltése ebbe a helyre (.dsk, .img, .zip)';
+        open.textContent = '📂';
+        const inp = document.createElement('input');
+        inp.type = 'file';
+        inp.accept = '.img,.dsk,.zip';
+        inp.onchange = diskInput((f) => (d ? loadDiskFileB(f, i) : loadDiskFile(f, i)));
+        open.append(inp);
+        const dl = document.createElement('button');
+        dl.textContent = '⬇';
+        dl.title = 'Letöltés: a lemezkép mentése';
+        dl.disabled = !s;
+        dl.onclick = () => { if (s) download(slotBytes(d, i), s.name); canvas.focus({ preventScroll: true }); };
+        const x = document.createElement('button');
+        x.textContent = '✕';
+        x.className = 'dclear';
+        x.title = 'A lemez kivétele (a hely üres lesz)';
+        x.disabled = !s;
+        x.onclick = () => { clearSlot(d, i); canvas.focus({ preventScroll: true }); };
+        row.append(pick, open, dl, x);
+        box.append(row);
+      }
+    }
+  }
+
+  // Megnyitás… of a slot: a disk image, or the first one in a ZIP
+  function diskInput(load) {
+    return async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      if (!ready) { setMessage('Először a ROM-okat kell betölteni', true); return; }
+      resumeAudio();
+      try {
+        let bytes = new Uint8Array(await file.arrayBuffer());
+        let name = file.name;
+        if (extOf(name) === 'zip') {
+          const img = (await unzip(bytes)).find((x) => fileKind(x) === 'disk');
+          if (!img) { setMessage('Nincs lemezkép a ZIP-ben', true); return; }
+          bytes = img.bytes;
+          name = img.name;
+        }
+        load({ name, bytes });
+      } catch (err) {
+        setMessage(String(err.message || err), true);
+      }
+      canvas.focus({ preventScroll: true });
+    };
+  }
+
   // a disk image in drive B: (no autostart: the program or the user uses it)
-  function loadDiskFileB(f) {
-    ensureDir('/diskb');
-    diskNameB = sanitizeName(f.name);
-    M.FS.writeFile('/diskb/' + diskNameB, f.bytes);
-    $('diskb-name').textContent = f.name;
-    check(api.setDisk(1, '/diskb/' + diskNameB), 'lemez (B:)');
+  function loadDiskFileB(f, slot) {
+    const i = slot === undefined ? drives[1].active : slot;
+    const old = drives[1].active;
+    storeSlot(1, i, f);
+    drives[1].active = i;
+    mountDrive(1);
+    if (old !== i) persistSlot(1, old);
+    saveDiskActive();
+    renderDrives();
     setMessage('Lemez a B: meghajtóban: ' + f.name);
   }
 
-  function loadDiskFile(f) {
-    ensureDir('/disk');
-    diskName = sanitizeName(f.name);
-    M.FS.writeFile('/disk/' + diskName, f.bytes);
-    $('disk-name').textContent = f.name;
+  function loadDiskFile(f, slot) {
+    const i = slot === undefined ? drives[0].active : slot;
+    const old = drives[0].active;
+    storeSlot(0, i, f);
+    drives[0].active = i;
+    syncDiskNames();
+    if (old !== i) { api.setDisk(0, ''); persistSlot(0, old); }
+    saveDiskActive();
+    renderDrives();
     if (machine.type === 1) {
       if (tapeName) {
         api.setTape('');
@@ -1783,7 +2047,7 @@ registerProcessor('ep-output', EPOutput);
     const locked = () => document.pointerLockElement === canvas;
     btn.onclick = () => {
       if (!ready) return;
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
       if (canvas.requestPointerLock) canvas.requestPointerLock();
     };
     document.addEventListener('pointerlockchange', () => {
@@ -1874,7 +2138,7 @@ registerProcessor('ep-output', EPOutput);
     for (const n of names) {
       const b = document.createElement('button');
       b.textContent = n;
-      b.onclick = () => { box.hidden = true; startProgram(n); canvas.focus(); };
+      b.onclick = () => { box.hidden = true; startProgram(n); canvas.focus({ preventScroll: true }); };
       list.appendChild(b);
     }
     showChooser(box);
@@ -1904,7 +2168,7 @@ registerProcessor('ep-output', EPOutput);
       b.onclick = () => {
         box.hidden = true;
         onChoose('cas', f);
-        canvas.focus();
+        canvas.focus({ preventScroll: true });
       };
       list.appendChild(b);
     }
@@ -1915,7 +2179,7 @@ registerProcessor('ep-output', EPOutput);
       b.onclick = () => {
         box.hidden = true;
         onChoose('wav', f);
-        canvas.focus();
+        canvas.focus({ preventScroll: true });
       };
       list.appendChild(b);
     }
@@ -1969,7 +2233,7 @@ registerProcessor('ep-output', EPOutput);
       console.error(e);
       setMessage(String(e.message || e), true);
     }
-    canvas.focus();
+    canvas.focus({ preventScroll: true });
   }
 
   function processLoadedFiles(files) {
@@ -2125,7 +2389,7 @@ registerProcessor('ep-output', EPOutput);
     sel.hidden = !(fmt.mp4 && fmt.webm);
     sel.onchange = () => {
       try { localStorage.setItem('ep128web.videoFmt', sel.value); } catch (e) { }
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     };
   }
 
@@ -2482,7 +2746,7 @@ registerProcessor('ep-output', EPOutput);
       inp.value = '';
       fit();
     });
-    $('tb-full').onclick = () => { toggleFullscreen(); canvas.focus(); };
+    $('tb-full').onclick = () => { toggleFullscreen(); canvas.focus({ preventScroll: true }); };
   }
 
   function toggleFullscreen() {
@@ -2529,12 +2793,17 @@ registerProcessor('ep-output', EPOutput);
       tvcSlots = p;
       try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots)); } catch (e) { }
       update();
+      if (fxOn && tvcSlotOf(SLOT_CARD256) >= 0) {
+        fxOn = false;
+        try { localStorage.setItem('ep128web.2dfx', '0'); } catch (e) { }
+        setMessage('A 2dfx kártya kikapcsolva: a TVC256k++ mellett nem működik');
+      }
       if (machine.type === 1) {
         autoTask = null;
         releaseAllKeys();
         applyMachine(machine);        // loads the card ROMs, cold reset
       }
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     };
     $('tvc-slots-default').onclick = () => {
       selects.forEach((sel, i) => { sel.value = String(TVC_DEFAULT_SLOTS[i]); });
@@ -2575,7 +2844,7 @@ registerProcessor('ep-output', EPOutput);
     api.reset(cold ? 1 : 0);
     keyedSinceReset = false;
     resumeAudio();
-    canvas.focus();
+    canvas.focus({ preventScroll: true });
   }
 
   function toggleTurbo() {
@@ -2844,7 +3113,7 @@ registerProcessor('ep-output', EPOutput);
       autoTask = null;
       releaseAllKeys();
       applyMachine(m);
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     });
 
     $('btn-reset').onclick = () => reset(false);
@@ -2859,14 +3128,14 @@ registerProcessor('ep-output', EPOutput);
       if (machine.type === 1)
         setTvcRedirect(defaultTvcLoadRedirect());
       typeText('load"*"\n');
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     };
     const btnRun = $('btn-run');
     if (btnRun) btnRun.onclick = () => {
       if (machine.type === 1)
         setTvcRedirect(defaultTvcLoadRedirect());
       typeText('run\n');
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     };
     setupMouse();
     setupUsbUI();
@@ -2876,11 +3145,11 @@ registerProcessor('ep-output', EPOutput);
       download(M.FS.readFile('/tmp/save.ep128s'), 'ep128-' +
                new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.ep128s');
     };
-    $('btn-shot').onclick = () => { saveScreenshot(); canvas.focus(); };
-    $('btn-video').onclick = () => { toggleVideoRec(); canvas.focus(); };
+    $('btn-shot').onclick = () => { saveScreenshot(); canvas.focus({ preventScroll: true }); };
+    $('btn-video').onclick = () => { toggleVideoRec(); canvas.focus({ preventScroll: true }); };
     setupVideoFormat();
-    $('btn-audio').onclick = () => { toggleAudioRec(); canvas.focus(); };
-    $('btn-mute').onclick = () => { toggleMute(); canvas.focus(); };
+    $('btn-audio').onclick = () => { toggleAudioRec(); canvas.focus({ preventScroll: true }); };
+    $('btn-mute').onclick = () => { toggleMute(); canvas.focus({ preventScroll: true }); };
     $('volume').oninput = (e) => {
       applyVolume();
       try { localStorage.setItem('ep128web.volume', e.target.value); } catch (er) { }
@@ -2892,7 +3161,7 @@ registerProcessor('ep-output', EPOutput);
     $('volume').oninput({ target: $('volume') });
 
     setupTouchControls();
-    $('chooser-cancel').onclick = () => { $('chooser').hidden = true; canvas.focus(); };
+    $('chooser-cancel').onclick = () => { $('chooser').hidden = true; canvas.focus({ preventScroll: true }); };
     $('file-any').onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
     const fileGames = $('file-games');
     if (fileGames) fileGames.onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
@@ -2903,16 +3172,16 @@ registerProcessor('ep-output', EPOutput);
         if (machine.type === 1) writeMemory(2821, 5);
         api.tapeCommand(1);
       }
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     };
-    $('tape-stop').onclick = () => { if (tapeName) api.tapeCommand(0); canvas.focus(); };
-    $('tape-rew').onclick = () => { if (tapeName) api.tapeCommand(2); canvas.focus(); };
-    $('tape-rec').onclick = () => { if (tapeName) api.tapeCommand(3); canvas.focus(); };
+    $('tape-stop').onclick = () => { if (tapeName) api.tapeCommand(0); canvas.focus({ preventScroll: true }); };
+    $('tape-rew').onclick = () => { if (tapeName) api.tapeCommand(2); canvas.focus({ preventScroll: true }); };
+    $('tape-rec').onclick = () => { if (tapeName) api.tapeCommand(3); canvas.focus({ preventScroll: true }); };
     $('tape-new').onclick = () => {
       tapeName = 'tape-' + Date.now().toString(36) + '.tap';
       check(api.setTape('/tape/' + tapeName), 'kazetta');
       $('tape-name').textContent = tapeName + ' (üres)';
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     };
     $('tape-save').onclick = () => {
       if (!tapeName) return;
@@ -2920,42 +3189,12 @@ registerProcessor('ep-output', EPOutput);
       download(M.FS.readFile('/tape/' + tapeName), tapeName);
       check(api.setTape('/tape/' + tapeName), 'kazetta');
     };
-    $('disk-eject').onclick = () => {
-      api.setDisk(0, '');
-      diskName = '';
-      $('disk-name').textContent = 'nincs lemez';
-      canvas.focus();
-    };
-    $('disk-save').onclick = () => {
-      if (!diskName) return;
-      api.setDisk(0, '');               // flush and close the image file
-      download(M.FS.readFile('/disk/' + diskName), diskName);
-      api.setDisk(0, '/disk/' + diskName);
-    };
-    // Betöltés… buttons of the drives: a disk image, or the first one in a ZIP
-    const diskInput = (load) => async (e) => {
-      const file = e.target.files[0];
-      e.target.value = '';
-      if (!file) return;
-      if (!ready) { setMessage('Először a ROM-okat kell betölteni', true); return; }
-      resumeAudio();
-      try {
-        let bytes = new Uint8Array(await file.arrayBuffer());
-        let name = file.name;
-        if (extOf(name) === 'zip') {
-          const img = (await unzip(bytes)).find((x) => fileKind(x) === 'disk');
-          if (!img) { setMessage('Nincs lemezkép a ZIP-ben', true); return; }
-          bytes = img.bytes;
-          name = img.name;
-        }
-        load({ name, bytes });
-      } catch (err) {
-        setMessage(String(err.message || err), true);
-      }
-      canvas.focus();
-    };
-    $('disk-file').onchange = diskInput(loadDiskFile);
-    $('diskb-file').onchange = diskInput(loadDiskFileB);
+    renderDrives();
+    setInterval(checkDiskActivity, 300);
+    window.addEventListener('pagehide', persistDrives);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') persistDrives();
+    });
     // Betöltés… of FILE:: the files (ZIPs expanded) are only copied there,
     // a program is started by clicking its name
     $('files-file').onchange = async (e) => {
@@ -2976,19 +3215,7 @@ registerProcessor('ep-output', EPOutput);
       } catch (err) {
         setMessage(String(err.message || err), true);
       }
-      canvas.focus();
-    };
-    $('diskb-eject').onclick = () => {
-      api.setDisk(1, '');
-      diskNameB = '';
-      $('diskb-name').textContent = 'nincs lemez';
-      canvas.focus();
-    };
-    $('diskb-save').onclick = () => {
-      if (!diskNameB) return;
-      api.setDisk(1, '');               // flush and close the image file
-      download(M.FS.readFile('/diskb/' + diskNameB), diskNameB);
-      api.setDisk(1, '/diskb/' + diskNameB);
+      canvas.focus({ preventScroll: true });
     };
     $('files-clear').onclick = () => {
       for (const n of M.FS.readdir('/files'))
@@ -2997,9 +3224,10 @@ registerProcessor('ep-output', EPOutput);
     };
     const cartEject = $('cart-eject');
     if (cartEject) cartEject.onclick = ejectCartridge;
-    $('tape-fast').onchange = (e) => { tapeFast = e.target.checked; canvas.focus(); };
+    $('tape-fast').onchange = (e) => { tapeFast = e.target.checked; canvas.focus({ preventScroll: true }); };
     renderJoyMap();
     setupTvcSlotsUI();
+    setup2dfx();
 
     const wrap = $('screen-wrap');
     wrap.addEventListener('dragover', (e) => { e.preventDefault(); wrap.classList.add('drag'); });
@@ -3009,7 +3237,7 @@ registerProcessor('ep-output', EPOutput);
       wrap.classList.remove('drag');
       if (e.dataTransfer.files.length) loadFiles(e.dataTransfer.files);
     });
-    canvas.addEventListener('pointerdown', () => { resumeAudio(); canvas.focus(); });
+    canvas.addEventListener('pointerdown', () => { resumeAudio(); canvas.focus({ preventScroll: true }); });
     document.addEventListener('pointerdown', resumeAudio, { once: true });
     setupCatalogUI();
   }
@@ -3077,6 +3305,14 @@ registerProcessor('ep-output', EPOutput);
       return;
     }
     emulatedUs += us;
+    // ep128emu runs the floppy drives' motor-off timer (and writes the
+    // buffered track to the image) when it is asked for the LED state, once
+    // per 2 ms timeslice, like its own VM thread does
+    ledAccUs += us;
+    for (let k = 0; ledAccUs >= 2000 && k < 1000; k++) {
+      ledAccUs -= 2000;
+      ledState = api.ledState();
+    }
     processKeyQueue();
     speedAccUs += us;
     speedAccMs += dt;
@@ -3181,7 +3417,8 @@ registerProcessor('ep-output', EPOutput);
       usbDelete: c('ep_usb_delete', 'number', ['string']),
       usbChdir: c('ep_usb_chdir', 'number', ['string']),
       usbInfo: c('ep_usb_info', 'number', ['number']),
-      setTvcExtJoy: c('ep_set_tvc_ext_joy', null, ['number', 'number'])
+      setTvcExtJoy: c('ep_set_tvc_ext_joy', null, ['number', 'number']),
+      set2dfx: c('ep_set_2dfx', null, ['number'])
     };
     for (const d of ['/roms', '/files', '/tmp', '/disk', '/diskb', '/tape']) ensureDir(d);
 
@@ -3208,6 +3445,7 @@ registerProcessor('ep-output', EPOutput);
         if (key === 'pkg') installROMPackage(value);
         else if (key.startsWith('rom:')) M.FS.writeFile('/roms/' + key.slice(4), value);
         else if (key === 'usbfiles') usbSaved = value;
+        else if (key.startsWith('disk:')) restoreDisk(key, value);
         else if (key === 'cardflash') {
           try { M.FS.mkdir('/card'); } catch (e) { }
           M.FS.writeFile('/card/flash.bin', value);
@@ -3233,6 +3471,9 @@ registerProcessor('ep-output', EPOutput);
       }
     }
 
+    restoreDiskActive();
+    renderDrives();
+
     let id = null;
     try { id = localStorage.getItem('ep128web.machine'); } catch (e) { }
     id = MACHINE_ALIASES[id] || id;
@@ -3243,7 +3484,7 @@ registerProcessor('ep-output', EPOutput);
     applyMachine(machine);
     if (audioCtx && audioCtx.state !== 'running') $('click-hint').hidden = false;
     else resumeAudio();
-    canvas.focus();
+    canvas.focus({ preventScroll: true });
     requestAnimationFrame(frame);
   }
 

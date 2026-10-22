@@ -21,6 +21,7 @@
 #include "tvc64vm.hpp"
 #include "tvc_soundcards.hpp"
 #include "tvc256kpp.hpp"
+#include "twodfx_bridge.hpp"
 #include "decompm2.hpp"
 
 #include <emscripten/emscripten.h>
@@ -173,6 +174,15 @@ namespace {
               lineBuf[x] = ov[x];
           }
         }
+        // 2dfx card: its covered pixels replace the machine's pixels
+        const uint8_t *fx = TwoDfx::currentOverlay();
+        if (fx) {
+          const uint8_t *cov = TwoDfx::currentCoverage();
+          for (int x = 0; x < frameWidth && x < 768; x++) {
+            if (cov[x])
+              lineBuf[x] = fx[x];
+          }
+        }
         uint32_t  *p = &(backBuffer[size_t(y) * size_t(frameWidth)]);
         for (int x = 0; x < frameWidth; x++)
           p[x] = palette[lineBuf[x]];
@@ -292,6 +302,15 @@ namespace {
 
 extern "C" {
 
+// 2dfx card (Enterprise and TVC), on ports F8h, F9h
+static bool twoDfxWanted = false;
+
+EMSCRIPTEN_KEEPALIVE void ep_set_2dfx(int enabled)
+{
+  twoDfxWanted = (enabled != 0);
+  TwoDfx::configure(twoDfxWanted, machineType);
+}
+
 EMSCRIPTEN_KEEPALIVE const char *ep_last_error()
 {
   return lastError.c_str();
@@ -327,6 +346,7 @@ EMSCRIPTEN_KEEPALIVE int ep_set_machine_type(int type)
       vm->setSoundClockFrequency(500000);
     }
     machineType = (type == 1 ? 1 : 0);
+    TwoDfx::configure(twoDfxWanted, machineType);
     vm->setEnableMemoryTimingEmulation(true);
     vm->setAudioOutputHighQuality(true);
     vm->setEnableDisplay(true);
@@ -386,6 +406,8 @@ EMSCRIPTEN_KEEPALIVE int ep_reset(int isColdReset)
 {
   try {
     vm->reset(isColdReset != 0);
+    if (isColdReset)
+      TwoDfx::powerCycle();             // the card is powered with the machine
     return 0;
   }
   catch (...) {

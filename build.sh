@@ -26,7 +26,7 @@ fi
 OBJDIR=build/obj
 mkdir -p "$OBJDIR" dist
 
-CFLAGS="-O3 -fexceptions -DHAVE_STDINT_H -DZ80_ENABLE_CMOS -DCPC_LSB_FIRST=1 -DENABLE_SDEXT -Iweb/stubs -Iweb/src -I$E/src -I$E/z80 -I$E"
+CFLAGS="-O3 -fexceptions -DHAVE_STDINT_H -DZ80_ENABLE_CMOS -DCPC_LSB_FIRST=1 -DENABLE_SDEXT -Iweb/stubs -Iweb/src -Iweb/src/twodfx/include -I$E/src -I$E/z80 -I$E"
 CFLAGS="$CFLAGS -Wno-deprecated-declarations -Wno-unused-parameter"
 
 SOURCES="
@@ -82,6 +82,12 @@ SOURCES="
   web/src/card/fatfs/ffunicode.c
   web/src/card/littlefs/lfs.c
   web/src/card/littlefs/lfs_util.c
+  web/src/twodfx/core/twodfx_emu.c
+  web/src/twodfx/core/twodfx_raster.c
+  web/src/twodfx/core/twodfx_3d.c
+  web/src/twodfx/core/twodfx_firmware_page.c
+  web/src/twodfx/assets/logo_2dfx_asset.c
+  web/src/twodfx_bridge.cpp
   web/src/soundio_web.cpp
   web/src/sndfile_wav.cpp
   web/src/main.cpp
@@ -105,6 +111,7 @@ for src in $SOURCES; do
     echo "CXX $src"
     case "$src" in
       web/src/card/*.c|web/src/card/*/*.c) emcc -O3 -w -DHAVE_STDINT_H -DLFS_NO_ASSERT -Iweb/src -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;  # vendored C code
+      web/src/twodfx/*/*.c) emcc -O3 -std=c99 -w -Iweb/src/twodfx/include -Iweb/src/twodfx/core -Iweb/src/twodfx/assets -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;  # 2dfx module (MIT)
       *) em++ $CFLAGS -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;
     esac
   fi

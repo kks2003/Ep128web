@@ -1,0 +1,175 @@
+--- a/src/nick.hpp
++++ b/src/nick.hpp
+@@ -195,6 +195,11 @@
+     {
+       return lpb.ld2Addr;
+     }
++    // the palette of the current line (0..7: LPB, 8..15: FIXBIAS)
++    inline const uint8_t *getLinePalette() const
++    {
++      return lpb.palette;
++    }
+     inline uint16_t getLPBAddress() const
+     {
+       return lptCurrentAddr;
+--- a/src/ep128vm.cpp
++++ b/src/ep128vm.cpp
+@@ -40,6 +40,26 @@
+ #include <vector>
+ #include <ctime>
+ 
++#include "twodfx_bridge.hpp"
++
++// 2dfx card (Ep128web): its raster IRQ is wired-OR with DAVE's interrupt
++static bool twoDfxDaveInt = false;
++static bool twoDfxIrq = false;
++
++static uint8_t twoDfxPortReadCallback(void *userData, uint16_t addr)
++{
++  (void) userData;
++  (void) addr;
++  return TwoDfx::readStatus();
++}
++
++static void twoDfxPortWriteCallback(void *userData,
++                                    uint16_t addr, uint8_t value)
++{
++  (void) userData;
++  TwoDfx::writePort(uint8_t(addr), value);
++}
++
+ namespace Ep128 {
+ 
+   inline void Ep128VM::updateCPUCycles(int cycles)
+@@ -636,12 +656,15 @@
+ 
+   void Ep128VM::Dave_::interruptRequest()
+   {
++    twoDfxDaveInt = true;
+     vm.z80.triggerInterrupt();
+   }
+ 
+   void Ep128VM::Dave_::clearInterruptRequest()
+   {
+-    vm.z80.clearInterrupt();
++    twoDfxDaveInt = false;
++    if (!twoDfxIrq)
++      vm.z80.clearInterrupt();
+   }
+ 
+   // --------------------------------------------------------------------------
+@@ -663,8 +686,21 @@
+ 
+   void Ep128VM::Nick_::drawLine(const uint8_t *buf, size_t nBytes)
+   {
++    if (TwoDfx::isEnabled()) {
++      // the display line begins at slot 7; 2dfx raw X = slot * 16 - 52
++      TwoDfx::line(getLinePalette(), 60);
++      bool    irq = TwoDfx::irqActive();
++      if (irq != twoDfxIrq) {
++        twoDfxIrq = irq;
++        if (irq)
++          vm.z80.triggerInterrupt();
++        else if (!twoDfxDaveInt)
++          vm.z80.clearInterrupt();
++      }
++    }
+     if (vm.getIsDisplayEnabled())
+       vm.display.drawLine(buf, nBytes);
++    TwoDfx::clearOverlay();
+     if (vm.videoCapture)
+       vm.videoCapture->horizontalSync(buf, nBytes);
+   }
+@@ -672,6 +708,8 @@
+   void Ep128VM::Nick_::vsyncStateChange(bool newState,
+                                         unsigned int currentSlot_)
+   {
++    if (newState)
++      TwoDfx::vsync();
+     if (vm.getIsDisplayEnabled())
+       vm.display.vsyncStateChange(newState, currentSlot_);
+     if (vm.videoCapture)
+@@ -1680,6 +1718,9 @@
+                                  &midiPortDebugReadCallback, this, 0xF6);
+     ioPorts.setWriteCallback(0xF6, 0xF7, &midiPortWriteCallback, this, 0xF6);
+ #endif
++    // 2dfx card
++    ioPorts.setReadCallback(0xF8, 0xF8, &twoDfxPortReadCallback, this, 0x00);
++    ioPorts.setWriteCallback(0xF8, 0xF9, &twoDfxPortWriteCallback, this, 0x00);
+     ioPorts.setReadCallback(0x7E, 0x7F, &cmosMemoryIOReadCallback, this, 0x7E);
+     ioPorts.setDebugReadCallback(0x7E, 0x7F,
+                                  &cmosMemoryIOReadCallback, this, 0x7E);
+--- a/src/tvc64vm.cpp
++++ b/src/tvc64vm.cpp
+@@ -73,6 +73,28 @@
+   15971, 17919, 20067, 22014, 23957, 25905, 28052, 30000
+ };
+ 
++#include "twodfx_bridge.hpp"
++
++// 2dfx card (Ep128web) on ports F8h, F9h
++static uint8_t twoDfxPortReadCallback(void *userData, uint16_t addr)
++{
++  (void) userData;
++  return (uint8_t(addr) == 0xF8 ? TwoDfx::readStatus() : uint8_t(0xFF));
++}
++
++static void twoDfxPortWriteCallback(void *userData,
++                                    uint16_t addr, uint8_t value)
++{
++  (void) userData;
++  TwoDfx::writePort(uint8_t(addr), value);
++}
++
++// 2dfx colour index (bit 0: I, 1: R, 2: G, 3: B) to TVC colour byte
++static const uint8_t twoDfxTVCPalette[16] = {
++  0x00, 0x40, 0x04, 0x44, 0x10, 0x50, 0x14, 0x54,
++  0x01, 0x41, 0x05, 0x45, 0x11, 0x51, 0x15, 0x55
++};
++
+ namespace TVC64 {
+ 
+   EP128EMU_INLINE void TVC64VM::updateCPUCycles(int cycles)
+@@ -221,7 +243,7 @@
+   EP128EMU_REGPARM1 void TVC64VM::Z80_::executeInterrupt()
+   {
+     vm.runDevices();
+-    if (EP128EMU_UNLIKELY(bool(vm.irqState)))
++    if (EP128EMU_UNLIKELY(bool(vm.irqState) || TwoDfx::irqActive()))
+       Ep128::Z80::executeInterrupt();
+   }
+ 
+@@ -680,9 +702,12 @@
+           vm.irqState = vm.irqState | m;
+       }
+     }
++    if (TwoDfx::isEnabled())
++      TwoDfx::line(twoDfxTVCPalette, 0);
+     if (vm.getIsDisplayEnabled())
+       vm.display.drawLine(buf, nBytes);
+     TVC256kpp::clearOverlay();
++    TwoDfx::clearOverlay();
+     if (vm.videoCapture)
+       vm.videoCapture->horizontalSync(buf, nBytes);
+   }
+@@ -692,6 +717,8 @@
+   {
+     if (newState && vm.card256)
+       vm.card256->videoVSync();
++    if (newState)
++      TwoDfx::vsync();
+     if (vm.getIsDisplayEnabled())
+       vm.display.vsyncStateChange(newState, currentSlot_);
+     if (vm.videoCapture)
+@@ -1436,6 +1463,11 @@
+         0x0000, 0x007F, &ioPortDebugReadCallback, (void *) this, 0x0000);
+     ioPorts.setWriteCallback(
+         0x0000, 0x007F, &ioPortWriteCallback, (void *) this, 0x0000);
++    // 2dfx card
++    ioPorts.setReadCallback(
++        0x00F8, 0x00F9, &twoDfxPortReadCallback, (void *) this, 0x0000);
++    ioPorts.setWriteCallback(
++        0x00F8, 0x00F9, &twoDfxPortWriteCallback, (void *) this, 0x0000);
+     crtc.setHSyncStateChangeCallback(&hSyncStateChangeCallback, (void *) this);
+     crtc.setVSyncStateChangeCallback(&vSyncStateChangeCallback, (void *) this);
+     wd177x.setIsWD1773(true);
