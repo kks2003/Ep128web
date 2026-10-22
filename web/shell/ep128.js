@@ -818,6 +818,7 @@
     }
     return {
       put: (key, value) => tx('readwrite', (s) => s.put(value, key)).catch(() => {}),
+      del: (key) => tx('readwrite', (s) => s.delete(key)).catch(() => {}),
       getAll: async () => {
         try {
           const d = await open();
@@ -1683,21 +1684,242 @@ registerProcessor('ep-output', EPOutput);
     showChooser(box);
   }
 
+  // --- disk drives A: and B:, three slots each ---
+  // The active slot is the disk in the drive; the images (and the active
+  // slots) are kept in the browser (IndexedDB, localStorage).
+
+  const DISK_SLOTS = 3;
+  const drives = [0, 1].map((d) => ({
+    dir: d ? '/diskb' : '/disk', active: 0, slots: new Array(DISK_SLOTS).fill(null)
+  }));
+
+  function slotRel(d, i) {
+    const s = drives[d].slots[i];
+    return s ? 's' + i + '/' + s.file : '';
+  }
+  function slotPath(d, i) {
+    return slotRel(d, i) ? drives[d].dir + '/' + slotRel(d, i) : '';
+  }
+  // diskName / diskNameB: the active image (relative to /disk, /diskb)
+  function syncDiskNames() {
+    diskName = slotRel(0, drives[0].active);
+    diskNameB = slotRel(1, drives[1].active);
+  }
+  function saveDiskActive() {
+    try {
+      localStorage.setItem('ep128web.diskActive', drives.map((x) => x.active).join(','));
+    } catch (e) { }
+  }
+  // a quick checksum, to save only changed images
+  function sumOf(b) {
+    let h = 2166136261 ^ b.length;
+    for (let k = 0; k < b.length; k += 4) h = Math.imul(h ^ (b[k] | (b[k + 1] << 8) | (b[k + 2] << 16) | (b[k + 3] << 24)), 16777619);
+    return h >>> 0;
+  }
+  function putSlot(d, i, bytes) {
+    const s = drives[d].slots[i];
+    const sum = sumOf(bytes);
+    if (s.sum === sum) return;
+    s.sum = sum;
+    db.put('disk:' + d + i, { name: s.name, bytes });
+  }
+
+  function storeSlot(d, i, f) {
+    const old = slotPath(d, i);
+    if (old && drives[d].active === i) api.setDisk(d, '');
+    if (old) { try { M.FS.unlink(old); } catch (e) { } }
+    ensureDir(drives[d].dir);
+    ensureDir(drives[d].dir + '/s' + i);
+    drives[d].slots[i] = { name: f.name, file: sanitizeName(f.name) };
+    M.FS.writeFile(slotPath(d, i), f.bytes);
+    putSlot(d, i, f.bytes);
+  }
+  // keeps what the machine wrote to the disk (image not in the drive)
+  function persistSlot(d, i) {
+    const p = slotPath(d, i);
+    if (!p) return;
+    try { putSlot(d, i, M.FS.readFile(p)); } catch (e) { }
+  }
+  // the content of a slot; the disk in the drive is closed and reopened, so
+  // that everything written is in the file
+  function slotBytes(d, i) {
+    const p = slotPath(d, i);
+    if (drives[d].active === i && ready) {
+      api.setDisk(d, '');
+      const b = M.FS.readFile(p);
+      api.setDisk(d, p);
+      return b;
+    }
+    return M.FS.readFile(p);
+  }
+  function mountDrive(d) {
+    syncDiskNames();
+    if (!ready) return;
+    const p = slotPath(d, drives[d].active);
+    check(api.setDisk(d, p), d ? 'lemez (B:)' : 'lemez');
+  }
+  // selecting a slot puts its disk in the drive at once
+  function selectSlot(d, i) {
+    const old = drives[d].active;
+    if (old === i) return;
+    drives[d].active = i;
+    mountDrive(d);                      // closes the old image
+    persistSlot(d, old);
+    saveDiskActive();
+    renderDrives();
+    const s = drives[d].slots[i];
+    setMessage((d ? 'B:' : 'A:') + ' ' + (i + 1) + '. lemez: ' + (s ? s.name : 'üres'));
+  }
+  function clearSlot(d, i) {
+    const p = slotPath(d, i);
+    if (!p) return;
+    if (drives[d].active === i) api.setDisk(d, '');
+    try { M.FS.unlink(p); } catch (e) { }
+    drives[d].slots[i] = null;
+    db.del('disk:' + d + i);
+    syncDiskNames();
+    renderDrives();
+  }
+  // saves the disks in the drives, e.g. when the page is closed
+  function persistDrives() {
+    if (!ready) return;
+    for (let d = 0; d < 2; d++) {
+      const i = drives[d].active;
+      if (!slotPath(d, i)) continue;
+      try { putSlot(d, i, slotBytes(d, i)); } catch (e) { }
+    }
+  }
+  // when a drive's LED has gone off after some activity, its buffered track
+  // is already in the image file: the changed image is saved
+  let ledAccUs = 0;
+  let ledState = 0;
+  const diskSeen = [0, 0];
+  const diskUsed = [false, false];
+  function checkDiskActivity() {
+    if (!ready) return;
+    const led = ledState;
+    const now = performance.now();
+    for (let d = 0; d < 2; d++) {
+      if ((led >>> (8 * d)) & 0xFF) {
+        diskSeen[d] = now;
+        diskUsed[d] = true;
+      } else if (diskUsed[d] && now - diskSeen[d] > 500) {
+        diskUsed[d] = false;
+        persistSlot(d, drives[d].active);
+      }
+    }
+  }
+  function restoreDisk(key, value) {
+    const d = Number(key[5]), i = Number(key[6]);
+    if (!(d >= 0 && d < 2 && i >= 0 && i < DISK_SLOTS) || !value || !value.bytes) return;
+    ensureDir(drives[d].dir);
+    ensureDir(drives[d].dir + '/s' + i);
+    drives[d].slots[i] = { name: value.name, file: sanitizeName(value.name), sum: sumOf(value.bytes) };
+    M.FS.writeFile(slotPath(d, i), value.bytes);
+  }
+  function restoreDiskActive() {
+    try {
+      const v = (localStorage.getItem('ep128web.diskActive') || '').split(',').map(Number);
+      v.forEach((a, d) => { if (d < 2 && a >= 0 && a < DISK_SLOTS) drives[d].active = a; });
+    } catch (e) { }
+    syncDiskNames();
+  }
+
+  function renderDrives() {
+    for (let d = 0; d < 2; d++) {
+      const box = $(d ? 'drive-b' : 'drive-a');
+      if (!box) continue;
+      box.textContent = '';
+      for (let i = 0; i < DISK_SLOTS; i++) {
+        const s = drives[d].slots[i];
+        const row = document.createElement('div');
+        row.className = 'dslot' + (drives[d].active === i ? ' active' : '');
+        const pick = document.createElement('label');
+        pick.className = 'dpick';
+        pick.title = 'Ez a lemez legyen a meghajtóban';
+        const r = document.createElement('input');
+        r.type = 'radio';
+        r.name = 'drive' + d;
+        r.checked = drives[d].active === i;
+        r.onchange = () => { selectSlot(d, i); canvas.focus(); };
+        const nm = document.createElement('span');
+        nm.className = 'dname';
+        nm.textContent = (i + 1) + '. ' + (s ? s.name : 'üres');
+        nm.title = s ? s.name : '';
+        pick.append(r, nm);
+        const open = document.createElement('label');
+        open.className = 'file';
+        open.title = 'Megnyitás: lemezkép feltöltése ebbe a helyre (.dsk, .img, .zip)';
+        open.textContent = '📂';
+        const inp = document.createElement('input');
+        inp.type = 'file';
+        inp.accept = '.img,.dsk,.zip';
+        inp.onchange = diskInput((f) => (d ? loadDiskFileB(f, i) : loadDiskFile(f, i)));
+        open.append(inp);
+        const dl = document.createElement('button');
+        dl.textContent = '⬇';
+        dl.title = 'Letöltés: a lemezkép mentése';
+        dl.disabled = !s;
+        dl.onclick = () => { if (s) download(slotBytes(d, i), s.name); canvas.focus(); };
+        const x = document.createElement('button');
+        x.textContent = '✕';
+        x.className = 'dclear';
+        x.title = 'A lemez kivétele (a hely üres lesz)';
+        x.disabled = !s;
+        x.onclick = () => { clearSlot(d, i); canvas.focus(); };
+        row.append(pick, open, dl, x);
+        box.append(row);
+      }
+    }
+  }
+
+  // Megnyitás… of a slot: a disk image, or the first one in a ZIP
+  function diskInput(load) {
+    return async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      if (!ready) { setMessage('Először a ROM-okat kell betölteni', true); return; }
+      resumeAudio();
+      try {
+        let bytes = new Uint8Array(await file.arrayBuffer());
+        let name = file.name;
+        if (extOf(name) === 'zip') {
+          const img = (await unzip(bytes)).find((x) => fileKind(x) === 'disk');
+          if (!img) { setMessage('Nincs lemezkép a ZIP-ben', true); return; }
+          bytes = img.bytes;
+          name = img.name;
+        }
+        load({ name, bytes });
+      } catch (err) {
+        setMessage(String(err.message || err), true);
+      }
+      canvas.focus();
+    };
+  }
+
   // a disk image in drive B: (no autostart: the program or the user uses it)
-  function loadDiskFileB(f) {
-    ensureDir('/diskb');
-    diskNameB = sanitizeName(f.name);
-    M.FS.writeFile('/diskb/' + diskNameB, f.bytes);
-    $('diskb-name').textContent = f.name;
-    check(api.setDisk(1, '/diskb/' + diskNameB), 'lemez (B:)');
+  function loadDiskFileB(f, slot) {
+    const i = slot === undefined ? drives[1].active : slot;
+    const old = drives[1].active;
+    storeSlot(1, i, f);
+    drives[1].active = i;
+    mountDrive(1);
+    if (old !== i) persistSlot(1, old);
+    saveDiskActive();
+    renderDrives();
     setMessage('Lemez a B: meghajtóban: ' + f.name);
   }
 
-  function loadDiskFile(f) {
-    ensureDir('/disk');
-    diskName = sanitizeName(f.name);
-    M.FS.writeFile('/disk/' + diskName, f.bytes);
-    $('disk-name').textContent = f.name;
+  function loadDiskFile(f, slot) {
+    const i = slot === undefined ? drives[0].active : slot;
+    const old = drives[0].active;
+    storeSlot(0, i, f);
+    drives[0].active = i;
+    syncDiskNames();
+    if (old !== i) { api.setDisk(0, ''); persistSlot(0, old); }
+    saveDiskActive();
+    renderDrives();
     if (machine.type === 1) {
       if (tapeName) {
         api.setTape('');
@@ -2920,42 +3142,12 @@ registerProcessor('ep-output', EPOutput);
       download(M.FS.readFile('/tape/' + tapeName), tapeName);
       check(api.setTape('/tape/' + tapeName), 'kazetta');
     };
-    $('disk-eject').onclick = () => {
-      api.setDisk(0, '');
-      diskName = '';
-      $('disk-name').textContent = 'nincs lemez';
-      canvas.focus();
-    };
-    $('disk-save').onclick = () => {
-      if (!diskName) return;
-      api.setDisk(0, '');               // flush and close the image file
-      download(M.FS.readFile('/disk/' + diskName), diskName);
-      api.setDisk(0, '/disk/' + diskName);
-    };
-    // Betöltés… buttons of the drives: a disk image, or the first one in a ZIP
-    const diskInput = (load) => async (e) => {
-      const file = e.target.files[0];
-      e.target.value = '';
-      if (!file) return;
-      if (!ready) { setMessage('Először a ROM-okat kell betölteni', true); return; }
-      resumeAudio();
-      try {
-        let bytes = new Uint8Array(await file.arrayBuffer());
-        let name = file.name;
-        if (extOf(name) === 'zip') {
-          const img = (await unzip(bytes)).find((x) => fileKind(x) === 'disk');
-          if (!img) { setMessage('Nincs lemezkép a ZIP-ben', true); return; }
-          bytes = img.bytes;
-          name = img.name;
-        }
-        load({ name, bytes });
-      } catch (err) {
-        setMessage(String(err.message || err), true);
-      }
-      canvas.focus();
-    };
-    $('disk-file').onchange = diskInput(loadDiskFile);
-    $('diskb-file').onchange = diskInput(loadDiskFileB);
+    renderDrives();
+    setInterval(checkDiskActivity, 300);
+    window.addEventListener('pagehide', persistDrives);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') persistDrives();
+    });
     // Betöltés… of FILE:: the files (ZIPs expanded) are only copied there,
     // a program is started by clicking its name
     $('files-file').onchange = async (e) => {
@@ -2977,18 +3169,6 @@ registerProcessor('ep-output', EPOutput);
         setMessage(String(err.message || err), true);
       }
       canvas.focus();
-    };
-    $('diskb-eject').onclick = () => {
-      api.setDisk(1, '');
-      diskNameB = '';
-      $('diskb-name').textContent = 'nincs lemez';
-      canvas.focus();
-    };
-    $('diskb-save').onclick = () => {
-      if (!diskNameB) return;
-      api.setDisk(1, '');               // flush and close the image file
-      download(M.FS.readFile('/diskb/' + diskNameB), diskNameB);
-      api.setDisk(1, '/diskb/' + diskNameB);
     };
     $('files-clear').onclick = () => {
       for (const n of M.FS.readdir('/files'))
@@ -3077,6 +3257,14 @@ registerProcessor('ep-output', EPOutput);
       return;
     }
     emulatedUs += us;
+    // ep128emu runs the floppy drives' motor-off timer (and writes the
+    // buffered track to the image) when it is asked for the LED state, once
+    // per 2 ms timeslice, like its own VM thread does
+    ledAccUs += us;
+    for (let k = 0; ledAccUs >= 2000 && k < 1000; k++) {
+      ledAccUs -= 2000;
+      ledState = api.ledState();
+    }
     processKeyQueue();
     speedAccUs += us;
     speedAccMs += dt;
@@ -3208,6 +3396,7 @@ registerProcessor('ep-output', EPOutput);
         if (key === 'pkg') installROMPackage(value);
         else if (key.startsWith('rom:')) M.FS.writeFile('/roms/' + key.slice(4), value);
         else if (key === 'usbfiles') usbSaved = value;
+        else if (key.startsWith('disk:')) restoreDisk(key, value);
         else if (key === 'cardflash') {
           try { M.FS.mkdir('/card'); } catch (e) { }
           M.FS.writeFile('/card/flash.bin', value);
@@ -3232,6 +3421,9 @@ registerProcessor('ep-output', EPOutput);
         } catch (e) { }
       }
     }
+
+    restoreDiskActive();
+    renderDrives();
 
     let id = null;
     try { id = localStorage.getItem('ep128web.machine'); } catch (e) { }
