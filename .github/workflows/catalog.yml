@@ -1,0 +1,57 @@
+# TVC programkatalógus frissítése a tvc.homeserver.hu programoldalairól.
+# Indítás: GitHub → Actions → „Update TVC catalog” → Run workflow.
+# Ha a lista változott, a main ágra commitolja, és elindítja az éles oldal
+# fordítását (a GITHUB_TOKEN-nel feltöltött commit magától nem indítaná).
+name: Update TVC catalog
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Akkor is írja felül, ha sokkal kevesebb program jött le (FORCE=1)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: update-catalog
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build the catalog
+        env:
+          FORCE: ${{ inputs.force && '1' || '0' }}
+        run: node scripts/build_catalog.mjs
+      - name: Commit if changed
+        id: commit
+        run: |
+          if git diff --quiet -- web/catalog/programs.json web/shell/catalog.json; then
+            echo "A katalógus nem változott." >> "$GITHUB_STEP_SUMMARY"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          n=$(node -e "console.log(require('./web/catalog/programs.json').length)")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898713+github-actions[bot]@users.noreply.github.com"
+          git add web/catalog/programs.json web/shell/catalog.json
+          git commit -m "Update the TVC program catalog ($n programs)"
+          git push origin HEAD:main
+          echo "Katalógus frissítve: $n program." >> "$GITHUB_STEP_SUMMARY"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      - name: Deploy the site
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main

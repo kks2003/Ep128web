@@ -80,6 +80,14 @@ Gépkonfigurációk:
   (`LOAD "név"`). A billentyűzet a magyar PC-kiosztást követi (QWERTZ, `0` az
   `1` bal oldalán, `ö ü ó` a 9 után).
 
+### TVC programkatalógus frissítése
+
+A katalógus a tvc.homeserver.hu programoldalairól készül (`scripts/build_catalog.mjs`), és a repóban tárolódik (`web/catalog/programs.json`, `web/shell/catalog.json`).
+
+Frissítés gombbal: GitHub → **Actions** → **Update TVC catalog** → **Run workflow**. Ha a lista változott, a munkafolyamat a main ágra commitolja, és elindítja az éles oldal fordítását.
+
+A munkafolyamat nem írja felül a listát, ha egyetlen oldal sem tölthető le, vagy ha a programok száma a korábbinak a felénél kevesebb lenne. Szándékos csökkenésnél a „force” jelölővel mégis felülírja.
+
 ### TVC bővítőportok
 
 A „TVC bővítőportok” panelen mind a négy porthoz (0–3) kiválasztható a kártya:

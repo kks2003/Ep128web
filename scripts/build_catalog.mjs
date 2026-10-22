@@ -181,10 +181,12 @@ async function main() {
 
   const programs = [];
   const seen = new Set();
+  let pagesLoaded = 0;
 
   for (const pageChar of pageNames) {
     try {
       const { html, pageUrl } = await loadPageHtml(pageChar);
+      pagesLoaded++;
       const entries = collectPageEntries(html, pageUrl);
 
       for (const entry of entries) {
@@ -196,6 +198,18 @@ async function main() {
     } catch (e) {
       // Missing page is expected on some letters
     }
+  }
+
+  // a failed download must not wipe the catalog: with no pages, or with far
+  // fewer programs than before, nothing is written (FORCE=1 overrides)
+  let previous = 0;
+  try { previous = JSON.parse(readFileSync(outFile, 'utf8')).length; } catch { }
+  if (!pagesLoaded || !programs.length) {
+    throw new Error('No catalog page could be loaded from ' + baseUrl);
+  }
+  if (programs.length < previous / 2 && process.env.FORCE !== '1') {
+    throw new Error(`Only ${programs.length} programs (${pagesLoaded} pages), ` +
+                    `the catalog had ${previous}: not written (FORCE=1 writes it)`);
   }
 
   const jsonStr = JSON.stringify(programs, null, 2) + '\n';
