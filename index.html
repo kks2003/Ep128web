@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610161819-f43a620">
-<meta name="build" content="202610161819-f43a620">
+<link rel="stylesheet" href="style.css?v=202610221359-09abc94">
+<meta name="build" content="202610221359-09abc94">
 </head>
 <body>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.16 20:19 · f43a620</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.22 15:59 · 09abc94</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -119,23 +119,13 @@
       <button id="tape-save">Letöltés</button>
       <label class="name"><input type="checkbox" id="tape-fast" checked> Gyors betöltés (turbó, amíg forog a szalag)</label>
     </div>
-    <div class="group">
+    <div class="group drive">
       <h3>Lemez (A:)</h3>
-      <span id="disk-name" class="name">nincs lemez</span>
-      <label class="file">Betöltés…
-        <input type="file" id="disk-file" accept=".img,.dsk,.zip">
-      </label>
-      <button id="disk-eject">Kiadás</button>
-      <button id="disk-save">Letöltés</button>
+      <div class="dslots" id="drive-a"></div>
     </div>
-    <div class="group">
+    <div class="group drive">
       <h3>Lemez (B:)</h3>
-      <span id="diskb-name" class="name">nincs lemez</span>
-      <label class="file">Betöltés…
-        <input type="file" id="diskb-file" accept=".img,.dsk,.zip">
-      </label>
-      <button id="diskb-eject">Kiadás</button>
-      <button id="diskb-save">Letöltés</button>
+      <div class="dslots" id="drive-b"></div>
     </div>
     <div class="group">
       <h3>FILE: eszköz</h3>
@@ -185,6 +175,10 @@
         <b>Cartridge</b>
         <span id="cart-name" class="name">nincs modul</span>
         <button id="cart-eject">Kiadás</button>
+      </div>
+      <div class="slot" id="fx-group">
+        <label title="2dfx grafikus kártya (F8h/F9h portok), Enterprise-on és TVC-n"><input type="checkbox" id="fx-on"> <b>2dfx</b> grafikus kártya</label>
+        <span id="fx-note" class="name"></span>
       </div>
       <h3 title="TVC: az 1. port ugyanaz, mint a beépített kurzorjoystick">Joystick</h3>
       <div id="joy-map"></div>
@@ -252,7 +246,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610161819-f43a620"></script>
-<script src="ep128.js?v=202610161819-f43a620"></script>
+<script src="ep128emu.js?v=202610221359-09abc94"></script>
+<script src="ep128.js?v=202610221359-09abc94"></script>
 </body>
 </html>
