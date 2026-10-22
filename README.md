@@ -242,6 +242,19 @@ python3 test/native_card_test.py     # a teljes emulátor natívan, saját mini 
 python3 test/native_card_test.py --roms ep128emu_roms-2.0.11.bin   # + a valódi TVC BASIC 2.2 bootolása, LOAD a flash drive-ról
 ```
 
+### 2dfx grafikus kártya
+
+A 2dfx Vaczkó Károly grafikus kártyája Enterprise-hoz és TVC-hez. Az oldal a kártya készítőjétől kapott hordozható C modullal emulálja (`web/src/twodfx/`). A Joystick panel „2dfx grafikus kártya” kapcsolójával dugható be, a beállítást az oldal megjegyzi.
+
+- **Portok:** F8h (parancs, státusz) és F9h (adat).
+- **Kép:** a kártya képe a gép képe fölé kerül. EP-n a NICK aktuális palettáján, TVC-n a TVC színein jelenik meg.
+- **Megszakítás:** a raszter-megszakítás EP-n a DAVE megszakításával VAGY-kapcsolatban, TVC-n a többi megszakítás mellett jut a Z80-hoz.
+- **Bekapcsolás:** a kártya a gép hideg resetjekor kap tápot. Ébresztése a `50h` paranccsal történik (`OUT 248,80`, majd `OUT 249,1`). A firmware-oldal az `OUT 248,142` paranccsal jelenik meg, a beépített demók a `C0h`–`DFh` parancsokkal indulnak (pl. `OUT 248,193`).
+- **TVC256k++:** TVC-n a kettő együtt nem működik. A 2dfx bekapcsolása kiveszi a TVC256k++ kártyát a portjából, a TVC256k++ betöltése pedig kikapcsolja a 2dfx-et.
+- **Pillanatkép:** a 2dfx állapotát az ep128emu pillanatképe (.ep128s) nem tartalmazza.
+
+A modul MIT licencű (Vaczkó Károly). A demókban lévő Wriggler- és Elite-adatokra a modul `ASSET_LICENSES.md` fájlja vonatkozik, ezeket a kártya készítőjének hozzájárulásával tartalmazza a repó.
+
 ## Fordítás
 
 ```sh
@@ -293,10 +306,11 @@ Egyszeri beállítás a repóban:
 - `web/src/sndfile_wav.cpp`, `web/stubs/` – minimális libsndfile (csak WAV
   olvasás a magnóhoz) és PortAudio típus-csonkok
 - `web/shell/` – HTML/CSS/JS felület (AudioWorklet, billentyűzet, fájlkezelés)
+- `web/src/twodfx/` – a 2dfx kártya hordozható emulátora (MIT), `web/src/twodfx_bridge.cpp` – bekötése a VM-ekbe (`patches/zzzz-2dfx.patch`)
 - `build.sh` – fordítás `em++`-szal
 
-Eltérések a natív ep128emu-tól: nincs debugger/monitor, Lua script, videó- és
-hangfelvétel, OpenGL effektek, egér; TVC-n az automatikus szövegbeíróval az „í”
+Eltérések a natív ep128emu-tól: nincs debugger/monitor, Lua script,
+OpenGL effektek, egér; TVC-n az automatikus szövegbeíróval az „í”
 nem gépelhető; a kép 768×288-as (a váltottsoros módok
 két félképe egybe van hajtva). A ZX Spectrum és CPC gépek nincsenek
 lefordítva.
