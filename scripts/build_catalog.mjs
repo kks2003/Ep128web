@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import https from 'node:https';
+import tls from 'node:tls';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-// Allow HTTPS to tvc.homeserver.hu even if intermediate cert is missing
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -155,6 +154,31 @@ function decodeHtml(buf) {
   }
 }
 
+// tvc.homeserver.hu sends its certificate without the ZeroSSL intermediate,
+// so the intermediate is added to the trusted roots: the connection is still
+// fully verified
+const trustedCAs = [
+  ...tls.rootCertificates,
+  readFileSync(path.join(__dirname, 'certs', 'zerossl-ecc-dv-ssl-ca2.pem'), 'utf8')
+];
+
+function download(url) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { ca: trustedCAs, headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
+      if (res.statusCode !== 200) {
+        res.resume();
+        reject(new Error(`HTTP ${res.statusCode}`));
+        return;
+      }
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+    req.on('error', reject);
+    req.setTimeout(30000, () => req.destroy(new Error('timeout')));
+  });
+}
+
 async function loadPageHtml(pageChar) {
   const pageFileName = `tvc_programok_${pageChar}.html`;
 
@@ -169,9 +193,7 @@ async function loadPageHtml(pageChar) {
 
   // Fallback to fetch over network
   const url = new URL(pageFileName, baseUrl).href;
-  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const buf = await res.arrayBuffer();
+  const buf = await download(url);
   return { html: decodeHtml(buf), pageUrl: url };
 }
 
@@ -181,10 +203,12 @@ async function main() {
 
   const programs = [];
   const seen = new Set();
+  let pagesLoaded = 0;
 
   for (const pageChar of pageNames) {
     try {
       const { html, pageUrl } = await loadPageHtml(pageChar);
+      pagesLoaded++;
       const entries = collectPageEntries(html, pageUrl);
 
       for (const entry of entries) {
@@ -196,6 +220,18 @@ async function main() {
     } catch (e) {
       // Missing page is expected on some letters
     }
+  }
+
+  // a failed download must not wipe the catalog: with no pages, or with far
+  // fewer programs than before, nothing is written (FORCE=1 overrides)
+  let previous = 0;
+  try { previous = JSON.parse(readFileSync(outFile, 'utf8')).length; } catch { }
+  if (!pagesLoaded || !programs.length) {
+    throw new Error('No catalog page could be loaded from ' + baseUrl);
+  }
+  if (programs.length < previous / 2 && process.env.FORCE !== '1') {
+    throw new Error(`Only ${programs.length} programs (${pagesLoaded} pages), ` +
+                    `the catalog had ${previous}: not written (FORCE=1 writes it)`);
   }
 
   const jsonStr = JSON.stringify(programs, null, 2) + '\n';

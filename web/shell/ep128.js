@@ -2876,13 +2876,27 @@ registerProcessor('ep-output', EPOutput);
     const types = [...new Set(catalogState.items.map((i) => i.type).filter(Boolean))].sort();
     const current = sel.value;
     sel.innerHTML = '<option value="">Minden típus</option>';
+    // the machine / expansion categories, from the words in the titles
+    const g = document.createElement('optgroup');
+    g.label = 'Gép, bővítés';
+    for (const t of CATALOG_TAGS) {
+      const opt = document.createElement('option');
+      opt.value = 'tag:' + t.id;
+      const n = catalogState.items.filter((i) => catalogTags(i.title).includes(t.id)).length;
+      opt.textContent = t.label + ' (' + n + ')';
+      g.appendChild(opt);
+    }
+    sel.appendChild(g);
+    const g2 = document.createElement('optgroup');
+    g2.label = 'Típus';
     for (const t of types) {
       const opt = document.createElement('option');
       opt.value = t;
       opt.textContent = t;
-      sel.appendChild(opt);
+      g2.appendChild(opt);
     }
-    if (types.includes(current)) sel.value = current;
+    sel.appendChild(g2);
+    if (types.includes(current) || current.startsWith('tag:')) sel.value = current;
   }
 
   function populateCatalogYearFilter() {
@@ -2957,6 +2971,8 @@ registerProcessor('ep-output', EPOutput);
       button.type = 'button';
       button.textContent = 'Betöltés';
       button.onclick = async () => {
+        // the program starts on the emulator screen: show it
+        $('screen-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
         await launchCatalogItem(entry);
       };
 
@@ -2980,7 +2996,8 @@ registerProcessor('ep-output', EPOutput);
       const entry = normalizeCatalogMeta(item);
       const haystack = `${entry.title} ${entry.description} ${entry.type}`.toLowerCase();
       const searchOk = !search || haystack.includes(search);
-      const typeOk = !type || entry.type === type;
+      const typeOk = !type || (type.startsWith('tag:')
+        ? catalogTags(entry.title).includes(type.slice(4)) : entry.type === type);
       let yearOk = true;
       if (year === '2000+') {
         const y = parseInt(entry.date, 10);
@@ -3000,20 +3017,69 @@ registerProcessor('ep-output', EPOutput);
     }
   }
 
-  // catalog programs marked "(DOS)" or "(UPM)" in their title run with the
-  // VT-DOS or UPM system cartridge, "(64k+)" ones on the TVC 64k+ with
-  // BASIC 2.2; the others on the TVC the user chose (when the catalog had
-  // switched away from it), else on the current one without a cartridge
+  // catalog programs with "DOS" or "UPM" in their title run with the VT-DOS
+  // or UPM system cartridge, "64k+" ones on the TVC 64k+ with BASIC 2.2,
+  // "256k++" ones with the TVC256k++ card, "2dfx" ones with the 2dfx card;
+  // the others on the TVC the user chose (when the catalog had switched away
+  // from it), else on the current one without a cartridge
   let userTvc = DEFAULT_TVC;        // the TVC without a cartridge the user chose
   let catalogSwitched = false;      // the catalog chose the current machine
 
+  // categories from words in the program titles: "Sargon (DOS)", "Fred (64k+)"
+  const CATALOG_TAGS = [
+    { id: 'dos', label: 'DOS (VT-DOS)', re: /(^|[^a-z0-9])dos([^a-z0-9]|$)/i },
+    { id: 'upm', label: 'UPM', re: /(^|[^a-z0-9])upm([^a-z0-9]|$)/i },
+    { id: '256k++', label: '256k++', re: /256k\+\+/i },
+    { id: '2dfx', label: '2dfx', re: /(^|[^a-z0-9])2dfx([^a-z0-9]|$)/i },
+    { id: '64k+', label: '64k+ (BASIC 2.2)', re: /64k\+(?!\+)/i }
+  ];
+  function catalogTags(title) {
+    return CATALOG_TAGS.filter((t) => t.re.test(title || '')).map((t) => t.id);
+  }
+
   function catalogMachine(item) {
-    const t = item.title || '';
-    if (/\(dos\)/i.test(t)) return 'tvc64p-22-vtdoscart';
-    if (/\(upm\)/i.test(t)) return 'tvc64p-12-upm';
-    if (/\(64k\+\)/i.test(t)) return 'tvc64p-22';
+    const tags = catalogTags(item.title);
+    if (tags.includes('dos')) return 'tvc64p-22-vtdoscart';
+    if (tags.includes('upm')) return 'tvc64p-12-upm';
+    if (tags.includes('64k+')) return 'tvc64p-22';
     if (catalogSwitched) return userTvc;
     return machine.cart ? plainTvc().id : machine.id;
+  }
+
+  // "256k++" programs need the TVC256k++ card, "2dfx" ones the 2dfx card
+  // (the two do not work together); returns true if the slots changed
+  function catalogCards(item) {
+    const tags = catalogTags(item.title);
+    let changed = false;
+    if (tags.includes('256k++')) {
+      if (fxOn) {
+        fxOn = false;
+        try { localStorage.setItem('ep128web.2dfx', '0'); } catch (e) { }
+      }
+      if (tvcSlotOf(SLOT_CARD256) < 0) {
+        let slot = tvcSlots.indexOf(SLOT_EMPTY);
+        if (slot < 0) slot = 3;
+        tvcSlots = tvcSlots.slice();
+        tvcSlots[slot] = SLOT_CARD256;
+        changed = true;
+      }
+    } else if (tags.includes('2dfx')) {
+      if (!fxOn) {
+        fxOn = true;
+        try { localStorage.setItem('ep128web.2dfx', '1'); } catch (e) { }
+      }
+      const slot = tvcSlotOf(SLOT_CARD256);
+      if (slot >= 0) {
+        tvcSlots = tvcSlots.slice();
+        tvcSlots[slot] = SLOT_EMPTY;
+        changed = true;
+      }
+    }
+    if (changed) {
+      try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots)); } catch (e) { }
+      refreshTvcSlotsUI();
+    }
+    return changed;
   }
 
   async function launchCatalogItem(item) {
@@ -3037,10 +3103,13 @@ registerProcessor('ep-output', EPOutput);
       const blob = await res.blob();
       const id = catalogMachine(item);
       const m = MACHINES.find((x) => x.id === id);
-      if (m && m !== machine) {
+      const cardsChanged = catalogCards(item);
+      if (m && (m !== machine || cardsChanged)) {
         autoTask = null;
         releaseAllKeys();
-        applyMachine(m);
+        applyMachine(m);              // with the cards, cold reset
+      } else {
+        apply2dfx();
       }
       catalogSwitched = machine.id !== userTvc;
       const file = new File([blob], fileName, {

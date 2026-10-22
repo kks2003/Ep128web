@@ -69,12 +69,20 @@ namespace TwoDfx {
     rawLine = 0U;
   }
 
-  void line(const uint8_t *palette, int rawX0)
+  void line(const uint8_t *palette, int rawX0, int activeStart, int activeEnd)
   {
     ovValid = false;
     if (!dev)
       return;
     twodfx_emu_hsync(dev, uint16_t(rawLine));
+    if (activeStart < 0)
+      activeStart = 0;
+    if (activeEnd > 768)
+      activeEnd = 768;
+    if (activeEnd <= activeStart) {
+      rawLine++;                        // border only: nothing to cover
+      return;
+    }
     size_t  shift = 0;
     if (rawX0 < 0) {
       // the display starts left of raw X 0: those pixels are not covered
@@ -88,7 +96,9 @@ namespace TwoDfx {
     rawLine++;
     if (!n)
       return;
-    for (int x = 0; x < 768; x++)
+    std::memset(ovCoverage, 0, size_t(activeStart));
+    std::memset(ovCoverage + activeEnd, 0, size_t(768 - activeEnd));
+    for (int x = activeStart; x < activeEnd; x++)
       ovColour[x] = palette[ovIndex[x] & 15];
     ovValid = true;
   }
