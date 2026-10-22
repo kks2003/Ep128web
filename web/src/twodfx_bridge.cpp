@@ -69,7 +69,8 @@ namespace TwoDfx {
     rawLine = 0U;
   }
 
-  void line(const uint8_t *palette, int rawX0, int activeStart, int activeEnd)
+  void line(const uint8_t *palette, int rawX0, int activeStart, int activeEnd,
+            int pixelStep)
   {
     ovValid = false;
     if (!dev)
@@ -96,6 +97,13 @@ namespace TwoDfx {
     rawLine++;
     if (!n)
       return;
+    if (pixelStep == 2) {
+      // every second pixel (at even display X), doubled
+      for (int x = 0; x < 768; x += 2) {
+        ovIndex[x + 1] = ovIndex[x];
+        ovCoverage[x + 1] = ovCoverage[x];
+      }
+    }
     std::memset(ovCoverage, 0, size_t(activeStart));
     std::memset(ovCoverage + activeEnd, 0, size_t(768 - activeEnd));
     for (int x = activeStart; x < activeEnd; x++)

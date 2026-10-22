@@ -262,10 +262,11 @@ python3 test/native_card_test.py --roms ep128emu_roms-2.0.11.bin   # + a valódi
 
 ### 2dfx grafikus kártya
 
-A 2dfx Vaczkó Károly grafikus kártyája Enterprise-hoz és TVC-hez. Az oldal a kártya készítőjétől kapott hordozható C modullal emulálja (`web/src/twodfx/`). A Joystick panel „2dfx grafikus kártya” kapcsolójával dugható be, a beállítást az oldal megjegyzi.
+A 2dfx Vaczkó Károly grafikus kártyája Enterprise-hoz és TVC-hez. Az oldal a kártya készítőjétől kapott hordozható C modullal emulálja (`web/src/twodfx/`). A beépített demók (`C0h`–`DFh`) a kártya v1.1.0-s firmware-ének eredeti C forrásaiból fordulnak (`firmware_eggs/`). A Joystick panel „2dfx grafikus kártya” kapcsolójával dugható be, a beállítást az oldal megjegyzi.
 
 - **Portok:** F8h (parancs, státusz) és F9h (adat).
-- **Kép:** a kártya képe a gép képe fölé kerül. EP-n a NICK aktuális palettáján, TVC-n a TVC színein jelenik meg.
+- **Kép:** a kártya képe a gép képe fölé kerül, de csak a képterületen: a bordert sosem írhatja felül (EP-n a sor margói között, TVC-n a papíron). EP-n a NICK aktuális palettáján, TVC-n a TVC színein jelenik meg.
+- **TVC felbontás:** a külső színbemenetek teljes felbontása csak Graphics 2 módban érvényes. Graphics 4 és 16 módban a TVC a 2dfx-nek csak minden második képpontját rajzolja ki, duplán.
 - **Megszakítás:** a raszter-megszakítás EP-n a DAVE megszakításával VAGY-kapcsolatban, TVC-n a többi megszakítás mellett jut a Z80-hoz.
 - **Reset:** a gép reset vonala a kártya mikrovezérlőjének reset lábára is rá van kötve, ezért a meleg és a hideg reset is újraindítja a kártyát, mintha most kapcsolták volna be. Ébresztése a `50h` paranccsal történik (`OUT 248,80`, majd `OUT 249,1`). A firmware-oldal az `OUT 248,142` paranccsal jelenik meg, a beépített demók a `C0h`–`DFh` parancsokkal indulnak (pl. `OUT 248,193`).
 - **TVC256k++:** TVC-n a kettő együtt nem működik. A 2dfx bekapcsolása kiveszi a TVC256k++ kártyát a portjából, a TVC256k++ betöltése pedig kikapcsolja a 2dfx-et.

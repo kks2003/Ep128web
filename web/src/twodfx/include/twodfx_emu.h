@@ -5,7 +5,7 @@
 #define TWODFX_EMU_H
 /* Independently implemented portable 2dfx host API (C99).
  * Copyright (c) 2026 Károly Vaczkó; MIT License.
- * Original RP2354B firmware implementation is not included.
+ * The public v1.1.0 egg C source is supplied; private MCU fast paths are not.
  */
 #include <stddef.h>
 #include <stdint.h>
@@ -76,7 +76,6 @@ typedef struct {
  * Copies validated 2bpp public-format pixels into this device instance;
  * survives SYS_RESET and physicalPowerCycle just like firmware ROM artwork.
  * Invalid length / reserved colour=3 is rejected atomically.
- * Re-inject after old snapshot load if artwork was not saved there (v6 saves it).
  * The public artwork ships with the module. clear_logo_art() restores the
  * immutable built-in artwork, discarding any host-supplied test override. */
 int twodfx_emu_set_logo_art(twodfx_emu *d, const void *packed, size_t nbytes);

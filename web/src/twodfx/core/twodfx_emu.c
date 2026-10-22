@@ -1,12 +1,14 @@
 /* SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Károly Vaczkó
  */
-/* 2dfx portable C99 behavioural emulator; no RP2354 firmware code. */
+/* Portable 2dfx device core; MCU-private rendering code is excluded. */
+#define twodfx_resource_job_status twodfx_emu_job_status_type
 #include "twodfx_emu.h"
+#undef twodfx_resource_job_status
 #include "twodfx_raster.h"
 #include "twodfx_3d.h"
 #include "2dfx_builtin_logo.h"
-#include "twodfx_firmware_page.h"
+#include "../firmware_eggs/firmware_page.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -65,7 +67,7 @@ struct twodfx_emu {
   uint16_t logo_x, logo_y;
   uint8_t logo_main, logo_accent;
   uint8_t logo_art[TWODFX_EMU_LOGO_BYTES];
-  twodfx_resource_job_status resource_job;
+  twodfx_emu_job_status_type resource_job;
   uint8_t job_format;
   uint32_t job_source, job_destination, job_output_bytes;
   twodfx_font_descriptor fonts[64];
@@ -393,7 +395,7 @@ void twodfx_emu_write_f8(twodfx_emu *d, uint8_t c) {
   /* SYS_RESET is the exception to strict upload/UNZX sessions. */
   if (d->awake && c == 0x8f) {
     uint8_t mode = d->engine;
-    clear_application(d);  /* implementation 1: synchronous reset, see LIMITATIONS. */
+    clear_application(d);  /* Synchronous guest SYS_RESET of the logical device state. */
     d->engine = mode;
     return;
   }
@@ -435,7 +437,7 @@ static void ctrl_commit(twodfx_emu *d) {
   if (c == 0x50) {
     d->engine = d->params[0] == 0 ? TWODFX_EMU_ENGINE_OFF :
                 (d->params[0] == 255 ? TWODFX_EMU_ENGINE_FORCED : TWODFX_EMU_ENGINE_NORMAL);
-    if (d->params[0]) d->awake = 1; /* Wake completes immediately in implementation 1. */
+    if (d->params[0]) d->awake = 1; /* Wake completes on the control write. */
   } else if (c == 0x51) d->fps = d->params[0] ? 25 : 50;
   else if (c == 0x52) d->overrun_visual = d->params[0] != 0;
   else if (c >= 0x54 && c <= 0x57) {
@@ -451,7 +453,7 @@ static void ctrl_commit(twodfx_emu *d) {
     d->logo_visible = 1;
   }
   else if (c == 0x5b) {
-    /* Proposed wire map; must be confirmed against v1.1.0 firmware stream. */
+    /* Public firmware v1.1.0 DEFINE_FONT command encoding. */
     twodfx_font_descriptor *f = &d->fonts[d->params[0] & 63u];
     f->resource_address = addr23(d->params+1);
     f->width_units = (uint8_t)(((d->params[4] >> 4) & 15u) + 1u);
@@ -481,13 +483,13 @@ static void ctrl_commit(twodfx_emu *d) {
     unsigned nt=(unsigned)d->params[5] | ((unsigned)d->params[6]<<8);
     twodfx_3d_define(&d->scene3d,d->params[0],addr23(d->params+1),nv,nt);
   } else if (c == 0x87) {
-    twodfx_3d_set_projection(&d->scene3d,
+    twodfx_3d_scene_set_projection(&d->scene3d,
       (uint16_t)((unsigned)d->params[0]|((unsigned)d->params[1]<<8)),
       (uint16_t)((unsigned)d->params[2]|((unsigned)d->params[3]<<8)),
       (uint16_t)((unsigned)d->params[4]|((unsigned)d->params[5]<<8)),
       (uint16_t)((unsigned)d->params[6]|((unsigned)d->params[7]<<8)));
   } else if (c == 0x88) {
-    twodfx_3d_set_camera(&d->scene3d,d->params);
+    twodfx_3d_scene_set_camera(&d->scene3d,d->params);
   }
 }
 void twodfx_emu_write_f9(twodfx_emu *d, uint8_t value) {
@@ -971,32 +973,8 @@ static void render_frame(twodfx_emu *d) {
   replay_2d(d,&r,1u);
   draw_builtin_logo(d,&r);
 }
-#include "../eggs/twodfx_egg_cf.inc"
-#include "../eggs/twodfx_egg_d0.inc"
-#include "../eggs/twodfx_egg_draw.inc"
-#include "../eggs/twodfx_egg_3d_helpers.inc"
-#include "../eggs/twodfx_egg_primitive_scene.inc"
-#include "../eggs/twodfx_egg_c2.inc"
-#include "../eggs/twodfx_egg_d2.inc"
-#include "../eggs/twodfx_egg_d1.inc"
-#include "../eggs/twodfx_egg_c7.inc"
-#include "../eggs/twodfx_egg_c5.inc"
-#include "../eggs/twodfx_egg_c6.inc"
-#include "../eggs/twodfx_egg_c3.inc"
-#include "../eggs/twodfx_egg_c4.inc"
-#include "../eggs/twodfx_egg_cd.inc"
-#include "../eggs/twodfx_egg_ce.inc"
-#include "../eggs/twodfx_egg_c8.inc"
-#include "../eggs/twodfx_egg_c9.inc"
-#include "../eggs/twodfx_egg_ca.inc"
-#include "../eggs/twodfx_egg_c0.inc"
-#include "../eggs/twodfx_egg_c1.inc"
-#include "../eggs/twodfx_egg_cb.inc"
-#include "../eggs/twodfx_egg_cc.inc"
-#include "../eggs/twodfx_egg_df.inc"
-#include "../eggs/twodfx_egg_d3.inc"
-#include "../eggs/twodfx_egg_d4.inc"
-#include "../eggs/twodfx_egg_d5.inc"
+#include "twodfx_public_api_adapter.inc"
+#include "twodfx_source_eggs.inc"
 void twodfx_emu_set_render_enabled(twodfx_emu *d, int enabled) {
   if(d) d->render_enabled = (uint8_t)(enabled!=0);
 }
@@ -1010,8 +988,18 @@ void twodfx_emu_vsync(twodfx_emu *d) {
   if (d->terminal == 1u) {
     unsigned width=twodfx_emu_framebuffer_width(d);
     unsigned height=twodfx_emu_framebuffer_height(d);
-    twodfx_firmware_page_render(d->frame_colour,d->frame_coverage,width,height,
-                                d->machine==TWODFX_EMU_TVC);
+    (void)width; (void)height;
+    egg_api_bind(d);
+    twodfx_firmware_page_build_shadow_scene("1.1.0");
+    egg_api_bind(NULL);
+    memcpy(d->active_spt,d->shadow_spt,sizeof d->active_spt);
+    memcpy(d->active_2dpt,d->shadow_2dpt,sizeof d->active_2dpt);
+    memcpy(d->active_fonts,d->fonts,sizeof d->active_fonts);
+    memcpy(d->active_bitmaps,d->bitmaps,sizeof d->active_bitmaps);
+    memcpy(d->active_patterns,d->patterns,sizeof d->active_patterns);
+    memcpy(d->active_tilesets,d->tilesets,sizeof d->active_tilesets);
+    memcpy(d->active_tilemaps,d->tilemaps,sizeof d->active_tilemaps);
+    render_frame(d);
     d->engine=TWODFX_EMU_ENGINE_FORCED;
     d->transparent=0;
     d->fps=50;
@@ -1036,55 +1024,8 @@ void twodfx_emu_vsync(twodfx_emu *d) {
     /* Start at the accepted scene boundary, not inside the F8h write. */
     /* The reference scheduler runs the start callback instead of tick on
        activation; the first periodic tick is at the NEXT accepted scene. */
-    if(d->egg_pending) {
-      if(d->egg_id==0u) egg_activate_c0(d);
-      else if(d->egg_id==1u) egg_activate_c1(d);
-      else if(d->egg_id==11u) egg_activate_cb(d);
-      else if(d->egg_id==12u) egg_activate_cc(d);
-      else if(d->egg_id==31u) egg_activate_df(d);
-      else if(d->egg_id==15u) egg_activate_cf(d);
-      else if(d->egg_id==16u) egg_activate_d0(d);
-      else if(d->egg_id==2u) egg_activate_c2(d);
-      else if(d->egg_id==17u) egg_activate_d1(d);
-      else if(d->egg_id==18u) egg_activate_d2(d);
-      else if(d->egg_id==7u) egg_activate_c7(d);
-      else if(d->egg_id==5u) egg_activate_c5(d);
-      else if(d->egg_id==6u) egg_activate_c6(d);
-      else if(d->egg_id==3u) egg_activate_c3(d);
-      else if(d->egg_id==4u) egg_activate_c4(d);
-      else if(d->egg_id==13u) egg_activate_cd(d);
-      else if(d->egg_id==14u) egg_activate_ce(d);
-      else if(d->egg_id==8u) egg_activate_c8(d);
-      else if(d->egg_id==9u) egg_activate_c9(d);
-      else if(d->egg_id==10u) egg_activate_ca(d);
-      else if(d->egg_id==19u) egg_activate_d3(d);
-      else if(d->egg_id==20u) egg_activate_d4(d);
-      else if(d->egg_id==21u) egg_activate_d5(d);
-    } else {
-      if(d->egg_id==0u) egg_tick_c0(d);
-      else if(d->egg_id==1u) egg_tick_c1(d);
-      else if(d->egg_id==11u) egg_tick_cb(d);
-      else if(d->egg_id==12u) egg_tick_cc(d);
-      else if(d->egg_id==31u) egg_tick_df(d);
-      else if(d->egg_id==15u) egg_tick_cf(d);
-      else if(d->egg_id==16u) egg_tick_d0(d);
-      else if(d->egg_id==2u) egg_tick_c2(d);
-      else if(d->egg_id==17u) egg_tick_d1(d);
-      else if(d->egg_id==18u) egg_tick_d2(d);
-      else if(d->egg_id==7u) egg_tick_c7(d);
-      else if(d->egg_id==5u) egg_tick_c5(d);
-      else if(d->egg_id==6u) egg_tick_c6(d);
-      else if(d->egg_id==3u) egg_tick_c3(d);
-      else if(d->egg_id==4u) egg_tick_c4(d);
-      else if(d->egg_id==13u) egg_tick_cd(d);
-      else if(d->egg_id==14u) egg_tick_ce(d);
-      else if(d->egg_id==8u) egg_tick_c8(d);
-      else if(d->egg_id==9u) egg_tick_c9(d);
-      else if(d->egg_id==10u) egg_tick_ca(d);
-      else if(d->egg_id==19u) egg_tick_d3(d);
-      else if(d->egg_id==20u) egg_tick_d4(d);
-      else if(d->egg_id==21u) egg_tick_d5(d);
-    }
+    if (d->egg_pending) source_egg_start(d,d->egg_id);
+    else if (d->egg_id != 0xffu) source_egg_tick(d,d->egg_id);
     memcpy(d->active_spt, d->shadow_spt, sizeof d->active_spt);
     memcpy(d->active_2dpt, d->shadow_2dpt, sizeof d->active_2dpt);
     memcpy(d->active_fonts, d->fonts, sizeof d->active_fonts);
@@ -1172,7 +1113,7 @@ int twodfx_emu_get_2dpt(const twodfx_emu *d, unsigned fg, unsigned slot, int act
 uint64_t twodfx_emu_video_frame_count(const twodfx_emu *d) { return d ? d->video_frames : 0; }
 int twodfx_emu_collision_detected(const twodfx_emu *d) { return d && d->collision_reported; }
 
-twodfx_resource_job_status twodfx_emu_resource_job_status(const twodfx_emu *d) {
+twodfx_emu_job_status_type twodfx_emu_resource_job_status(const twodfx_emu *d) {
   return d ? d->resource_job : TWODFX_RESOURCE_JOB_NONE;
 }
 uint32_t twodfx_emu_resource_job_output_bytes(const twodfx_emu *d) {
@@ -1307,15 +1248,14 @@ static void snap_body(snapshot_io *s, twodfx_emu *d) {
   snap_u8(s,&d->egg_tail);
   snap_u8(s,&d->egg_overflow);
   snap_bytes(s,d->egg_fifo,sizeof d->egg_fifo);
-  /* v8: TVC D0 deterministic diagnostic animation; stored after the v7
-     egg fields so earlier snapshot-field fixtures remain understandable. */
+  /* Serialized TVC diagnostic state. */
   snap_u16(s,&d->d0_mode_ticks);
   snap_u16(s,&d->d0_boundary);
   snap_i16(s,&d->d0_boundary_step);
   snap_u8(s,&d->d0_mode);
   snap_u8(s,&d->d0_flash_phase);
   snap_u8(s,&d->d0_set_key_next_tick);
-  /* v9: public primitive showcase and ruler timing, per emulator instance. */
+  /* Serialized emulator animation and input state. */
   snap_u32(s,&d->egg_frame);
   snap_u16(s,&d->d1_position);
   snap_u16(s,&d->d1_pause);
@@ -1328,13 +1268,13 @@ static void snap_body(snapshot_io *s, twodfx_emu *d) {
   snap_u8(s,&d->pong_score_l);snap_u8(s,&d->pong_score_r);
   snap_u8(s,&d->pong_prev);snap_u8(s,&d->pong_input);
   snap_u8(s,&d->pong_flash);
-  snap_u8(s,&d->egg_stage); /* v10: C3/C4 resumable font/bitmap bank loading */
-  /* v11: C8/C9 use established Pong/frame state. CA has camera state. */
+  snap_u8(s,&d->egg_stage); /* Resource installation progression. */
+  /* Camera and interactive animation state. */
   snap_u16(s,&d->ca_camera_x);snap_u16(s,&d->ca_camera_y);
   snap_u16(s,&d->ca_target_x);snap_u16(s,&d->ca_target_y);
   snap_u16(s,&d->ca_pause);snap_u8(s,&d->ca_route);
   snap_u8(s,&d->ca_phase);
-  /* v6+ self-contained public artwork and optional test override. */
+  /* Public logo artwork and optional host override. */
   snap_u8(s, &d->logo_art_loaded);
   snap_u16(s, &d->logo_x);
   snap_u16(s, &d->logo_y);
@@ -1342,7 +1282,7 @@ static void snap_body(snapshot_io *s, twodfx_emu *d) {
   snap_u8(s, &d->logo_accent);
   snap_bytes(s,d->logo_art,sizeof d->logo_art);
   snap_u8(s, &job);
-  if (s->reader && !s->bad) d->resource_job = (twodfx_resource_job_status)job;
+  if (s->reader && !s->bad) d->resource_job = (twodfx_emu_job_status_type)job;
   snap_u8(s, &d->job_format);
   snap_u32(s, &d->job_source);
   snap_u32(s, &d->job_destination);
@@ -1433,7 +1373,7 @@ static void snap_body(snapshot_io *s, twodfx_emu *d) {
       snap_u16(s,&pr[k]->near_z);snap_u16(s,&pr[k]->far_z);
     }
   }
-  /* v13 appends state rather than moving any v12 field offset. */
+  /* Deterministic tunnel state in snapshot format v13. */
   snap_u8(s,&d->tunnel_mode);snap_u8(s,&d->tunnel_profile);
   snap_u8(s,&d->tunnel_ship);snap_u8(s,&d->tunnel_zoom);
   snap_u8(s,&d->tunnel_auto);snap_u16(s,&d->tunnel_phase);
@@ -1523,59 +1463,8 @@ static int snapshot_valid(const twodfx_emu *d) {
   } else if (d->d0_mode_ticks || d->d0_boundary || d->d0_boundary_step ||
              d->d0_mode || d->d0_flash_phase || d->d0_set_key_next_tick)
     return 0;
-  /* v9 portable egg state must be consistent even for CRC-valid inputs. */
-  if(d->egg_id==17u && !d->egg_pending) {
-    unsigned limit=d->machine==TWODFX_EMU_TVC?703u:820u;
-    if(d->d1_mode>=2u && d->d1_mode!=4u && d->d1_mode!=5u)
-      limit=d->machine==TWODFX_EMU_TVC?311u:314u;
-    if(d->d1_mode>7u || d->d1_hold>=4u || d->d1_pause>100u ||
-       d->d1_position>limit)return 0;
-  } else if(d->d1_position || d->d1_pause || d->d1_mode || d->d1_hold)
-    return 0;
-  if(d->egg_id!=0u && d->egg_id!=1u && d->egg_id!=12u && d->egg_id!=31u &&
-     d->egg_id!=2u && d->egg_id!=3u && d->egg_id!=4u &&
-     d->egg_id!=5u && d->egg_id!=6u && d->egg_id!=7u &&
-     d->egg_id!=8u && d->egg_id!=9u && d->egg_id!=10u &&
-     d->egg_id!=13u && d->egg_id!=14u &&
-     d->egg_id!=17u && d->egg_id!=18u &&
-     d->egg_id!=19u && d->egg_id!=20u && d->egg_id!=21u && d->egg_frame)
-    return 0;
-  if(d->egg_id==3u && !d->egg_pending){
-    if(d->egg_stage>5u && d->egg_stage!=7u)return 0;
-    if(d->egg_stage<5u && d->egg_frame)return 0;
-  }else if(d->egg_id==4u && !d->egg_pending){
-    if(d->egg_stage>4u && d->egg_stage!=7u)return 0;
-    if(d->egg_stage<4u && d->egg_frame)return 0;
-  }else if(d->egg_id==1u && !d->egg_pending) {
-    if(d->egg_stage>1u)return 0;
-  }else if(d->egg_stage)return 0;
-  if(d->egg_pending && (d->egg_frame || d->d1_position || d->d1_pause ||
-                        d->d1_mode || d->d1_hold))return 0;
-  if((d->egg_id==7u || d->egg_id==8u) && !d->egg_pending) {
-    unsigned xx,yy,ww,hh;
-    egg_c7_geometry(d,&xx,&yy,&ww,&hh);
-    if(d->pong_left<(int)yy+10 || d->pong_left>(int)(yy+hh-58u) ||
-       d->pong_right<(int)yy+10 || d->pong_right>(int)(yy+hh-58u) ||
-       d->pong_dx<-4 || d->pong_dx>4 || d->pong_dy<-6 || d->pong_dy>6 ||
-       d->pong_score_l>9u || d->pong_score_r>9u ||
-       d->pong_serve>30u || d->pong_flash>20u ||
-       d->pong_x<(int)xx-16 || d->pong_x>(int)(xx+ww+16u) ||
-       d->pong_y<(int)yy || d->pong_y>(int)(yy+hh))return 0;
-  } else if(d->pong_left || d->pong_right || d->pong_x || d->pong_y ||
-            d->pong_dx || d->pong_dy || d->pong_serve || d->pong_score_l ||
-            d->pong_score_r || d->pong_prev || d->pong_input || d->pong_flash)
-    return 0;
-  if(d->egg_id==10u && !d->egg_pending){
-    if(d->ca_route>=10u || d->ca_phase>1u || d->ca_pause>100u ||
-       d->ca_camera_x>146u*16u || d->ca_camera_y>88u*8u ||
-       d->ca_target_x>146u*16u || d->ca_target_y>88u*8u ||
-       (d->ca_camera_x&1u) ||
-       d->ca_target_x!=(unsigned)egg_ca_route[d->ca_route][0]*16u ||
-       d->ca_target_y!=(unsigned)egg_ca_route[d->ca_route][1]*8u)
-      return 0;
-  }else if(d->ca_camera_x || d->ca_camera_y || d->ca_target_x ||
-            d->ca_target_y || d->ca_pause || d->ca_route || d->ca_phase)
-    return 0;
+  /* Original firmware eggs have process-global state outside this device
+     structure. Mid-animation snapshot restoration requires egg state hooks. */
   /* A CRC-valid image is not necessarily a safe parser state.  In
      particular CTRL has only ten bytes of backing ctrl_raw storage. */
   switch (d->session) {

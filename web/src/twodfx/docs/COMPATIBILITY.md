@@ -1,24 +1,27 @@
-# Compatibility and verification scope
+# Supported behavior and validation boundaries
 
-The real **2dfx v1.1.0 firmware is hardware validated**. The portable module independently reproduces its public interfaces but has **not been certified pixel-for-pixel or event-for-event** against complete hardware captures.
+The library implements the publicly documented 2dfx v1.1.0 command semantics, preserving the full original firmware-resident egg source and SHOW_FW content. It is an emulation of externally visible behaviour, not a simulation of RP2354 instruction execution, DMA, PIO or wall-clock renderer speed.
 
-| Functional area | Portable implementation / qualification |
+| Subsystem | Scope / qualification |
 |---|---|
-| F8/F9 parser, sessions, 8 MiB uploads, RAW/NICK/TVC conversion, ZX1, resources | Implemented and exercised by synthetic unit tests; physical bus timing edge cases require hardware comparison |
-| 2DPT BG/FG, frame-latched camera and scene, sprites, collisions, raster IRQ | Logical implementations and regression coverage; host IRQ/video wiring to be verified in real Enterprise/TVC VMs |
-| 2D primitives, fonts, bitmaps, patterns, tilemaps, fill and clipping | Implemented; isolated pixel and boundary differences are possible |
-| 3D mesh API, 10-bit rotations, culling/projection | Implemented; final clipping/visibility/ordering precision versus physical render may differ |
-| SHOW_FW and original 2dfx logo | Included; physical screenshot comparison still useful |
-| Eggs C0–CF, D0–D2 and DF | Runtime candidate for each command ID; some frame choreography, effects and edge pixels approximate |
-| Egg D3 | Authentic Elite-derived demo ship geometry retained; generic rendering and choreography are approximate |
-| Egg D4 | Specialized curved-tunnel/Asp visual behavior approximated with an independently implemented renderer, six modes and F9 controls |
-| Egg D5 | Public mesh tunnel and Asp showcase, multi-ring modes and alternating resource banks; exact scene and plume behavior remain approximations |
-| Snapshots | Format v13, exact-size/CRC/invariant verification; incompatible with older formats |
-| TVC256+++ | Existing VM feature is outside this module; preserve its separate implementation during integration |
-| RP2354B render-time/overrun | Intentionally NOT modeled. Device overrun duration cannot be inferred from portable host speed |
+| F8h/F9h parser, resource RAM and uploads | Supported; normal guest command streams, RAW/NICK/TVC conversion and ZX1 |
+| Sprites, descriptors, BG/FG 2DPT, transparency and compositing | Implemented against shared renderer, frame-latched publication and indexed output |
+| 2D graphics, bitmap/text/pattern/tilemap, clipping | Implemented; command-level validation and hardware edge-pixel capture tests may improve confidence |
+| Camera, indexed meshes and 3D operations | Public 10-bit angles/mesh interface and renderer available; no MCU-specific fast paths |
+| Raster interrupts and collision | Exposed as guest-visible logical state; VM must map IRQ/HSYNC correctly |
+| SHOW_FW and built-in logo | Original firmware screen builder and artwork present; separate SHOW_FW pixel-diff certification not asserted |
+| 23 firmware egg IDs | Original v1.1.0 C program and public resources present for each supported ID; CF and D0 are TVC-specific |
+| Elite C3D spacecraft | Five original source models: Cobra Mk III, Asp Mk II, Sidewinder, Viper, Krait; D4 Asp reused |
+| Device snapshots | v13 CRC/invariant validation; **not all egg-private static animation state is captured** |
+| Multiple cards simultaneously | Engine state is instance-local, but original egg source contains process-global statics; concurrent independently active egg programs require refactoring |
+| RP2354 render-overrun and real-time diagnostic timing | Deliberately not modeled; diagnostics use portable substitutions |
 
-All 23 Easter egg IDs are present in source; **23 implemented IDs is not the same as 23 physically verified demos**.
+## Hardware comparison
 
-The C9 Wriggler sprite captures and Elite ship models are included **unchanged** to preserve the original firmware showcase appearance. They are third-party-derived material **outside this project's MIT grant** and may be removed without advance notice; see `ASSET_LICENSES.md`.
+On **22 October 2026**, Károly Vaczkó, creator of 2dfx, reported that all applicable Easter eggs in the browser-based Enterprise and TVC emulator appeared **identical to the physical 2dfx hardware** under manual observation. This is empirical visual feedback, **not** an automated framebuffer pixel diff, exhaustive edge-case sweep, bus-cycle timing verification or multi-device validation.
 
-The supplied C++ adapter is a thin buildable connector **not a patched or validated ep128emu branch**. Zoltán Balogh and Károly Kiss can independently wire the same host ABI; physical waveform/image tests and regression of existing TVC256+++ behavior are integration-stage tasks.
+Native smoke testing checks startup/frame progression of supported egg commands, SHOW_FW and a selection of public API opcode mappings. Platform integrators should also validate their own VM's video overlay timing, profile-specific palettes, snapshot/lifecycle wiring and interactions with other expansion cards, including TVC256+++.
+
+## Third-party content
+
+The embedded Elite/Wriggler-derived showcase data is included as authentic demonstration content; **its rights are not conveyed under the MIT license**. See `ASSET_LICENSES.md`.
