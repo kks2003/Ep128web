@@ -2971,6 +2971,8 @@ registerProcessor('ep-output', EPOutput);
       button.type = 'button';
       button.textContent = 'Betöltés';
       button.onclick = async () => {
+        // the program starts on the emulator screen: show it
+        $('screen-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
         await launchCatalogItem(entry);
       };
 
