@@ -232,7 +232,7 @@
         try { localStorage.setItem('ep128web.joymap', JSON.stringify(joyTarget)); } catch (e) { }
         for (const k of Object.keys(joySource)) joySource[k] = 0;
         updateJoysticks();
-        canvas.focus();
+        canvas.focus({ preventScroll: true });
       };
       row.appendChild(name);
       row.appendChild(sel);
@@ -693,7 +693,7 @@
       api.cardSelectDrive(0);
       api.usbChdir(dir);
     });
-    canvas.focus();
+    canvas.focus({ preventScroll: true });
   }
 
   // deletes everything from the pendrive (it is formatted again)
@@ -913,7 +913,7 @@
       releaseAllKeys();
       applyMachine(plainTvc());
       setMessage('Cartridge eltávolítva');
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
       return;
     }
     if (!cartridgeName) return;
@@ -925,7 +925,7 @@
     }
     updateCartridgeUI();
     setMessage('Cartridge eltávolítva');
-    canvas.focus();
+    canvas.focus({ preventScroll: true });
   }
 
   function loadCartridgeFile(f) {
@@ -1425,7 +1425,7 @@ registerProcessor('ep-output', EPOutput);
         // every file in FILE: goes along (e.g. to the TVC256k++ PSRAM drive)
         lastStoredFiles = names.slice();
         startProgram(n);
-        canvas.focus();
+        canvas.focus({ preventScroll: true });
       };
       list.append(b);
     });
@@ -1677,7 +1677,7 @@ registerProcessor('ep-output', EPOutput);
       b.onclick = () => {
         box.hidden = true;
         startAutostart('load "' + n + '"\n', null, false, tvcRedirectFor(SLOT_UPM));
-        canvas.focus();
+        canvas.focus({ preventScroll: true });
       };
       list.appendChild(b);
     }
@@ -1841,7 +1841,7 @@ registerProcessor('ep-output', EPOutput);
         r.type = 'radio';
         r.name = 'drive' + d;
         r.checked = drives[d].active === i;
-        r.onchange = () => { selectSlot(d, i); canvas.focus(); };
+        r.onchange = () => { selectSlot(d, i); canvas.focus({ preventScroll: true }); };
         const nm = document.createElement('span');
         nm.className = 'dname';
         nm.textContent = (i + 1) + '. ' + (s ? s.name : 'üres');
@@ -1860,13 +1860,13 @@ registerProcessor('ep-output', EPOutput);
         dl.textContent = '⬇';
         dl.title = 'Letöltés: a lemezkép mentése';
         dl.disabled = !s;
-        dl.onclick = () => { if (s) download(slotBytes(d, i), s.name); canvas.focus(); };
+        dl.onclick = () => { if (s) download(slotBytes(d, i), s.name); canvas.focus({ preventScroll: true }); };
         const x = document.createElement('button');
         x.textContent = '✕';
         x.className = 'dclear';
         x.title = 'A lemez kivétele (a hely üres lesz)';
         x.disabled = !s;
-        x.onclick = () => { clearSlot(d, i); canvas.focus(); };
+        x.onclick = () => { clearSlot(d, i); canvas.focus({ preventScroll: true }); };
         row.append(pick, open, dl, x);
         box.append(row);
       }
@@ -1894,7 +1894,7 @@ registerProcessor('ep-output', EPOutput);
       } catch (err) {
         setMessage(String(err.message || err), true);
       }
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     };
   }
 
@@ -2005,7 +2005,7 @@ registerProcessor('ep-output', EPOutput);
     const locked = () => document.pointerLockElement === canvas;
     btn.onclick = () => {
       if (!ready) return;
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
       if (canvas.requestPointerLock) canvas.requestPointerLock();
     };
     document.addEventListener('pointerlockchange', () => {
@@ -2096,7 +2096,7 @@ registerProcessor('ep-output', EPOutput);
     for (const n of names) {
       const b = document.createElement('button');
       b.textContent = n;
-      b.onclick = () => { box.hidden = true; startProgram(n); canvas.focus(); };
+      b.onclick = () => { box.hidden = true; startProgram(n); canvas.focus({ preventScroll: true }); };
       list.appendChild(b);
     }
     showChooser(box);
@@ -2126,7 +2126,7 @@ registerProcessor('ep-output', EPOutput);
       b.onclick = () => {
         box.hidden = true;
         onChoose('cas', f);
-        canvas.focus();
+        canvas.focus({ preventScroll: true });
       };
       list.appendChild(b);
     }
@@ -2137,7 +2137,7 @@ registerProcessor('ep-output', EPOutput);
       b.onclick = () => {
         box.hidden = true;
         onChoose('wav', f);
-        canvas.focus();
+        canvas.focus({ preventScroll: true });
       };
       list.appendChild(b);
     }
@@ -2191,7 +2191,7 @@ registerProcessor('ep-output', EPOutput);
       console.error(e);
       setMessage(String(e.message || e), true);
     }
-    canvas.focus();
+    canvas.focus({ preventScroll: true });
   }
 
   function processLoadedFiles(files) {
@@ -2347,7 +2347,7 @@ registerProcessor('ep-output', EPOutput);
     sel.hidden = !(fmt.mp4 && fmt.webm);
     sel.onchange = () => {
       try { localStorage.setItem('ep128web.videoFmt', sel.value); } catch (e) { }
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     };
   }
 
@@ -2704,7 +2704,7 @@ registerProcessor('ep-output', EPOutput);
       inp.value = '';
       fit();
     });
-    $('tb-full').onclick = () => { toggleFullscreen(); canvas.focus(); };
+    $('tb-full').onclick = () => { toggleFullscreen(); canvas.focus({ preventScroll: true }); };
   }
 
   function toggleFullscreen() {
@@ -2756,7 +2756,7 @@ registerProcessor('ep-output', EPOutput);
         releaseAllKeys();
         applyMachine(machine);        // loads the card ROMs, cold reset
       }
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     };
     $('tvc-slots-default').onclick = () => {
       selects.forEach((sel, i) => { sel.value = String(TVC_DEFAULT_SLOTS[i]); });
@@ -2797,7 +2797,7 @@ registerProcessor('ep-output', EPOutput);
     api.reset(cold ? 1 : 0);
     keyedSinceReset = false;
     resumeAudio();
-    canvas.focus();
+    canvas.focus({ preventScroll: true });
   }
 
   function toggleTurbo() {
@@ -3066,7 +3066,7 @@ registerProcessor('ep-output', EPOutput);
       autoTask = null;
       releaseAllKeys();
       applyMachine(m);
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     });
 
     $('btn-reset').onclick = () => reset(false);
@@ -3081,14 +3081,14 @@ registerProcessor('ep-output', EPOutput);
       if (machine.type === 1)
         setTvcRedirect(defaultTvcLoadRedirect());
       typeText('load"*"\n');
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     };
     const btnRun = $('btn-run');
     if (btnRun) btnRun.onclick = () => {
       if (machine.type === 1)
         setTvcRedirect(defaultTvcLoadRedirect());
       typeText('run\n');
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     };
     setupMouse();
     setupUsbUI();
@@ -3098,11 +3098,11 @@ registerProcessor('ep-output', EPOutput);
       download(M.FS.readFile('/tmp/save.ep128s'), 'ep128-' +
                new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.ep128s');
     };
-    $('btn-shot').onclick = () => { saveScreenshot(); canvas.focus(); };
-    $('btn-video').onclick = () => { toggleVideoRec(); canvas.focus(); };
+    $('btn-shot').onclick = () => { saveScreenshot(); canvas.focus({ preventScroll: true }); };
+    $('btn-video').onclick = () => { toggleVideoRec(); canvas.focus({ preventScroll: true }); };
     setupVideoFormat();
-    $('btn-audio').onclick = () => { toggleAudioRec(); canvas.focus(); };
-    $('btn-mute').onclick = () => { toggleMute(); canvas.focus(); };
+    $('btn-audio').onclick = () => { toggleAudioRec(); canvas.focus({ preventScroll: true }); };
+    $('btn-mute').onclick = () => { toggleMute(); canvas.focus({ preventScroll: true }); };
     $('volume').oninput = (e) => {
       applyVolume();
       try { localStorage.setItem('ep128web.volume', e.target.value); } catch (er) { }
@@ -3114,7 +3114,7 @@ registerProcessor('ep-output', EPOutput);
     $('volume').oninput({ target: $('volume') });
 
     setupTouchControls();
-    $('chooser-cancel').onclick = () => { $('chooser').hidden = true; canvas.focus(); };
+    $('chooser-cancel').onclick = () => { $('chooser').hidden = true; canvas.focus({ preventScroll: true }); };
     $('file-any').onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
     const fileGames = $('file-games');
     if (fileGames) fileGames.onchange = (e) => { loadFiles(e.target.files); e.target.value = ''; };
@@ -3125,16 +3125,16 @@ registerProcessor('ep-output', EPOutput);
         if (machine.type === 1) writeMemory(2821, 5);
         api.tapeCommand(1);
       }
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     };
-    $('tape-stop').onclick = () => { if (tapeName) api.tapeCommand(0); canvas.focus(); };
-    $('tape-rew').onclick = () => { if (tapeName) api.tapeCommand(2); canvas.focus(); };
-    $('tape-rec').onclick = () => { if (tapeName) api.tapeCommand(3); canvas.focus(); };
+    $('tape-stop').onclick = () => { if (tapeName) api.tapeCommand(0); canvas.focus({ preventScroll: true }); };
+    $('tape-rew').onclick = () => { if (tapeName) api.tapeCommand(2); canvas.focus({ preventScroll: true }); };
+    $('tape-rec').onclick = () => { if (tapeName) api.tapeCommand(3); canvas.focus({ preventScroll: true }); };
     $('tape-new').onclick = () => {
       tapeName = 'tape-' + Date.now().toString(36) + '.tap';
       check(api.setTape('/tape/' + tapeName), 'kazetta');
       $('tape-name').textContent = tapeName + ' (üres)';
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     };
     $('tape-save').onclick = () => {
       if (!tapeName) return;
@@ -3168,7 +3168,7 @@ registerProcessor('ep-output', EPOutput);
       } catch (err) {
         setMessage(String(err.message || err), true);
       }
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
     };
     $('files-clear').onclick = () => {
       for (const n of M.FS.readdir('/files'))
@@ -3177,7 +3177,7 @@ registerProcessor('ep-output', EPOutput);
     };
     const cartEject = $('cart-eject');
     if (cartEject) cartEject.onclick = ejectCartridge;
-    $('tape-fast').onchange = (e) => { tapeFast = e.target.checked; canvas.focus(); };
+    $('tape-fast').onchange = (e) => { tapeFast = e.target.checked; canvas.focus({ preventScroll: true }); };
     renderJoyMap();
     setupTvcSlotsUI();
 
@@ -3189,7 +3189,7 @@ registerProcessor('ep-output', EPOutput);
       wrap.classList.remove('drag');
       if (e.dataTransfer.files.length) loadFiles(e.dataTransfer.files);
     });
-    canvas.addEventListener('pointerdown', () => { resumeAudio(); canvas.focus(); });
+    canvas.addEventListener('pointerdown', () => { resumeAudio(); canvas.focus({ preventScroll: true }); });
     document.addEventListener('pointerdown', resumeAudio, { once: true });
     setupCatalogUI();
   }
@@ -3435,7 +3435,7 @@ registerProcessor('ep-output', EPOutput);
     applyMachine(machine);
     if (audioCtx && audioCtx.state !== 'running') $('click-hint').hidden = false;
     else resumeAudio();
-    canvas.focus();
+    canvas.focus({ preventScroll: true });
     requestAnimationFrame(frame);
   }
 
