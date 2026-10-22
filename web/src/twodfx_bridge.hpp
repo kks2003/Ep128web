@@ -26,8 +26,11 @@ namespace TwoDfx {
   void vsync();
   // after rendering a scanline: 'palette' converts the 2dfx colour indices
   // 0..15 to the machine's colour bytes; 'rawX0' is the raw 2dfx X
-  // coordinate of the first pixel of the 768 pixel wide display line
-  void line(const uint8_t *palette, int rawX0);
+  // coordinate of the first pixel of the 768 pixel wide display line;
+  // the card can only replace the pixels of the display area of the line
+  // (from 'activeStart' to 'activeEnd', in display pixels), never the
+  // border, like on the real machines (NICK / CRTC display enable)
+  void line(const uint8_t *palette, int rawX0, int activeStart, int activeEnd);
   // the raster interrupt request
   bool irqActive();
   // 768 colour bytes and coverage flags (1 = 2dfx pixel) of the scanline
