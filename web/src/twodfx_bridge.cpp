@@ -61,12 +61,12 @@ namespace TwoDfx {
     return (dev ? twodfx_emu_read_f8(dev) : uint8_t(0xFF));
   }
 
-  void vsync()
+  void vsync(int firstLine)
   {
     if (!dev)
       return;
     twodfx_emu_vsync(dev);
-    rawLine = 0U;
+    rawLine = unsigned(firstLine);
   }
 
   void line(const uint8_t *palette, int rawX0, int activeStart, int activeEnd,
@@ -84,6 +84,8 @@ namespace TwoDfx {
       rawLine++;                        // border only: nothing to cover
       return;
     }
+    // the first display X of an odd raw X
+    const int odd = (rawX0 + 1) & 1;
     size_t  shift = 0;
     if (rawX0 < 0) {
       // the display starts left of raw X 0: those pixels are not covered
@@ -98,10 +100,12 @@ namespace TwoDfx {
     if (!n)
       return;
     if (pixelStep == 2) {
-      // every second pixel (at even display X), doubled
-      for (int x = 0; x < 768; x += 2) {
-        ovIndex[x + 1] = ovIndex[x];
-        ovCoverage[x + 1] = ovCoverage[x];
+      // the pixels at odd raw X, doubled (CFh bit-pattern test on the real
+      // TVC: of the 4 pixel patterns only bits 2 and 0 are displayed)
+      for (int x = odd; x < 768; x += 2) {
+        int     p = (odd ? x - 1 : x + 1);
+        ovIndex[p] = ovIndex[x];
+        ovCoverage[p] = ovCoverage[x];
       }
     }
     std::memset(ovCoverage, 0, size_t(activeStart));

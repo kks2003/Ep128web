@@ -95,7 +95,7 @@
                                          unsigned int currentSlot_)
    {
 +    if (newState)
-+      TwoDfx::vsync();
++      TwoDfx::vsync(0);
      if (vm.getIsDisplayEnabled())
        vm.display.vsyncStateChange(newState, currentSlot_);
      if (vm.videoCapture)
@@ -149,7 +149,7 @@
        Ep128::Z80::executeInterrupt();
    }
  
-@@ -680,9 +702,16 @@
+@@ -680,9 +702,18 @@
            vm.irqState = vm.irqState | m;
        }
      }
@@ -157,7 +157,9 @@
 +      // only over the paper; the full resolution of the external colour
 +      // inputs is used in Graphics 2 only, in Graphics 4 and 16 the TVC
 +      // displays every second 2dfx pixel, doubled
-+      TwoDfx::line(twoDfxTVCPalette, 0,
++      // 2dfx raw X = display X - 2: the BASIC paper (display X 128..639,
++      // lines 24..263) is raw X 126..637, Y 49..288, as in the firmware
++      TwoDfx::line(twoDfxTVCPalette, -2,
 +                   paperStartPos * 8, paperEndPos * 8, (videoMode ? 2 : 1));
      if (vm.getIsDisplayEnabled())
        vm.display.drawLine(buf, nBytes);
@@ -166,16 +168,16 @@
      if (vm.videoCapture)
        vm.videoCapture->horizontalSync(buf, nBytes);
    }
-@@ -692,6 +721,8 @@
+@@ -692,6 +723,8 @@
    {
      if (newState && vm.card256)
        vm.card256->videoVSync();
 +    if (newState)
-+      TwoDfx::vsync();
++      TwoDfx::vsync(4);
      if (vm.getIsDisplayEnabled())
        vm.display.vsyncStateChange(newState, currentSlot_);
      if (vm.videoCapture)
-@@ -1436,6 +1467,11 @@
+@@ -1436,6 +1469,11 @@
          0x0000, 0x007F, &ioPortDebugReadCallback, (void *) this, 0x0000);
      ioPorts.setWriteCallback(
          0x0000, 0x007F, &ioPortWriteCallback, (void *) this, 0x0000);

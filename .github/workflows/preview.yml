@@ -12,8 +12,11 @@ permissions:
   contents: write
   pull-requests: write
 
+# each PR has its own queue: a PR closed by a merge must not push the live
+# site's build (pages.yml) out of a shared queue, where GitHub keeps only
+# one pending run; parallel pushes to gh-pages are retried by the deploy
 concurrency:
-  group: gh-pages-deploy
+  group: pr-preview-${{ github.event.number }}
   cancel-in-progress: false
 
 jobs:
