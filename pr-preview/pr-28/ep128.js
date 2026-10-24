@@ -6911,6 +6911,36 @@ ep.log('CTRL+ESC megnyomva');`
     else resumeAudio();
     canvas.focus({ preventScroll: true });
     requestAnimationFrame(frame);
+    setupPwa();
+  }
+
+  // --- installable app (PWA): offline worker, install button, files opened from the OS ---
+  function setupPwa() {
+    if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+      navigator.serviceWorker.register('sw.js').catch((e) => console.warn('service worker:', e));
+    }
+    const btn = $('btn-install');
+    let prompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      prompt = e;
+      btn.hidden = false;
+    });
+    btn.onclick = async () => {
+      if (!prompt) return;
+      prompt.prompt();
+      await prompt.userChoice.catch(() => { });
+      prompt = null;
+      btn.hidden = true;
+    };
+    window.addEventListener('appinstalled', () => { btn.hidden = true; });
+    if ('launchQueue' in window) {
+      window.launchQueue.setConsumer(async (params) => {
+        if (!params.files || !params.files.length) return;
+        const files = await Promise.all(params.files.map((h) => h.getFile()));
+        loadFiles(files);
+      });
+    }
   }
 
   main().catch((e) => {
