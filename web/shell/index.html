@@ -72,6 +72,37 @@
     <div id="click-hint" hidden>Kattints vagy koppints a képre a hang bekapcsolásához</div>
   </div>
 
+  <dialog id="dm">
+    <div class="dm-head"><b id="dm-title"></b><button id="dm-close" title="Bezárás">✕</button></div>
+    <div id="dm-new" hidden>
+      <p class="small">A hely üres. Új, formázott lemez:</p>
+      <label>Formátum <select id="dm-format"></select></label>
+      <label>Név <input id="dm-newname" size="12" placeholder="lemez"></label>
+      <button id="dm-create">Létrehozás</button>
+    </div>
+    <div id="dm-main" hidden>
+      <div id="dm-info" class="small"></div>
+      <div id="dm-note" class="small warn">Ez a lemez a meghajtóban van: a változás azonnal rákerül. Ha a DOS a régi könyvtárat tartja a memóriában, adj ki egy DIR-t, vagy indítsd újra a gépet.</div>
+      <div class="dm-tool">
+        <span id="dm-path" class="dbg-mono"></span>
+        <select id="dm-user" title="UPM user szám"></select>
+        <label class="file" title="Fájlok feltöltése a lemezre (ZIP kibontva); ide is húzhatod őket">Feltöltés…<input type="file" id="dm-upload" multiple></label>
+        <button id="dm-mkdir">Új mappa</button>
+        <button id="dm-label">Kötetnév</button>
+        <button id="dm-zip" title="A kijelölt fájlok letöltése (több fájl ZIP-ben)">Kijelöltek letöltése</button>
+        <button id="dm-del">Kijelöltek törlése</button>
+        <button id="dm-image" title="Az egész lemezkép letöltése">Lemezkép</button>
+      </div>
+      <div class="dm-scroll">
+        <table id="dm-table">
+          <thead><tr><th><input type="checkbox" id="dm-all" title="Mind"></th><th>Név</th><th>Méret</th><th id="dm-th-date">Dátum</th><th>Attr.</th><th></th></tr></thead>
+          <tbody id="dm-list"></tbody>
+        </table>
+      </div>
+      <p class="small">Fájlokat ide is húzhatsz. ▶ indítás, ⬇ letöltés, ✎ átnevezés, ✕ törlés; CAS-nál az Attr. oszlopra kattintva AutoRun be/ki.</p>
+    </div>
+  </dialog>
+
   <div id="touch-bar">
     <button id="tb-kbd" aria-pressed="false">⌨ Billentyűzet</button>
     <button id="tb-joy" aria-pressed="false">🕹 Joystick</button>

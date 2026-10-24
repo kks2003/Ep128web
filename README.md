@@ -43,6 +43,15 @@ Mindkét meghajtónak 3 helye van, egymás alatt. Egy hely sora:
 - **📂 Megnyitás:** lemezkép (.dsk, .img, .zip) feltöltése a helyre. A hely aktív lesz, az A:-n a lemez ki is listázódik.
 - **⬇ Letöltés:** a lemezkép mentése.
 - **✕ Törlés:** kiveszi a lemezt, a hely üres lesz.
+- **🗂 Tartalom** (üres helynél **＋ Új lemez**): a lemezkezelő, lásd lent.
+
+**Lemezkezelő.** A lemez fájljai egy ablakban: VT-DOS és EXDOS (FAT12, könyvtárakkal, kötetnévvel) és UPM (CP/M 2.2, user számokkal).
+- Feltöltés gombbal vagy ráhúzással (ZIP kibontva), letöltés (több fájl ZIP-ben), átnevezés, törlés, új mappa, az egész lemezkép letöltése.
+- ▶ indítás: a gép betölti a programot erről a lemezről (TVC: `LOAD` a VT-DOS / UPM kártyával, ha kell, beteszi a kártyát; EP: `RUN`/`LOAD "A:…"` az EXDOS-szal).
+- CAS fájloknál az AutoRun jelző (a programfejléc indítás-bájtja) egy kattintással be- és kikapcsolható.
+- Üres helyen új, formázott lemez: VT-DOS/EXDOS 720K vagy 360K, TVC-n UPM is.
+- A változás azonnal a lemezképre és a böngésző tárolójába kerül; ha a lemez a meghajtóban van, újra behelyeződik. Ha a DOS a régi könyvtárat tartja a memóriában, egy DIR vagy újraindítás segít.
+- A lemezkezelő kód a [TVC-DiskManager](https://github.com/kks2003/TVC-DiskManager) magjának másolata (`web/shell/diskmgr`, MIT); a két projekt független egymástól.
 
 A lemezképeket és a kiválasztott helyeket a böngésző megjegyzi (IndexedDB), újratöltés után is megvannak. Amit a gép a lemezre ír, az is mentődik, amikor a meghajtó lámpája elalszik.
 
