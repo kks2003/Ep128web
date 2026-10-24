@@ -43,6 +43,8 @@ namespace TwoDfx {
   const uint8_t *currentOverlay();
   const uint8_t *currentCoverage();
   void clearOverlay();
+  // debugger: the device (twodfx_emu *), or 0 when the card is not used
+  void *device();
 
 }
 

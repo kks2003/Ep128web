@@ -21,7 +21,16 @@
 #include "tvc64vm.hpp"
 #include "tvc_soundcards.hpp"
 #include "tvc256kpp.hpp"
+#include "tvc256kpp_fs.hpp"
+#include "card/sprite.h"
 #include "twodfx_bridge.hpp"
+#include "webdebug.hpp"
+#include "webscript.hpp"
+#include "bplist.hpp"
+#include "debuglib.hpp"
+extern "C" {
+#include "twodfx_emu.h"
+}
 #include "decompm2.hpp"
 
 #include <emscripten/emscripten.h>
@@ -302,6 +311,30 @@ namespace {
 
 extern "C" {
 
+// debugger: memory and I/O watchpoints, set on each new machine
+static Ep128Emu::BreakPointList debugWatchPoints;
+
+// the Lua script of the debugger (made for the current machine)
+static WebLuaScript *luaScript = (WebLuaScript *) 0;
+
+static void applyDebugWatchPoints()
+{
+  if (!vm)
+    return;
+  vm->clearBreakPoints();
+  Ep128Emu::BreakPointList  bpl(debugWatchPoints);
+  if (luaScript)
+    luaScript->addBreakPoints(bpl);
+  if (WebDebug::ioLogEnabled()) {
+    // the I/O log sees the accesses through breakpoints on every port
+    for (int i = 0; i < 256; i++)
+      bpl.addIOBreakPoint(uint16_t(i), true, true, 0);
+  }
+  vm->setBreakPoints(bpl);
+  vm->setBreakPointPriorityThreshold(0);
+  vm->setBreakPointCallback(&WebDebug::breakPointCallback, (void *) vm);
+}
+
 // 2dfx card (Enterprise and TVC), on ports F8h, F9h
 static bool twoDfxWanted = false;
 
@@ -322,6 +355,10 @@ EMSCRIPTEN_KEEPALIVE int ep_set_machine_type(int type)
   try {
     if (type == machineType && vm)
       return 0;
+    if (luaScript) {
+      delete luaScript;                 // it belongs to the old machine
+      luaScript = (WebLuaScript *) 0;
+    }
     if (vm) {
       delete vm;
       vm = (Ep128Emu::VirtualMachine *) 0;
@@ -346,6 +383,9 @@ EMSCRIPTEN_KEEPALIVE int ep_set_machine_type(int type)
       vm->setSoundClockFrequency(500000);
     }
     machineType = (type == 1 ? 1 : 0);
+    WebDebug::setVM(vm);
+    WebDebug::clearStop();              // a new machine runs
+    applyDebugWatchPoints();
     TwoDfx::configure(twoDfxWanted, machineType);
     vm->setEnableMemoryTimingEmulation(true);
     vm->setAudioOutputHighQuality(true);
@@ -406,6 +446,7 @@ EMSCRIPTEN_KEEPALIVE int ep_reset(int isColdReset)
 {
   try {
     vm->reset(isColdReset != 0);
+    WebDebug::clearStop();              // the machine starts again
     // the machine's RESET line is wired to the 2dfx microcontroller's reset
     // pin: a warm reset restarts the card just like switching it on
     TwoDfx::powerCycle();
@@ -419,6 +460,8 @@ EMSCRIPTEN_KEEPALIVE int ep_reset(int isColdReset)
 EMSCRIPTEN_KEEPALIVE int ep_run(int microseconds)
 {
   try {
+    if (WebDebug::stopReason() != WebDebug::RUNNING)
+      return 0;                         // stopped in the debugger
     vm->run(size_t(microseconds));
     return 0;
   }
@@ -493,6 +536,7 @@ EMSCRIPTEN_KEEPALIVE int ep_load_snapshot(const char *fileName)
     Ep128Emu::File  f(fileName);
     vm->registerChunkTypes(f);
     f.processAllChunks();
+    WebDebug::clearStop();
     return 0;
   }
   catch (...) {
@@ -904,6 +948,42 @@ EMSCRIPTEN_KEEPALIVE int ep_usb_delete(const char *path)
 
 extern uint32_t card_usb_writes;        // card/diskio-emu.c
 
+// the overlay graphics of the TVC256k++ card (card/tvc-graphics.c,
+// card/tvc-io-regs.c)
+extern sprite_t sprites[SPRITES_NUM];
+extern volatile int8_t videoMode;
+extern uint8_t registerSpriteBaseAddress, registerScreenBaseAddr;
+extern uint8_t registerScreenColorBaseAddr, registerFontBaseAddr;
+extern volatile uint8_t registerBitmapBaseAddr;
+
+// the card's overlay: "mode spriteBase bitmapBase screenBase colorBase
+// fontBase" (card RAM addresses), then a line per sprite: "x y enabled
+// foreground colour phase fullColour"
+EMSCRIPTEN_KEEPALIVE const char *ep_dbg_card256_gfx()
+{
+  static std::string out;
+  out.clear();
+  if (machineType != 1 || !TVC256kpp::current)
+    return out.c_str();
+  char    tmp[96];
+  std::snprintf(tmp, sizeof(tmp), "%d %u %u %u %u %u\n", int(videoMode),
+                unsigned(registerSpriteBaseAddress & 0x07) * 0x4000U,
+                unsigned(registerBitmapBaseAddr & 0x03) * 0x8000U,
+                unsigned(registerScreenBaseAddr & 0x7F) * 0x0400U,
+                unsigned(registerScreenColorBaseAddr & 0x7F) * 0x0400U,
+                unsigned(registerFontBaseAddr & 0x3F) * 0x0800U);
+  out += tmp;
+  for (int i = 0; i < SPRITES_NUM; i++) {
+    const sprite_t& sp = sprites[i];
+    std::snprintf(tmp, sizeof(tmp), "%u %u %d %d %u %u %d\n",
+                  unsigned(sp.x), unsigned(sp.y), int(sp.enabled),
+                  int(sp.foreground), unsigned(sp.color), unsigned(sp.phase),
+                  int(sp.fullColor));
+    out += tmp;
+  }
+  return out.c_str();
+}
+
 // 0: size in kB, 1: free space in kB, 2: number of sector writes so far
 EMSCRIPTEN_KEEPALIVE double ep_usb_info(int which)
 {
@@ -944,6 +1024,520 @@ EMSCRIPTEN_KEEPALIVE void ep_set_tvc_ext_joy(int joyIndex, int state)
     TVC64::TVC64VM *tvc = static_cast<TVC64::TVC64VM *>(vm);
     tvc->setExtJoyState(joyIndex, (uint8_t)state);
   }
+}
+
+// ----------------------------------------------------------------------------
+// Debugger (see webdebug.hpp)
+
+// 0: running, else the reason of the stop (WebDebug::StopReason)
+EMSCRIPTEN_KEEPALIVE int ep_dbg_state()
+{
+  return WebDebug::stopReason();
+}
+
+// "reason pc addr value" of the stop
+EMSCRIPTEN_KEEPALIVE const char *ep_dbg_info()
+{
+  static char buf[64];
+  std::snprintf(buf, sizeof(buf), "%d %d %d %d",
+                WebDebug::stopReason(), int(WebDebug::stopPC()),
+                int(WebDebug::stopAddr()), int(WebDebug::stopValue()));
+  return buf;
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_pause()
+{
+  WebDebug::pause();
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_continue()
+{
+  WebDebug::resume(false, -1);
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_step()
+{
+  WebDebug::resume(true, -1);
+}
+
+// runs until 'addr' (run to cursor, step over)
+EMSCRIPTEN_KEEPALIVE void ep_dbg_run_to(int addr)
+{
+  WebDebug::resume(false, int32_t(addr & 0xFFFF));
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_set_bp(int addr, int enabled)
+{
+  WebDebug::setBreakPoint(uint16_t(addr & 0xFFFF), enabled != 0);
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_clear_bps()
+{
+  WebDebug::clearBreakPoints();
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_watch_clear()
+{
+  debugWatchPoints = Ep128Emu::BreakPointList();
+  WebDebug::clearWatchPoints();
+  applyDebugWatchPoints();
+}
+
+// a memory (CPU address) or I/O port watchpoint, for reads and/or writes
+EMSCRIPTEN_KEEPALIVE void ep_dbg_watch_add(int isIO, int addr, int r, int w)
+{
+  WebDebug::setWatchPoint(isIO != 0, uint16_t(addr & 0xFFFF), r != 0, w != 0);
+  if (isIO)
+    debugWatchPoints.addIOBreakPoint(uint16_t(addr & 0xFFFF), r != 0, w != 0, 0);
+  else
+    debugWatchPoints.addMemoryBreakPoint(uint16_t(addr & 0xFFFF),
+                                         r != 0, w != 0, false, false, 0);
+  applyDebugWatchPoints();
+}
+
+// the Z80 registers: PC AF BC DE HL IX IY SP AF' BC' DE' HL' I R IM IFF1
+// IFF2, then the segments of the 4 pages (space separated decimal numbers)
+EMSCRIPTEN_KEEPALIVE const char *ep_dbg_regs()
+{
+  static char buf[256];
+  const Ep128::Z80_REGISTERS& r =
+      static_cast< const Ep128Emu::VirtualMachine * >(vm)->getZ80Registers();
+  std::snprintf(buf, sizeof(buf),
+                "%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d",
+                int(r.PC.W.l), int(r.AF.W), int(r.BC.W), int(r.DE.W),
+                int(r.HL.W), int(r.IX.W), int(r.IY.W), int(r.SP.W),
+                int(r.altAF.W), int(r.altBC.W), int(r.altDE.W),
+                int(r.altHL.W), int(r.I),
+                int((r.R & 0x7F) | (r.RBit7 & 0x80)), int(r.IM),
+                int(r.IFF1 != 0), int(r.IFF2 != 0),
+                int(vm->getMemoryPage(0)), int(vm->getMemoryPage(1)),
+                int(vm->getMemoryPage(2)), int(vm->getMemoryPage(3)));
+  return buf;
+}
+
+// sets a register, in the order of ep_dbg_regs()
+EMSCRIPTEN_KEEPALIVE void ep_dbg_set_reg(int n, int value)
+{
+  Ep128::Z80_REGISTERS& r = vm->getZ80Registers();
+  uint16_t  v = uint16_t(value & 0xFFFF);
+  switch (n) {
+  case 0:
+    // the Z80 would take a new PC only after an instruction; stopped at an
+    // instruction boundary it can be set at once (and shown at once)
+    r.PC.W.l = v;
+    vm->setProgramCounter(v);           // drops a PC change still pending
+    break;
+  case 1: r.AF.W = v; break;
+  case 2: r.BC.W = v; break;
+  case 3: r.DE.W = v; break;
+  case 4: r.HL.W = v; break;
+  case 5: r.IX.W = v; break;
+  case 6: r.IY.W = v; break;
+  case 7: r.SP.W = v; break;
+  case 8: r.altAF.W = v; break;
+  case 9: r.altBC.W = v; break;
+  case 10: r.altDE.W = v; break;
+  case 11: r.altHL.W = v; break;
+  case 12: r.I = uint8_t(v); break;
+  case 13: r.R = uint8_t(v & 0x7F); r.RBit7 = uint8_t(v & 0x80); break;
+  case 14: r.IM = uint8_t(v < 3 ? v : 2); break;
+  case 15: r.IFF1 = uint8_t(v ? 1 : 0); break;
+  case 16: r.IFF2 = uint8_t(v ? 1 : 0); break;
+  }
+}
+
+// 'count' disassembled lines from 'addr' (CPU address), one per line
+EMSCRIPTEN_KEEPALIVE const char *ep_dbg_disasm(int addr, int count)
+{
+  static std::string out;
+  out.clear();
+  uint32_t  a = uint32_t(addr & 0xFFFF);
+  std::string line;
+  for (int i = 0; i < count; i++) {
+    line.clear();
+    a = vm->disassembleInstruction(line, a, true) & 0xFFFF;
+    out += line;
+    out += '\n';
+  }
+  return out.c_str();
+}
+
+// memory of the debugger's memory view: 0: CPU address, 1: physical
+// (segment * 16384 + offset), 2: 2dfx resource RAM, 3: TVC256k++ PSRAM
+static int debugMemRead(int src, uint32_t a)
+{
+  switch (src) {
+  case 0:
+    return vm->readMemory(a & 0xFFFF, true);
+  case 1:
+    return vm->readMemory(a & 0x3FFFFF, false);
+  case 2:
+    {
+      const twodfx_emu  *d = static_cast< const twodfx_emu * >(TwoDfx::device());
+      return (d ? twodfx_emu_resource_byte(d, a) : -1);
+    }
+  case 3:
+    if (TVC256kpp::current && a < TVC256kpp::current->psramSize())
+      return TVC256kpp::current->psram()[a];
+    return -1;
+  case 4:                               // TVC256k++: the card's fast RAM
+    if (TVC256kpp::current && a < 0x48000U)   // TVC_RAM_SIZE (card_shim.h)
+      return TVC256kppFS::fastRam()[a];
+    return -1;
+  }
+  return -1;
+}
+
+// 'len' bytes (max. 4096) from 'addr' of memory 'src' (see above); bytes
+// that do not exist read as 0
+EMSCRIPTEN_KEEPALIVE const uint8_t *ep_dbg_mem(int addr, int len, int src)
+{
+  static uint8_t buf[4096];
+  if (len > 4096)
+    len = 4096;
+  for (int i = 0; i < len; i++) {
+    int     v = debugMemRead(src, uint32_t(addr) + uint32_t(i));
+    buf[i] = uint8_t(v < 0 ? 0 : v);
+  }
+  return buf;
+}
+
+// 1 if memory 'src' exists (the card is in use)
+EMSCRIPTEN_KEEPALIVE int ep_dbg_mem_valid(int src)
+{
+  return (debugMemRead(src, 0) >= 0 ? 1 : 0);
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_poke(int addr, int value, int src)
+{
+  uint32_t  a = uint32_t(addr);
+  if (src == 0 || src == 1) {
+    vm->writeMemory(src ? (a & 0x3FFFFF) : (a & 0xFFFF), uint8_t(value), src == 0);
+  }
+  else if (src == 3 && TVC256kpp::current &&
+           a < TVC256kpp::current->psramSize()) {
+    TVC256kpp::current->psram()[a] = uint8_t(value);
+  }
+  else if (src == 4 && TVC256kpp::current && a < 0x48000U) {
+    TVC256kppFS::fastRam()[a] = uint8_t(value);
+  }
+}
+
+// assembles one line of the monitor's A command ("A 1234 LD A,5") to CPU
+// memory; returns the address after the instruction, or -1 on error
+// (ep_last_error())
+EMSCRIPTEN_KEEPALIVE int ep_dbg_assemble(const char *line)
+{
+  try {
+    std::vector< std::string >  args;
+    Ep128Emu::tokenizeString(args, line);
+    uint32_t  a = Ep128::Z80Disassembler::assembleInstruction(args, *vm, true, 0);
+    return int(Ep128::Z80Disassembler::getNextInstructionAddr(*vm, a, true) & 0xFFFF);
+  }
+  catch (std::exception& e) {
+    lastError = e.what();
+    return -1;
+  }
+}
+
+// monitor O command: writes an I/O port
+EMSCRIPTEN_KEEPALIVE void ep_dbg_out(int port, int value)
+{
+  vm->writeIOPort(uint16_t(port & 0xFFFF), uint8_t(value));
+}
+
+// the I/O registers of the machine (NICK / DAVE / CRTC ...), as text
+EMSCRIPTEN_KEEPALIVE const char *ep_dbg_io_regs()
+{
+  static std::string buf;
+  buf.clear();
+  vm->listIORegisters(buf);
+  return buf.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_history_enable(int on)
+{
+  WebDebug::enableHistory(on != 0);
+}
+
+// the PCs of the last 'n' instructions (oldest first), as hex numbers
+EMSCRIPTEN_KEEPALIVE const char *ep_dbg_history(int n)
+{
+  static std::string out;
+  static std::vector< uint16_t >  buf;
+  if (n < 0)
+    n = 0;
+  buf.resize(size_t(n) + 1);
+  n = WebDebug::getHistory(&(buf[0]), n);
+  out.clear();
+  char    tmp[8];
+  for (int i = 0; i < n; i++) {
+    std::snprintf(tmp, sizeof(tmp), "%04X ", unsigned(buf[i]));
+    out += tmp;
+  }
+  return out.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_profile_enable(int on)
+{
+  WebDebug::enableProfiler(on != 0);
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_profile_clear()
+{
+  WebDebug::clearProfiler();
+}
+
+// the 65536 instruction counters of the profiler
+EMSCRIPTEN_KEEPALIVE const uint32_t *ep_dbg_profile()
+{
+  return WebDebug::profilerCounts();
+}
+
+// Lua debugger script (the scripting of ep128emu): runs 'code'; the text
+// printed is returned by ep_lua_output()
+EMSCRIPTEN_KEEPALIVE int ep_lua_run(const char *code)
+{
+  if (!vm)
+    return -1;
+  try {
+    if (!luaScript) {
+      luaScript = new WebLuaScript(*vm);
+      WebLuaScript::breakPointsChanged = &applyDebugWatchPoints;
+    }
+    luaScript->run(code);
+    return (luaScript->hasCallback() ? 1 : 0);
+  }
+  catch (...) {
+    return handleException();
+  }
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_lua_stop()
+{
+  if (luaScript)
+    luaScript->stop();
+}
+
+// 1: a breakpoint callback is active
+EMSCRIPTEN_KEEPALIVE int ep_lua_active()
+{
+  return (luaScript && luaScript->hasCallback() ? 1 : 0);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *ep_lua_output()
+{
+  static std::string  s;
+  s = (luaScript ? luaScript->takeOutput() : std::string());
+  return s.c_str();
+}
+
+// CPU cycles (T-states, with wait states) since power on
+EMSCRIPTEN_KEEPALIVE double ep_dbg_cycles()
+{
+  return double(WebDebug::getCycles());
+}
+
+// the video line counted from the vertical sync, and the frame number
+EMSCRIPTEN_KEEPALIVE int ep_dbg_video_line()
+{
+  return WebDebug::videoLineNumber();
+}
+
+EMSCRIPTEN_KEEPALIVE double ep_dbg_video_frame()
+{
+  return double(WebDebug::videoFrameNumber());
+}
+
+// raster breakpoint at video line 'n' (-1: off)
+EMSCRIPTEN_KEEPALIVE void ep_dbg_raster(int n)
+{
+  WebDebug::setRasterBreak(n);
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_trace_enable(int on)
+{
+  WebDebug::enableTrace(on != 0);
+}
+
+// the last 'n' trace entries (8 words each: PC AF BC DE HL IX IY SP) into
+// the buffer returned by ep_dbg_trace_buf(); returns their number
+static std::vector< uint16_t >  traceBuf;
+
+EMSCRIPTEN_KEEPALIVE int ep_dbg_trace(int n)
+{
+  if (n < 0)
+    n = 0;
+  traceBuf.resize(size_t(n) * 8U + 8U);
+  return WebDebug::getTrace(&(traceBuf[0]), n);
+}
+
+EMSCRIPTEN_KEEPALIVE const uint16_t *ep_dbg_trace_buf()
+{
+  return &(traceBuf[0]);
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_iolog_enable(int on)
+{
+  WebDebug::enableIOLog(on != 0);
+  WebDebug::clearIOLog();
+  applyDebugWatchPoints();
+}
+
+// the last 'n' I/O accesses: "pc port value w" lines (hex, w: 1 = OUT)
+EMSCRIPTEN_KEEPALIVE const char *ep_dbg_iolog(int n)
+{
+  static std::string out;
+  static std::vector< WebDebug::IOLogEntry >  buf;
+  if (n < 0)
+    n = 0;
+  buf.resize(size_t(n) + 1);
+  n = WebDebug::getIOLog(&(buf[0]), n);
+  out.clear();
+  char    tmp[32];
+  for (int i = 0; i < n; i++) {
+    std::snprintf(tmp, sizeof(tmp), "%04X %02X %02X %d\n", unsigned(buf[i].pc),
+                  unsigned(buf[i].port & 0xFF), unsigned(buf[i].value),
+                  int(buf[i].isWrite));
+    out += tmp;
+  }
+  return out.c_str();
+}
+
+// 2dfx card state, as text
+EMSCRIPTEN_KEEPALIVE const char *ep_dbg_2dfx()
+{
+  static std::string out;
+  static const char *const ops[32] = {
+    "NOP", "SET_COLOR", "PLOT", "LINE", "ERASE_LINE", "BUCKET_FILL", "RECT",
+    "FILL_RECT", "ROUND_RECT", "FILL_ROUND_RECT", "ELLIPSE", "FILL_ELLIPSE",
+    "ARC", "PIE", "SET_XY_OFFSET", "SKIP_NEXT", "DRAW_TEXT", "BLIT",
+    "PATTERN_FILL", "TILEMAP", "PATTERN_BUCKET_FILL", "TRIANGLE",
+    "FILL_TRIANGLE", "CROP_BLIT", "STRETCH_BLIT", "SET_CLIP_RECT",
+    "DRAW_MESH_WIREFRAME", "DRAW_MESH_FILLED", "DRAW_MESH_FWE", "7Dh", "7Eh",
+    "RET" };
+  static const char *const modes[3] = { "OFF", "NORMAL", "FORCED" };
+  out.clear();
+  const twodfx_emu  *d = static_cast< const twodfx_emu * >(TwoDfx::device());
+  if (!d) {
+    out = "A 2dfx kártya nincs bekapcsolva.\n";
+    return out.c_str();
+  }
+  char    tmp[200];
+  int     mode = int(twodfx_emu_engine_mode(d));
+  std::snprintf(tmp, sizeof(tmp),
+                "Gép: %s  Motor: %s  F8h státusz: %02X  Átlátszó szín: %u  FPS: %u\n"
+                "Képkocka: %u  Raszter IRQ: %02X  Ütközés: %s  Demó: %s\n",
+                twodfx_emu_machine(d) == TWODFX_EMU_TVC ? "TVC" : "Enterprise",
+                (mode >= 0 && mode < 3) ? modes[mode] : "?",
+                unsigned(twodfx_emu_read_f8(d)),
+                unsigned(twodfx_emu_transparent_colour(d)),
+                unsigned(twodfx_emu_fps(d)),
+                unsigned(twodfx_emu_video_frame_count(d)),
+                unsigned(twodfx_emu_raster_pending(d)),
+                twodfx_emu_collision_detected(d) ? "igen" : "nem",
+                twodfx_emu_egg_active(d) ? "fut" : "nincs");
+  out += tmp;
+  if (twodfx_emu_egg_active(d)) {
+    std::snprintf(tmp, sizeof(tmp), "Demó: %02Xh\n", 0xC0U + twodfx_emu_egg_id(d));
+    out += tmp;
+  }
+  out += "Sprite-ok (bekapcsoltak):\n";
+  int     nSpr = 0;
+  for (unsigned i = 0; i < TWODFX_EMU_SPRITE_COUNT; i++) {
+    uint8_t b[9];
+    for (unsigned j = 0; j < 9; j++)
+      b[j] = twodfx_emu_sprite_active_byte(d, i, j);
+    if (!(b[0] & 0x80))
+      continue;
+    nSpr++;
+    unsigned  x = (unsigned(b[0] & 0x30) << 4) | b[1];
+    unsigned  y = (unsigned(b[0] & 0x08) << 5) | b[2];
+    unsigned  w = (unsigned(b[0] & 0x06) << 7) | b[7];
+    unsigned  h = (unsigned(b[0] & 0x01) << 8) | b[8];
+    unsigned  a = unsigned(b[3]) | (unsigned(b[4]) << 8) | (unsigned(b[5] & 0x7F) << 16);
+    std::snprintf(tmp, sizeof(tmp),
+                  "  #%02u  X:%3u Y:%3u  %3ux%-3u  cím: %06X  %s%s%s%s%s\n",
+                  i, x, y, w, h, a, (b[0] & 0x40) ? "ütk " : "",
+                  (b[6] & 0x80) ? "2xX " : "", (b[6] & 0x40) ? "2xY " : "",
+                  (b[6] & 0x20) ? "tükörX " : "", (b[6] & 0x10) ? "tükörY" : "");
+    out += tmp;
+  }
+  if (!nSpr)
+    out += "  nincs\n";
+  for (unsigned fg = 0; fg < 2; fg++) {
+    out += (fg ? "Előtér 2DPT:\n" : "Háttér 2DPT:\n");
+    for (unsigned slot = 0; slot < 256; slot++) {
+      twodfx_2dpt_entry e;
+      if (!twodfx_emu_get_2dpt(d, fg, slot, 1, &e))
+        break;
+      unsigned  op = e.opcode & 0x1F;
+      std::snprintf(tmp, sizeof(tmp), "  %3u  %-20s", slot, ops[op]);
+      out += tmp;
+      for (unsigned j = 0; j < e.nbytes && j < 11; j++) {
+        std::snprintf(tmp, sizeof(tmp), " %02X", unsigned(e.payload[j]));
+        out += tmp;
+      }
+      out += '\n';
+      if (op == 0x1F || slot >= 63)
+        break;
+    }
+  }
+  return out.c_str();
+}
+
+// TVC256k++ card state, as text
+EMSCRIPTEN_KEEPALIVE const char *ep_dbg_card256()
+{
+  static std::string out;
+  out.clear();
+  TVC256kpp *c = TVC256kpp::current;
+  if (machineType != 1 || !c || !c->isEnabled()) {
+    out = "A TVC256k++ kártya nincs bent egyik bővítőportban sem.\n";
+    return out.c_str();
+  }
+  char    tmp[480];
+  std::snprintf(tmp, sizeof(tmp),
+                "Port: %d (I/O %02X-%02X)  Kiválasztott regiszter: %02X / %02X  Border: %02X\n"
+                "Lapok: P2 %02X  P3 %02X  8M P2: %02X%02X  8M P3: %02X%02X  ROM lap: %02X\n"
+                "PSRAM: %u MB  Firmware: %u.%u  Meghajtó: %02X  USB: %02X\n",
+                c->getSlot(), 0x10 + 0x10 * c->getSlot(), 0x1F + 0x10 * c->getSlot(),
+                unsigned(c->baseRegister(0)), unsigned(c->baseRegister(1)),
+                unsigned(c->borderColor()),
+                unsigned(c->debugRegister(0xB0)), unsigned(c->debugRegister(0xB1)),
+                unsigned(c->debugRegister(0xB3)), unsigned(c->debugRegister(0xB2)),
+                unsigned(c->debugRegister(0xB5)), unsigned(c->debugRegister(0xB4)),
+                unsigned(c->debugRegister(0xB7)),
+                unsigned(c->psramSize() >> 20),
+                unsigned(c->debugRegister(0xC3)), unsigned(c->debugRegister(0xC4)),
+                unsigned(c->debugRegister(0xC5)), unsigned(c->debugRegister(0xD0)));
+  out += tmp;
+  out += "Regiszterek:\n    ";
+  for (int i = 0; i < 16; i++) {
+    std::snprintf(tmp, sizeof(tmp), " %X ", i);
+    out += tmp;
+  }
+  for (int r = 0; r < 256; r++) {
+    if (!(r & 15)) {
+      std::snprintf(tmp, sizeof(tmp), "\n%02X: ", r);
+      out += tmp;
+    }
+    std::snprintf(tmp, sizeof(tmp), " %02X", unsigned(c->debugRegister(r)));
+    out += tmp;
+  }
+  out += '\n';
+  return out.c_str();
+}
+
+// TVC sound cards (GameCard, Multichip): the chips' registers, as text
+EMSCRIPTEN_KEEPALIVE const char *ep_dbg_sound()
+{
+  static std::string out;
+  if (machineType != 1 || !TVCSoundCards::current)
+    out = "Csak TVC-n: GameCard és Multichip hangkártya.\n";
+  else
+    out = TVCSoundCards::current->debugInfo();
+  return out.c_str();
 }
 
 }       // extern "C"

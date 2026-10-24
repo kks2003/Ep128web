@@ -80,6 +80,92 @@ Gépkonfigurációk:
   (`LOAD "név"`). A billentyűzet a magyar PC-kiosztást követi (QWERTZ, `0` az
   `1` bal oldalán, `ö ü ó` a 9 után).
 
+### Debugger
+
+A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
+
+**Vezérlés**
+- Megállítás, Folytatás (F5), Lépés (F11).
+- Átlépés (F10): a CALL, az RST (az EXOS-/TVC-rendszerhívás paraméterbájtjával együtt), a DJNZ, az LDIR-féle és a HALT egyben fut le.
+- Kilépés: a verem tetején lévő visszatérési címig fut.
+- ⟲ Vissza: visszalépés az előző debugger-lépés (lépés, átlépés, folytatás…) előtti állapotra, a képpel együtt. Az utolsó 40 állapotot pillanatképből tölti vissza; a lemezek és a kártyák (2dfx, hangkártyák) állapota nem lép vissza. Újraindítás, gépváltás vagy pillanatkép betöltése törli az előzményt (egy korábbi programba nem lehet visszalépni).
+- Futás a kurzorig (F4).
+- Képkocka: 20 ms-nyi futás, utána megáll.
+- A billentyűk akkor működnek, ha a fókusz a panelen van.
+
+**Regiszterek**
+- Megállítva szerkeszthetők (hex, Enter); a PC módosítása azonnal érvényes. A legutóbbi megállás óta változottak pirosak.
+- Alattuk a jelzőbitek, a 4 lap szegmense névvel és a verem teteje.
+- Időzítés: az aktuális képsor (a függőleges szinkrontól), a képkocka, a Z80 ciklusszámláló (T-ciklusok várakozással); az előző megállás óta eltelt idő T-ben, µs-ban és képsorban (pl. egy átlépett rutin ideje); stopper nullázó gombbal.
+- Szegmensnevek: TVC-n SYS, CART, EXT, SDEXT, U0–U3, VID0–VID3. Enterprise-on a ROM-ok neve (EXOS0, BASIC, EXDOS0…), RAM, VID (FC–FE) és SYS (FF, az EXOS rendszerszegmense, egyben videó-RAM).
+
+**Disassembly**
+- A PC körül mutat, vagy a megadott címtől (címke is megadható).
+- Kattintás: kurzor (futás a kurzorig).
+- Bal szélre kattintás vagy F9: végrehajtási töréspont be/ki.
+- Megjegyzések a sorok végén (`;`):
+  - IN/OUT: a port neve (NICK, DAVE, lapregiszter, TVC lapozás, CRTC, paletta, a bővítőhelyen lévő kártya…).
+  - Az aktuális (PC) sorban a kiírandó érték is, a lapozás kibontva: TVC port 02 → `P0=SYS P1=U1 P2=VID P3=CART`, port 0C → VID lapok, port 06 → GRAPHICS mód, EP B0–B3 → a szegmens neve. `OUT (C),r` és az OUTI-félék portját a C regiszterből veszi.
+  - Enterprise `EXOS nn`: a funkció neve, a PC-sorban a paraméterekkel (csatorna, eszköznév, EXOS változó).
+  - TVC `RST 30: nn` funkcióhívás: a funkció neve (VID_CHOUT, VMODE, CAS_OPEN, TONE_SET, HI_MEM_SET…), a PC-sorban a paraméterekkel. Az ismeretlen kódoknál az osztály, az irány és a funkciószám.
+  - Abszolút memóriacím: melyik lapra és szegmensre esik az aktuális lapozással, illetve az ismert rendszerváltozók neve: TVC-n az U0 lap változói (P_SAVE, IN_TABLE, PORT03, HI_MEM, INK, PICTURE…, a BASIC-éi is), EP-n a rendszerszegmens (FF) térképe az [enterprise.iko.hu](http://enterprise.iko.hu/memorymap.htm) alapján (EXOS 2.1 és újabb): az EXOS-változók (IRQ_ENABLE_STATE … RANDOM_IRQ), óra, dátum, lánc- és listamutatók, szegmensszámlálók, LP_POINTER, ST_POINTER, RST_ADDR, USR_P0–3. Az `EXOS 16` hívásnál a változó neve is. TVC-n a `LD HL,0B51`-féle betöltéseknél is.
+  - CALL/JP másik lapra: a cél szegmense.
+- Rendszerhívás átlépése (F10) után a megállási üzenet kiírja az A-ban visszaadott eredményt a hibakód jelentésével: TVC-n a kézikönyv szerint (pl. `F5 STOP`, `EA CRC hiba`), EP-n az EXOS, EXDOS és IS-DOS hibakódjai ([enterprise.iko.hu](http://enterprise.iko.hu/errors.htm), pl. `FB .ICHAN Channel does not exist`). Az `EXOS 16` az EXDOS-változók (64–90) nevét is mutatja.
+- A TVC funkciók, rendszerváltozók és hibakódok forrása a „TV-Computer Operációs rendszer” kézikönyv ([tvcdoc](https://github.com/kks2003/tvcdoc)) és KKS TVCinf táblázata (a teljes U0 címlista a kazetta-, editor-, video- és BASIC-munkaterülettel, a floppy D6–DB funkciók).
+- További kibontott portírások: TVC keretszín és paletta (színnévvel), CRTC regiszterválasztás (a 6845 regiszter neve), hangport 05; EP keretszín, billentyűsor.
+- A memórianézetben (CPU-cím) az ismert címek pontozottan aláhúzottak; az egér alatt a cím neve, lapja és értéke látszik.
+- Ugyanezek a megjegyzések a monitor `D` parancsában, az előzményekben, az I/O naplóban és a megállási üzenetben is megjelennek.
+
+**Memória**
+- Forrás: CPU-cím (`C000`), szegmens:offset (`FC:0000`), a 2dfx resource RAM, a TVC256k++ PSRAM vagy a kártya saját RAM-ja (háttérkép, sprite-ok, szöveg, font).
+- A változott bájtok pirosak, dupla kattintással felülírhatók.
+
+**Töréspontok**
+- Fajták: végrehajtás, memória-olvasás/-írás, port-IN/-OUT, raszter (megáll a megadott képsor elején; a sor decimálisan, a függőleges szinkrontól számolva; egyszerre egy).
+- Végrehajtási töréspontnál a gép az utasítás előtt áll meg, figyelésnél a hozzáférő utasítás után. A panel kiírja a címet és az értéket.
+- Feltétel: JavaScript-kifejezés, pl. `A == 3 && HL > 0x4000`, `VALUE == 0xA8`, `mem(0x1234) == 0`, `HITS == 10`. Hamis feltételnél a gép azonnal fut tovább.
+- A töréspontok találatszámot mutatnak, ki-be kapcsolhatók, és a böngésző megjegyzi őket.
+
+**Fülek**
+
+| Fül | Tartalom |
+|---|---|
+| Figyelő | Címek (a bájt és a szó, a cím nevével), címkék és kifejezések (`HL`, `mem16(0x1722)`, `A & 0x0F`) élő értéke; a változások az előző megálláshoz képest kiemelve. A böngésző megjegyzi a listát. |
+| Hívások | Valószínű hívási lánc: a veremben lévő visszatérési címek, amelyek előtt CALL, RST vagy rendszerhívás áll, a cél nevével. |
+| Nyomkövetés | Az utolsó 65536 utasítás a regiszterekkel (AF BC DE HL IX IY SP, az utasítás előtt); mentés szövegfájlba disassemblyvel. Két futás így összevethető. |
+| Forrás | Assembler listafájl betöltése (sjasmplus `--lst`, pasmo, tniASM: sorszám, cím, bájtok, forrássor): a disassemblyben a forrássor is látszik, a fülön a lista a PC-nél, kattintásra töréspont. |
+| Monitor | Az ep128emu monitorának parancsai, `?` a súgó. `A`/`.` assembler, `D` disassembly, `M` dump (a `D` és az `M` fájlba is: `D 0000 0100 "lista.txt"`), `>` írás, `F` feltöltés, `C` összehasonlítás, `H` keresés, `SR` keresés és csere, `T` másolás, `R`/`;`/`;;` regiszterek, `G`/`X`/`Z`/`Y` futtatás, `IO`/`O` portok, `L`/`S`/`V` fájlbetöltés, -mentés és -összevetés, `I` állapot. |
+| Előzmények | Az utolsó 16384 lefutott utasítás címe, a legutóbbi 64 disassemblyvel. |
+| Profiler | Címenkénti utasításszámláló, a 40 leggyakoribb címmel. |
+| I/O napló | Minden IN/OUT a PC-vel, portszűrővel. |
+| I/O regiszterek | NICK, DAVE, EXDOS, illetve a TVC CRTC-je, palettája, lapozása. |
+| NICK LPT (EP) | A sorparaméter-tábla: sorok, mód, színmód, margók, LD1/LD2, paletta színmintákkal, kiemelve az aktuális sort. |
+| Grafika | A memória képként. Forrás: a gép memóriája (szegmens:offset vagy CPU-cím), a 2dfx resource RAM, a TVC256k++ kártya-RAM-ja vagy PSRAM-ja. Formátum: 2/4/16/256 szín (TVC, NICK), 2dfx 16 szín, 256k++ 16 és 2 szín; a gép palettája vagy szürke. Előbeállítások: a kijelzett képernyő (TVC: VID lap, mód, paletta; EP: az LPT legnagyobb grafikus területe), a 2dfx bekapcsolt sprite-jai (a kártya 16 alapszínével; EP-n a képernyőn a NICK sorpalettája szerint jelennek meg), a 256k++ háttérképe, 16 sprite-ja (az aktuális fázissal) és a sprite-terület összes fázisa (2 és 16 szín). ◀ ▶ lapoz, az egér alatt a bájt címe vagy a sprite adatai, kattintásra a memórianézetben. Mentés PNG-ként (nagyítva) vagy szövegként: a sprite-ok képpontjai karakterekkel (`.` átlátszó, `0-F` színkód) és bájtjai hexben, illetve a terület hex listája. |
+| BASIC (TVC) | A memóriában lévő BASIC program listája, a ROM saját kulcsszótáblájával (minden ROM-verzióval), ékezetekkel. Futás közben az aktuális sor kiemelve; kattintásra a sor címe a memórianézetben. Mentés szövegként (.txt, UTF-8). |
+| Hangkártyák (TVC) | GameCard / Multichip: SN76489, SAA1099 és OPL regiszterek. |
+| 2dfx | Motor mód, státusz, demó, a bekapcsolt sprite-ok és a háttér/előtér 2DPT-lista. Bekapcsolt I/O naplóval parancsnapló is: az F8h parancsok névvel (SET_ENGINE_MODE, UPLOAD_NICK, sprite #n, előtér/háttér 2DPT LINE, demó C7h: Pong…) és az utánuk küldött F9h adatbájtok. Az F8h port írása a disassemblyben és az I/O naplóban is névvel látszik, az olvasása a státuszbitekkel (kész, ütközés, raszter IRQ…). |
+| TVC256k++ | Port, lapozás, PSRAM, firmware, meghajtó, USB és a 256 regiszter; az overlay grafika módja és címei a kártya-RAM-ban, a 16 sprite adatai (be/ki, réteg, X, Y, fázis, szín, cím). A PSRAM és a kártya-RAM a memórianézetben, a képek a Grafika fülön. |
+| Kereső | Memóriaérték-kereső („cheat finder”): pillanatkép, majd szűrés (= érték, változott, nőtt, eggyel csökkent…). Egy jelöltre kattintva írásfigyelés kerül rá. |
+| Szimbólumok | Címkék betöltése (sjasmplus, pasmo, tniASM: `címke EQU 1234h`, `címke = $1234`, `1234 címke`). A disassemblyben, a címmezőkben és a monitorban is használhatók. |
+| Szkript | JavaScript az `ep` objektummal, a böngésző konzolából is (`window.ep`). Lásd lent. |
+
+**Szkript (Lua)**
+- A nyelvválasztóban „Lua (ep128emu)”: az eredeti ep128emu Lua-szkriptelése, ugyanazzal az API-val (a desktop README-je szerint): `breakPointCallback(típus, cím, érték)`, `setBreakPoint`, `clearBreakPoints`, `readMemory`/`writeMemory`, `readMemoryRaw`, `readWord`, `getPC`/`getA`… `setPC`/`setA`…, `readIOPort`/`writeIOPort`, `getMemoryPage`, `getNextOpcodeAddr`, `getVideoPosition`, `getRawAddress`, `loadMemory`/`saveMemory`, `mprint`. A desktop szkriptek változtatás nélkül futnak.
+- A `breakPointCallback` `false` értékkel továbbengedi a gépet; léptetéskor 3-as típussal hívódik (amíg `true`-t nem ad, a léptetés folytatódik).
+- A szkript töréspontjai a debugger saját töréspontjai mellett élnek (nem jelennek meg a listában); a végrehajtási töréspontok (CPU-cím) az utasítás előtt állnak meg.
+- Lua 5.3.6 (`web/src/lua`, MIT), a szkriptmotor az ep128emu `script.cpp`-je (`patches/zzzzzz-luascript.patch`, `web/src/webscript.cpp`).
+
+**Szkript (JavaScript)**
+- Gép: `regs`, `setReg`, `peek`/`peek16`/`poke`, `read`, `out`, `disasm`, `assemble`, `reset`, `time`.
+- Töréspontok és futás: `bp`, `watch`, `clearBps`, `pause`, `step`, `stepOver`, `cont`, `runTo`, `monitor`.
+- `onBreak(fn)`: minden megálláskor fut; `true` visszatérési értékkel továbbengedi a gépet (naplózás megállás nélkül).
+- `onFrame(fn)`: minden képkocka után fut, pl. érték rögzítése (`ep.onFrame(() => ep.poke(cím, 5))`).
+- Várakozás (`await`): `ep.type('LIST\n')` gépel, `ep.wait(ms)` emulált időt vár, `ep.until(() => feltétel)` a feltételig fut.
+- Nevek: `callName(kód)`, `addrName(cím)`, `portName(port)`.
+- Példák a legördülő listában (rendszerhívások naplózása, gépelés, memóriaírások naplózása, végtelen élet, futás feltételig). A szkript fájlba menthető és onnan betölthető; a Leállítás gomb az onBreak-et, az onFrame-et és a várakozásokat is leállítja.
+
+**Működés:** a böngészőben minden egy szálon fut, ezért a gép az utasításhatárokon áll meg (`web/src/webdebug.cpp`, `patches/zzzzz-webdebug.patch`). Töréspontok, előzmények és profiler nélkül ez nem lassítja az emulációt.
+
 ### TVC programkatalógus frissítése
 
 A katalógus a tvc.homeserver.hu programoldalairól készül (`scripts/build_catalog.mjs`), és a repóban tárolódik (`web/catalog/programs.json`, `web/shell/catalog.json`).
@@ -328,8 +414,8 @@ Egyszeri beállítás a repóban:
 - `web/src/twodfx/` – a 2dfx kártya hordozható emulátora (MIT), `web/src/twodfx_bridge.cpp` – bekötése a VM-ekbe (`patches/zzzz-2dfx.patch`)
 - `build.sh` – fordítás `em++`-szal
 
-Eltérések a natív ep128emu-tól: nincs debugger/monitor, Lua script,
-OpenGL effektek, egér; TVC-n az automatikus szövegbeíróval az „í”
+Eltérések a natív ep128emu-tól: a debuggerből nincs monitor-parancssor és Lua script, nincsenek
+OpenGL effektek és egér; TVC-n az automatikus szövegbeíróval az „í”
 nem gépelhető; a kép 768×288-as (a váltottsoros módok
 két félképe egybe van hajtva). A ZX Spectrum és CPC gépek nincsenek
 lefordítva.
