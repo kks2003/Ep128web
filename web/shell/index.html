@@ -386,11 +386,14 @@
       <label class="slot">Port 1 <select id="tvc-slot1"></select></label>
       <label class="slot">Port 2 <select id="tvc-slot2"></select></label>
       <label class="slot">Port 3 <select id="tvc-slot3"></select></label>
+      <label class="slot" title="Melyik kártya legyen az alapértelmezett tároló (LOAD/SAVE, a parancssora: VT-DOS EXT 2, TVC256k++ EXT + port). Automatikus: a legnagyobb sorszámú portban lévő, mint a valódi gépen.">Alapértelmezett tároló <select id="tvc-defdev">
+        <option value="-1">automatikus (a legnagyobb port)</option><option value="1">VT-DOS</option><option value="2">FILE:</option><option value="5">TVC256k++</option></select></label>
+      <span class="name" id="tvc-defdev-note"></span>
       <button id="tvc-slots-apply" title="A kártyák betöltése és hideg újraindítás">Portok betöltése, újraindítás</button>
       <button id="tvc-slots-default" title="FILE:, VT-DOS, GameCard, üres (betöltés a gombbal)">Alapbeállítás</button>
       <span class="name" id="tvc-slots-note"></span>
-      <span class="name">A VT-DOS, a FILE: és a TVC256k++ közül a legnagyobb sorszámú portban lévő lesz
-        az alapértelmezett tároló; a parancssoruk csak így működik. VT-DOS: <code>EXT 2</code>,
+      <span class="name">A VT-DOS, a FILE: és a TVC256k++ közül alapból a legnagyobb sorszámú portban lévő lesz
+        az alapértelmezett tároló (fent átállítható); a parancssoruk csak így működik. VT-DOS: <code>EXT 2</code>,
         TVC256k++: <code>EXT</code> + a port száma (pl. 3-as portban <code>EXT 3</code>).
         TVC256k++ flash drive: ejtsd rá a <code>flash-root-*.bin</code> / <code>.zip</code> fájlt.</span>
     </div>

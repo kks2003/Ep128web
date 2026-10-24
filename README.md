@@ -217,6 +217,14 @@ működik, ha az alapértelmezett tároló rájuk mutat. Ezért az alapbeállít
 alapértelmezett. Lemezkép betöltésekor az oldal a VT-DOS-ra, `.cas` program
 indításakor a FILE:-ra, kazettánál a magnóra állítja át az átirányítást.
 
+Az **Alapértelmezett tároló** választóval ez rögzíthető: automatikus (a valódi
+géphez hasonlóan a legnagyobb sorszámú port), VT-DOS, FILE: vagy TVC256k++. A
+kiválasztottat az oldal minden indulás (bekapcsolás, újraindítás, oldal-újratöltés)
+után beállítja, amint a ROM és a kártyák beállították a sajátjukat; így például a
+TVC256k++ a 3-as portban maradhat, és az `EXT 2` mégis a VT-DOS-t indítja. A
+programindítás (katalógus, FILE:, lemez, kazetta) továbbra is a program saját
+tárolóját állítja be.
+
 Lemezkép betöltésekor az oldal felismeri a formátumát: a FAT-os (boot szektoros)
 lemez VT-DOS-é, az UPM-lemez első 4 pályája üres, utána CP/M-katalógus jön. A
 lemezkártyát ehhez igazítja: ha a másik van bent, ugyanabba a portba cseréli
