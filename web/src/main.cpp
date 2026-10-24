@@ -1121,7 +1121,12 @@ EMSCRIPTEN_KEEPALIVE void ep_dbg_set_reg(int n, int value)
   Ep128::Z80_REGISTERS& r = vm->getZ80Registers();
   uint16_t  v = uint16_t(value & 0xFFFF);
   switch (n) {
-  case 0: vm->setProgramCounter(v); break;
+  case 0:
+    // the Z80 would take a new PC only after an instruction; stopped at an
+    // instruction boundary it can be set at once (and shown at once)
+    r.PC.W.l = v;
+    vm->setProgramCounter(v);           // drops a PC change still pending
+    break;
   case 1: r.AF.W = v; break;
   case 2: r.BC.W = v; break;
   case 3: r.DE.W = v; break;

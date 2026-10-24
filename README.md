@@ -94,7 +94,7 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
 - A billentyűk akkor működnek, ha a fókusz a panelen van.
 
 **Regiszterek**
-- Megállítva szerkeszthetők (hex, Enter). A legutóbbi megállás óta változottak pirosak.
+- Megállítva szerkeszthetők (hex, Enter); a PC módosítása azonnal érvényes. A legutóbbi megállás óta változottak pirosak.
 - Alattuk a jelzőbitek, a 4 lap szegmense névvel és a verem teteje.
 - Szegmensnevek: TVC-n SYS, CART, EXT, SDEXT, U0–U3, VID0–VID3. Enterprise-on a ROM-ok neve (EXOS0, BASIC, EXDOS0…), RAM, VID (FC–FE) és SYS (FF, az EXOS rendszerszegmense, egyben videó-RAM).
 
@@ -109,7 +109,7 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
   - TVC `RST 30: nn` funkcióhívás: a funkció neve (VID_CHOUT, VMODE, CAS_OPEN, TONE_SET, HI_MEM_SET…), a PC-sorban a paraméterekkel. Az ismeretlen kódoknál az osztály, az irány és a funkciószám.
   - Abszolút memóriacím: melyik lapra és szegmensre esik az aktuális lapozással, illetve az ismert rendszerváltozók neve: TVC-n az U0 lap változói (P_SAVE, IN_TABLE, PORT03, HI_MEM, INK, PICTURE…, a BASIC-éi is), EP-n a rendszerszegmens (FF) térképe az [enterprise.iko.hu](http://enterprise.iko.hu/memorymap.htm) alapján (EXOS 2.1 és újabb): az EXOS-változók (IRQ_ENABLE_STATE … RANDOM_IRQ), óra, dátum, lánc- és listamutatók, szegmensszámlálók, LP_POINTER, ST_POINTER, RST_ADDR, USR_P0–3. Az `EXOS 16` hívásnál a változó neve is. TVC-n a `LD HL,0B51`-féle betöltéseknél is.
   - CALL/JP másik lapra: a cél szegmense.
-- Rendszerhívás átlépése (F10) után a megállási üzenet kiírja az A-ban visszaadott eredményt, TVC-n a hibakód jelentésével (pl. `F5 STOP`, `EA CRC hiba`).
+- Rendszerhívás átlépése (F10) után a megállási üzenet kiírja az A-ban visszaadott eredményt a hibakód jelentésével: TVC-n a kézikönyv szerint (pl. `F5 STOP`, `EA CRC hiba`), EP-n az EXOS, EXDOS és IS-DOS hibakódjai ([enterprise.iko.hu](http://enterprise.iko.hu/errors.htm), pl. `FB .ICHAN Channel does not exist`). Az `EXOS 16` az EXDOS-változók (64–90) nevét is mutatja.
 - A TVC funkciók, rendszerváltozók és hibakódok forrása a „TV-Computer Operációs rendszer” kézikönyv ([tvcdoc](https://github.com/kks2003/tvcdoc)) és KKS TVCinf táblázata (a teljes U0 címlista a kazetta-, editor-, video- és BASIC-munkaterülettel, a floppy D6–DB funkciók).
 - További kibontott portírások: TVC keretszín és paletta (színnévvel), CRTC regiszterválasztás (a 6845 regiszter neve), hangport 05; EP keretszín, billentyűsor.
 - A memórianézetben (CPU-cím) az ismert címek pontozottan aláhúzottak; az egér alatt a cím neve, lapja és értéke látszik.
@@ -135,11 +135,11 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
 | I/O napló | Minden IN/OUT a PC-vel, portszűrővel. |
 | I/O regiszterek | NICK, DAVE, EXDOS, illetve a TVC CRTC-je, palettája, lapozása. |
 | NICK LPT (EP) | A sorparaméter-tábla: sorok, mód, színmód, margók, LD1/LD2, paletta színmintákkal, kiemelve az aktuális sort. |
-| Grafika | A memória képként. Forrás: a gép memóriája (szegmens:offset vagy CPU-cím), a 2dfx resource RAM, a TVC256k++ kártya-RAM-ja vagy PSRAM-ja. Formátum: 2/4/16/256 szín (TVC, NICK), 2dfx 16 szín, 256k++ 16 és 2 szín; a gép palettája vagy szürke. Előbeállítások: a kijelzett képernyő (TVC: VID lap, mód, paletta; EP: az LPT legnagyobb grafikus területe), a 2dfx bekapcsolt sprite-jai (a kártya 16 alapszínével; EP-n a képernyőn a NICK sorpalettája szerint jelennek meg), a 256k++ háttérképe, 16 sprite-ja (az aktuális fázissal) és a sprite-terület összes fázisa (2 és 16 szín). ◀ ▶ lapoz, az egér alatt a bájt címe vagy a sprite adatai, kattintásra a memórianézetben. |
-| BASIC (TVC) | A memóriában lévő BASIC program listája, a ROM saját kulcsszótáblájával (minden ROM-verzióval), ékezetekkel. Futás közben az aktuális sor kiemelve; kattintásra a sor címe a memórianézetben. |
+| Grafika | A memória képként. Forrás: a gép memóriája (szegmens:offset vagy CPU-cím), a 2dfx resource RAM, a TVC256k++ kártya-RAM-ja vagy PSRAM-ja. Formátum: 2/4/16/256 szín (TVC, NICK), 2dfx 16 szín, 256k++ 16 és 2 szín; a gép palettája vagy szürke. Előbeállítások: a kijelzett képernyő (TVC: VID lap, mód, paletta; EP: az LPT legnagyobb grafikus területe), a 2dfx bekapcsolt sprite-jai (a kártya 16 alapszínével; EP-n a képernyőn a NICK sorpalettája szerint jelennek meg), a 256k++ háttérképe, 16 sprite-ja (az aktuális fázissal) és a sprite-terület összes fázisa (2 és 16 szín). ◀ ▶ lapoz, az egér alatt a bájt címe vagy a sprite adatai, kattintásra a memórianézetben. Mentés PNG-ként (nagyítva) vagy szövegként: a sprite-ok képpontjai karakterekkel (`.` átlátszó, `0-F` színkód) és bájtjai hexben, illetve a terület hex listája. |
+| BASIC (TVC) | A memóriában lévő BASIC program listája, a ROM saját kulcsszótáblájával (minden ROM-verzióval), ékezetekkel. Futás közben az aktuális sor kiemelve; kattintásra a sor címe a memórianézetben. Mentés szövegként (.txt, UTF-8). |
 | Hangkártyák (TVC) | GameCard / Multichip: SN76489, SAA1099 és OPL regiszterek. |
 | 2dfx | Motor mód, státusz, demó, a bekapcsolt sprite-ok és a háttér/előtér 2DPT-lista. Bekapcsolt I/O naplóval parancsnapló is: az F8h parancsok névvel (SET_ENGINE_MODE, UPLOAD_NICK, sprite #n, előtér/háttér 2DPT LINE, demó C7h: Pong…) és az utánuk küldött F9h adatbájtok. Az F8h port írása a disassemblyben és az I/O naplóban is névvel látszik, az olvasása a státuszbitekkel (kész, ütközés, raszter IRQ…). |
-| TVC256k++ | Port, lapozás, PSRAM, firmware, meghajtó, USB és a 256 regiszter. A PSRAM a memórianézetben látható. |
+| TVC256k++ | Port, lapozás, PSRAM, firmware, meghajtó, USB és a 256 regiszter; az overlay grafika módja és címei a kártya-RAM-ban, a 16 sprite adatai (be/ki, réteg, X, Y, fázis, szín, cím). A PSRAM és a kártya-RAM a memórianézetben, a képek a Grafika fülön. |
 | Kereső | Memóriaérték-kereső („cheat finder”): pillanatkép, majd szűrés (= érték, változott, nőtt, eggyel csökkent…). Egy jelöltre kattintva írásfigyelés kerül rá. |
 | Szimbólumok | Címkék betöltése (sjasmplus, pasmo, tniASM: `címke EQU 1234h`, `címke = $1234`, `1234 címke`). A disassemblyben, a címmezőkben és a monitorban is használhatók. |
 | Szkript | JavaScript az `ep` objektummal, a böngésző konzolából is (`window.ep`). Lásd lent. |
