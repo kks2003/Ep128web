@@ -7,7 +7,7 @@ const CORE = [
   './', 'index.html', 'style.css', 'ep128.js', 'ep128emu.js', 'ep128emu.wasm',
   'epfileio.rom', 'tvcfileio.rom', 'catalog.json', 'catalog/programs.json', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg',
-  'diskmgr/types.js', 'diskmgr/cas_parser.js', 'diskmgr/fat_disk.js', 'diskmgr/upm_disk.js', 'diskmgr/zip_writer.js'
+  'diskmgr/types.js', 'diskmgr/cas_parser.js', 'diskmgr/fat_disk.js', 'diskmgr/upm_disk.js', 'diskmgr/zip_writer.js', 'tapewav.js'
 ];
 
 function cacheKey(url) {

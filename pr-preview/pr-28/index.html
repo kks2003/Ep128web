@@ -6,17 +6,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610242222-b2f05f2">
+<link rel="stylesheet" href="style.css?v=202610242230-2a84eff">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <meta name="theme-color" content="#c8102e">
-<meta name="build" content="202610242222-b2f05f2">
+<meta name="build" content="202610242230-2a84eff">
 </head>
 <body>
-<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #28 előnézete, nem az éles oldal · fordítva: 2026.10.25 00:22 · b2f05f2 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #28 előnézete, nem az éles oldal · fordítva: 2026.10.25 00:30 · 2a84eff · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.25 00:22 · b2f05f2</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.25 00:30 · 2a84eff</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -381,7 +381,11 @@
       <button id="tape-rew">⏮ Elejére</button>
       <button id="tape-rec">● Felvétel</button>
       <button id="tape-new">Üres kazetta</button>
-      <button id="tape-save">Letöltés</button>
+      <button id="tape-save" title="A kazetta letöltése ep128emu formátumban">Letöltés (.tap)</button>
+      <button id="tape-wav" title="A kazetta letöltése hangfájlként: valódi gépbe vagy más emulátorba tölthető">Letöltés (.wav)</button>
+      <label class="file" title="TVC .cas programok átalakítása kazettás hangfájllá (.wav); .zip is lehet">CAS → WAV…
+        <input type="file" id="cas-wav" accept=".cas,.zip" multiple>
+      </label>
       <label class="name"><input type="checkbox" id="tape-fast" checked> Gyors betöltés (turbó, amíg forog a szalag)</label>
     </div>
     <div class="group drive">
@@ -514,7 +518,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610242222-b2f05f2"></script>
-<script src="ep128.js?v=202610242222-b2f05f2"></script>
+<script src="ep128emu.js?v=202610242230-2a84eff"></script>
+<script src="ep128.js?v=202610242230-2a84eff"></script>
 </body>
 </html>
