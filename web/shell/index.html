@@ -18,6 +18,7 @@
     <button id="btn-reset" title="Meleg reset (F11)">Reset</button>
     <button id="btn-cold" title="Hideg reset / bekapcsolás (Shift+F11)">Hideg reset</button>
     <button id="btn-pause" title="Szünet (Pause)">Szünet</button>
+    <button id="btn-debug" title="Debugger: regiszterek, disassembly, memória, töréspontok">🐞 Debugger</button>
     <button id="btn-turbo" title="Gyorsítás (F12)">Turbó</button>
     <label class="file">Fájl betöltése…
       <input type="file" id="file-any" multiple>
@@ -105,6 +106,59 @@
     <span id="st-speed">–</span>
     <span id="st-tape"></span>
     <span id="st-msg"></span>
+  </section>
+
+  <section id="debugger" class="group" hidden>
+    <h3>Debugger <span id="dbg-machine" class="small"></span></h3>
+    <div class="dbg-bar">
+      <button id="dbg-run" title="Folytatás (F5)">▶ Folytatás</button>
+      <button id="dbg-pause" title="Megállítás a következő utasításnál">⏸ Megállítás</button>
+      <button id="dbg-step" title="Egy utasítás (F11)">Lépés</button>
+      <button id="dbg-over" title="Egy utasítás, a CALL, RST, DJNZ és LDIR egészben fut le (F10)">Átlépés</button>
+      <button id="dbg-cursor" title="Futás a disassemblyben kijelölt sorig (F4)">Futás a kurzorig</button>
+      <span id="dbg-status"></span>
+    </div>
+    <div class="dbg-cols">
+      <div class="dbg-col">
+        <div class="dbg-box">
+          <h4>Regiszterek</h4>
+          <div id="dbg-regs"></div>
+          <div id="dbg-flags" class="dbg-mono"></div>
+          <div id="dbg-pages" class="dbg-mono small"></div>
+        </div>
+        <div class="dbg-box">
+          <h4>Töréspontok</h4>
+          <div class="dbg-bp-add">
+            <input id="dbg-bp-addr" class="dbg-addr" placeholder="cím" title="Cím vagy port (hex)">
+            <select id="dbg-bp-type" title="A töréspont fajtája">
+              <option value="x">végrehajtás</option>
+              <option value="r">memória olvasás</option>
+              <option value="w">memória írás</option>
+              <option value="rw">memória olv./írás</option>
+              <option value="ior">port olvasás (IN)</option>
+              <option value="iow">port írás (OUT)</option>
+              <option value="iorw">port IN/OUT</option>
+            </select>
+            <button id="dbg-bp-add">Hozzáadás</button>
+          </div>
+          <ul id="dbg-bp-list"></ul>
+        </div>
+      </div>
+      <div class="dbg-box dbg-wide">
+        <h4>Disassembly
+          <input id="dbg-dis-addr" class="dbg-addr" placeholder="cím" title="Kezdőcím (hex), Enter">
+          <label class="small"><input type="checkbox" id="dbg-follow" checked> PC követése</label>
+        </h4>
+        <div id="dbg-dis" class="dbg-mono" title="Kattintás: kurzor; a bal szélen: töréspont be/ki (F9)"></div>
+      </div>
+      <div class="dbg-box dbg-wide">
+        <h4>Memória
+          <input id="dbg-mem-addr" class="dbg-addr" value="0000" title="Cím (hex): CPU cím, vagy szegmens:offset (pl. FC:0000), Enter">
+          <span class="small">dupla kattintás: írás</span>
+        </h4>
+        <div id="dbg-mem" class="dbg-mono"></div>
+      </div>
+    </div>
   </section>
 
   <section id="media">

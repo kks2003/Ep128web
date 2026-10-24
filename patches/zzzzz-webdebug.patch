@@ -1,0 +1,73 @@
+--- a/src/ep128vm.cpp
++++ b/src/ep128vm.cpp
+@@ -41,6 +41,7 @@
+ #include <ctime>
+ 
+ #include "twodfx_bridge.hpp"
++#include "webdebug.hpp"
+ 
+ // 2dfx card (Ep128web): its raster IRQ is wired-OR with DAVE's interrupt
+ static bool twoDfxDaveInt = false;
+@@ -1788,12 +1789,19 @@
+     }
+     if (EP128EMU_UNLIKELY(nickCyclesRemainingH < 1))
+       return;
++    if (EP128EMU_UNLIKELY(WebDebug::resumeInner)) {
++      // the debugger stopped the CPU inside this slot: continue there
++      WebDebug::resumeInner = false;
++      goto resumeCPU;
++    }
+     do {
+-      Ep128VMCallback   *p = firstCallback;
+-      while (p) {
+-        Ep128VMCallback *nxt = p->nxt;
+-        p->func(p->userData);
+-        p = nxt;
++      {
++        Ep128VMCallback   *p = firstCallback;
++        while (p) {
++          Ep128VMCallback *nxt = p->nxt;
++          p->func(p->userData);
++          p = nxt;
++        }
+       }
+       daveCyclesRemaining += daveCyclesPerNickCycle;
+       if (daveCyclesRemaining >= 0L) {
+@@ -1804,8 +1812,15 @@
+         } while (EP128EMU_UNLIKELY(daveCyclesRemaining >= 0L));
+       }
+       cpuCyclesRemaining += cpuCyclesPerNickCycle;
+-      while (cpuCyclesRemaining >= 0L)
++    resumeCPU:
++      while (cpuCyclesRemaining >= 0L) {
++        if (EP128EMU_UNLIKELY(WebDebug::active) &&
++            WebDebug::checkBreak(uint16_t(z80.getReg().PC.W.l))) {
++          WebDebug::resumeInner = true;   // stop before this instruction
++          return;
++        }
+         z80.executeInstruction();
++      }
+       nick.runOneSlot();
+     } while (EP128EMU_EXPECT(--nickCyclesRemainingH > 0));
+   }
+--- a/src/tvc64vm.cpp
++++ b/src/tvc64vm.cpp
+@@ -74,6 +74,7 @@
+ };
+ 
+ #include "twodfx_bridge.hpp"
++#include "webdebug.hpp"
+ 
+ // 2dfx card (Ep128web) on ports F8h, F9h
+ static uint8_t twoDfxPortReadCallback(void *userData, uint16_t addr)
+@@ -1543,6 +1544,10 @@
+     crtcCyclesRemainingH = int32_t(crtcCyclesRemaining >> 32);
+     z80.triggerInterrupt();
+     while (EP128EMU_EXPECT(crtcCyclesRemainingH > 0)) {
++      if (EP128EMU_UNLIKELY(WebDebug::active) &&
++          WebDebug::checkBreak(uint16_t(z80.getReg().PC.W.l))) {
++        return;                         // the debugger stops before it
++      }
+       z80.executeInstruction();
+       if ((z80HalfCycleCnt - machineHalfCycleCnt) & 0xFE)
+         runDevices();

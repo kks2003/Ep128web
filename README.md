@@ -80,6 +80,30 @@ Gépkonfigurációk:
   (`LOAD "név"`). A billentyűzet a magyar PC-kiosztást követi (QWERTZ, `0` az
   `1` bal oldalán, `ö ü ó` a 9 után).
 
+### Debugger
+
+A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
+
+- **Vezérlés:**
+  - Megállítás: a következő utasításnál.
+  - Folytatás (F5).
+  - Lépés (F11): egy utasítás.
+  - Átlépés (F10): a CALL, az RST (az EXOS-/TVC-rendszerhívás paraméterbájtjával együtt), a DJNZ, az LDIR-féle és a HALT egyben fut le.
+  - Futás a kurzorig (F4).
+  - A billentyűk akkor működnek, ha a fókusz a panelen van.
+- **Regiszterek:** megállítva szerkeszthetők (hex, Enter). A legutóbbi megállás óta változottak pirosak. Alattuk a jelzőbitek és a 4 lap szegmensei.
+- **Disassembly:**
+  - A PC körül mutat, vagy a megadott címtől.
+  - Kattintás: kurzor (futás a kurzorig).
+  - Bal szélre kattintás vagy F9: végrehajtási töréspont be/ki.
+- **Memória:** 256 bájt CPU-címről (`C000`) vagy szegmens:offset címről (`FC:0000`). A változott bájtok pirosak, dupla kattintással felülírhatók.
+- **Töréspontok:**
+  - Végrehajtási töréspont: a gép az utasítás előtt áll meg.
+  - Memória-olvasás és -írás, illetve port-IN és -OUT figyelése: a gép a hozzáférő utasítás után áll meg, a panel kiírja a címet és az értéket.
+  - A töréspontokat a böngésző megjegyzi.
+
+A böngészőben minden egy szálon fut, ezért a gép az utasításhatárokon áll meg (`web/src/webdebug.cpp`, `patches/zzzzz-webdebug.patch`). Töréspontok nélkül ez nem lassítja az emulációt.
+
 ### TVC programkatalógus frissítése
 
 A katalógus a tvc.homeserver.hu programoldalairól készül (`scripts/build_catalog.mjs`), és a repóban tárolódik (`web/catalog/programs.json`, `web/shell/catalog.json`).
@@ -328,8 +352,8 @@ Egyszeri beállítás a repóban:
 - `web/src/twodfx/` – a 2dfx kártya hordozható emulátora (MIT), `web/src/twodfx_bridge.cpp` – bekötése a VM-ekbe (`patches/zzzz-2dfx.patch`)
 - `build.sh` – fordítás `em++`-szal
 
-Eltérések a natív ep128emu-tól: nincs debugger/monitor, Lua script,
-OpenGL effektek, egér; TVC-n az automatikus szövegbeíróval az „í”
+Eltérések a natív ep128emu-tól: a debuggerből nincs monitor-parancssor és Lua script, nincsenek
+OpenGL effektek és egér; TVC-n az automatikus szövegbeíróval az „í”
 nem gépelhető; a kép 768×288-as (a váltottsoros módok
 két félképe egybe van hajtva). A ZX Spectrum és CPC gépek nincsenek
 lefordítva.

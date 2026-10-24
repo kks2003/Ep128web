@@ -1418,6 +1418,7 @@ registerProcessor('ep-output', EPOutput);
     // runs at most budgetUs of emulated time while the task is active
     let spent = 0;
     while (autoTask && spent < budgetUs) {
+      if (api.dbgState()) break;        // stopped in the debugger: wait
       if (autoTask.wait <= 0) {
         autoTask.wait = stepAutoTask();
         if (!autoTask) break;
@@ -3297,6 +3298,7 @@ registerProcessor('ep-output', EPOutput);
     renderJoyMap();
     setupTvcSlotsUI();
     setup2dfx();
+    setupDebugger();
 
     const wrap = $('screen-wrap');
     wrap.addEventListener('dragover', (e) => { e.preventDefault(); wrap.classList.add('drag'); });
@@ -3309,6 +3311,328 @@ registerProcessor('ep-output', EPOutput);
     canvas.addEventListener('pointerdown', () => { resumeAudio(); canvas.focus({ preventScroll: true }); });
     document.addEventListener('pointerdown', resumeAudio, { once: true });
     setupCatalogUI();
+  }
+
+  // --------------------------------------------------------------------------
+  // Debugger: registers, disassembly, memory, breakpoints and watchpoints.
+  // The emulator stops at instruction boundaries (web/src/webdebug.cpp);
+  // while it is stopped, the main loop does not run it.
+
+  const hex = (v, n) => (v >>> 0).toString(16).toUpperCase().padStart(n, '0');
+  const DBG_REGS = ['PC', 'AF', 'BC', 'DE', 'HL', 'IX', 'IY', 'SP',
+                    "AF'", "BC'", "DE'", "HL'", 'I', 'R', 'IM', 'IFF1', 'IFF2'];
+  const DBG_REASONS = ['', 'Töréspont', 'Lépés kész', 'Megállítva',
+                       'Memória olvasás', 'Memória írás', 'Port olvasás (IN)', 'Port írás (OUT)'];
+  let dbgOpen = false;
+  let dbgStopped = false;
+  let dbgCursor = -1;                 // selected disassembly line (run to cursor)
+  let dbgDisStart = -1;               // start address when not following the PC
+  let dbgMemAddr = 0, dbgMemPhys = false;
+  let dbgPrevRegs = null, dbgPrevMem = null;
+  let dbgBps = [];                    // { type: 'x' | 'r' | 'w' | 'rw' | 'ior' | 'iow' | 'iorw', addr }
+  try { dbgBps = JSON.parse(localStorage.getItem('ep128web.dbgBps')) || []; } catch (e) { }
+  if (!Array.isArray(dbgBps)) dbgBps = [];
+
+  function dbgApplyBps() {
+    if (!api || !api.dbgClearBps) return;
+    api.dbgClearBps();
+    api.dbgWatchClear();
+    for (const b of dbgBps) {
+      if (b.type === 'x') api.dbgSetBp(b.addr, 1);
+      else {
+        const io = b.type.startsWith('io') ? 1 : 0;
+        const t = io ? b.type.slice(2) : b.type;
+        api.dbgWatchAdd(io, b.addr, t.includes('r') ? 1 : 0, t.includes('w') ? 1 : 0);
+      }
+    }
+    try { localStorage.setItem('ep128web.dbgBps', JSON.stringify(dbgBps)); } catch (e) { }
+  }
+
+  function dbgToggleExecBp(addr) {
+    const i = dbgBps.findIndex((b) => b.type === 'x' && b.addr === addr);
+    if (i >= 0) dbgBps.splice(i, 1);
+    else dbgBps.push({ type: 'x', addr });
+    dbgApplyBps();
+    dbgRenderBps();
+    dbgRenderDis();
+  }
+
+  function dbgRegs() {
+    return api.dbgRegs().split(' ').map(Number);
+  }
+
+  // parses "1234" (hex) or "seg:offset" (physical); null if invalid
+  function dbgParseAddr(text) {
+    const t = String(text).trim();
+    let m = /^([0-9a-f]{1,2}):([0-9a-f]{1,4})$/i.exec(t);
+    if (m) return { addr: parseInt(m[1], 16) * 16384 + (parseInt(m[2], 16) & 0x3FFF), phys: true };
+    m = /^(?:0x|\$|&)?([0-9a-f]{1,4})h?$/i.exec(t);
+    if (m) return { addr: parseInt(m[1], 16), phys: false };
+    return null;
+  }
+
+  function dbgRenderRegs() {
+    const r = dbgRegs();
+    const box = $('dbg-regs');
+    if (!box.firstChild) {
+      DBG_REGS.forEach((name, i) => {
+        const l = document.createElement('label');
+        const n = document.createElement('span');
+        n.textContent = name;
+        const inp = document.createElement('input');
+        inp.dataset.reg = i;
+        inp.spellcheck = false;
+        inp.title = 'Hex érték, Enter: beállítás (csak megállítva)';
+        inp.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter') return;
+          const v = parseInt(inp.value, 16);
+          if (dbgStopped && !isNaN(v)) api.dbgSetReg(i, v);
+          dbgRefresh();
+        });
+        l.append(n, inp);
+        box.append(l);
+      });
+    }
+    const inputs = box.querySelectorAll('input');
+    inputs.forEach((inp, i) => {
+      const w = i < 12 ? 4 : (i < 14 ? 2 : 1);
+      if (document.activeElement !== inp) inp.value = hex(r[i], w);
+      inp.readOnly = !dbgStopped;
+      inp.classList.toggle('chg', !!dbgPrevRegs && dbgPrevRegs[i] !== r[i]);
+    });
+    const f = r[1] & 0xFF;
+    $('dbg-flags').innerHTML = 'SZ-H-PNC'.split('').map((ch, i) =>
+      (f & (0x80 >> i)) ? '<b>' + ch + '</b>' : (ch === '-' ? '-' : ch.toLowerCase())).join('') +
+      '  (' + hex(f, 2) + ')';
+    $('dbg-pages').textContent = 'Lapok: ' + [0, 1, 2, 3].map((i) => hex(r[17 + i], 2)).join(' ');
+    return r;
+  }
+
+  // disassembly lines from 'start': [{ addr, text }]
+  function dbgDisasm(start, count) {
+    return api.dbgDisasm(start & 0xFFFF, count).split('\n').filter((l) => l.trim())
+      .map((text) => ({ addr: parseInt(text.trim().slice(0, 4), 16), text: text.replace(/\s+$/, '') }));
+  }
+
+  // lines around the PC, starting at an address whose decoding reaches it
+  function dbgDisasmAround(pc, before, count) {
+    for (let k = 3 * before; k >= 0; k--) {
+      const lines = dbgDisasm(pc - k, count + before + 4);
+      const i = lines.findIndex((l) => l.addr === (pc & 0xFFFF));
+      if (i >= before || (i >= 0 && k <= before)) return lines.slice(Math.max(0, i - before), Math.max(0, i - before) + count);
+    }
+    return dbgDisasm(pc, count);
+  }
+
+  function dbgRenderDis(regs) {
+    const r = regs || dbgRegs();
+    const pc = r[0];
+    const lines = ($('dbg-follow').checked || dbgDisStart < 0) ? dbgDisasmAround(pc, 6, 22) : dbgDisasm(dbgDisStart, 22);
+    const box = $('dbg-dis');
+    box.textContent = '';
+    for (const l of lines) {
+      const d = document.createElement('div');
+      d.textContent = l.text;
+      if (l.addr === pc) d.classList.add('pc');
+      if (l.addr === dbgCursor) d.classList.add('cur');
+      if (dbgBps.some((b) => b.type === 'x' && b.addr === l.addr)) d.classList.add('bp');
+      d.onclick = (e) => {
+        if (e.offsetX < 16) dbgToggleExecBp(l.addr);
+        else {
+          dbgCursor = l.addr;
+          dbgRenderDis();
+        }
+      };
+      box.append(d);
+    }
+  }
+
+  function dbgRenderMem() {
+    const len = 256;
+    const p = api.dbgMem(dbgMemAddr, len, dbgMemPhys ? 1 : 0);
+    const bytes = M.HEAPU8.slice(p, p + len);
+    const box = $('dbg-mem');
+    box.textContent = '';
+    for (let row = 0; row < len; row += 16) {
+      const a = dbgMemAddr + row;
+      const line = document.createElement('div');
+      line.append(dbgMemPhys ? hex(a >> 14, 2) + ':' + hex(a & 0x3FFF, 4) + ' ' : hex(a & 0xFFFF, 4) + ' ');
+      let ascii = '';
+      for (let i = 0; i < 16; i++) {
+        const v = bytes[row + i];
+        const b = document.createElement('span');
+        b.className = 'b';
+        if (dbgPrevMem && dbgPrevMem.addr === dbgMemAddr && dbgPrevMem.phys === dbgMemPhys &&
+            dbgPrevMem.bytes[row + i] !== v) b.classList.add('chg');
+        b.textContent = ' ' + hex(v, 2);
+        b.ondblclick = () => {
+          const t = window.prompt('Új érték (hex): ' + (dbgMemPhys ? hex((a + i) >> 14, 2) + ':' + hex((a + i) & 0x3FFF, 4) : hex((a + i) & 0xFFFF, 4)), hex(v, 2));
+          if (t === null) return;
+          const nv = parseInt(t, 16);
+          if (!isNaN(nv)) api.dbgPoke(a + i, nv & 0xFF, dbgMemPhys ? 1 : 0);
+          dbgRenderMem();
+        };
+        line.append(b);
+        ascii += (v >= 32 && v < 127) ? String.fromCharCode(v) : '.';
+      }
+      line.append('  ' + ascii);
+      box.append(line);
+    }
+    dbgPrevMem = { addr: dbgMemAddr, phys: dbgMemPhys, bytes };
+  }
+
+  const DBG_BP_NAMES = { x: 'végrehajtás', r: 'mem. olvasás', w: 'mem. írás', rw: 'mem. olv./írás',
+                         ior: 'port IN', iow: 'port OUT', iorw: 'port IN/OUT' };
+  function dbgRenderBps() {
+    const ul = $('dbg-bp-list');
+    ul.textContent = '';
+    if (!dbgBps.length) {
+      const li = document.createElement('li');
+      li.className = 'small';
+      li.textContent = 'nincs';
+      ul.append(li);
+    }
+    dbgBps.forEach((b, i) => {
+      const li = document.createElement('li');
+      const x = document.createElement('button');
+      x.textContent = '✕';
+      x.title = 'Törlés';
+      x.onclick = () => { dbgBps.splice(i, 1); dbgApplyBps(); dbgRenderBps(); dbgRenderDis(); };
+      li.append(x, (b.type.startsWith('io') ? hex(b.addr, 2) : hex(b.addr, 4)) + '  ' + DBG_BP_NAMES[b.type]);
+      ul.append(li);
+    });
+  }
+
+  function dbgStatus() {
+    const st = $('dbg-status');
+    if (!dbgStopped) {
+      st.textContent = 'fut';
+      st.classList.remove('stopped');
+      return;
+    }
+    const [why, pc, addr, value] = api.dbgInfo().split(' ').map(Number);
+    let t = DBG_REASONS[why] + ' – PC: ' + hex(pc, 4);
+    if (why >= 4 && why <= 5) t += ', cím: ' + hex(addr, 4) + ' = ' + hex(value, 2) + ' (a hozzáférő utasítás után)';
+    if (why >= 6) t += ', port: ' + hex(addr & 0xFF, 2) + ' = ' + hex(value, 2) + ' (az utasítás után)';
+    st.textContent = t;
+    st.classList.add('stopped');
+  }
+
+  function dbgRefresh() {
+    if (!dbgOpen || !ready) return;
+    const r = dbgRenderRegs();
+    dbgRenderDis(r);
+    dbgRenderMem();
+    dbgStatus();
+    for (const id of ['dbg-step', 'dbg-over', 'dbg-cursor', 'dbg-run']) $(id).disabled = !dbgStopped;
+    $('dbg-pause').disabled = dbgStopped;
+    dbgPrevRegs = r;
+  }
+
+  // called by the main loop when the emulator has stopped
+  function dbgOnStop() {
+    dbgStopped = true;
+    releaseAllKeys();
+    if (!dbgOpen) dbgShow(true);
+    dbgCursor = -1;
+    dbgRefresh();
+  }
+
+  function dbgResume(fn) {
+    if (!dbgStopped) return;
+    dbgPrevRegs = dbgRegs();
+    dbgStopped = false;
+    fn();
+    dbgStatus();
+    for (const id of ['dbg-step', 'dbg-over', 'dbg-cursor', 'dbg-run']) $(id).disabled = true;
+    $('dbg-pause').disabled = false;
+  }
+
+  // step over: CALL, RST (EXOS / TVC system call with its parameter byte),
+  // DJNZ, LDIR & co. and HALT run as one step
+  function dbgStepOver() {
+    const pc = dbgRegs()[0];
+    const p = api.dbgMem(pc, 2, 0);
+    const b0 = M.HEAPU8[p], b1 = M.HEAPU8[p + 1];
+    let len = 0;
+    if (b0 === 0xCD || (b0 & 0xC7) === 0xC4) len = 3;           // CALL
+    else if (b0 === 0xF7) len = 2;                              // RST 30h + parameter
+    else if ((b0 & 0xC7) === 0xC7) len = 1;                     // RST
+    else if (b0 === 0x10) len = 2;                              // DJNZ
+    else if (b0 === 0x76) len = 1;                              // HALT
+    else if (b0 === 0xED && (b1 & 0xF4) === 0xB0) len = 2;      // LDIR, LDDR, CPIR...
+    if (len) dbgResume(() => api.dbgRunTo((pc + len) & 0xFFFF));
+    else dbgResume(() => api.dbgStep());
+  }
+
+  let dbgTimer = 0;
+  function dbgShow(on) {
+    dbgOpen = on;
+    $('debugger').hidden = !on;
+    $('btn-debug').classList.toggle('on', on);
+    try { localStorage.setItem('ep128web.debugger', on ? '1' : '0'); } catch (e) { }
+    clearInterval(dbgTimer);
+    if (on) {
+      // while running, the views follow the machine a few times a second
+      dbgTimer = setInterval(() => { if (!dbgStopped) dbgRefresh(); }, 300);
+      dbgRenderBps();
+      dbgRefresh();
+    }
+  }
+
+  function setupDebugger() {
+    $('btn-debug').onclick = () => dbgShow(!dbgOpen);
+    $('dbg-run').onclick = () => dbgResume(() => api.dbgContinue());
+    $('dbg-pause').onclick = () => { if (!dbgStopped) api.dbgPause(); };
+    $('dbg-step').onclick = () => dbgResume(() => api.dbgStep());
+    $('dbg-over').onclick = dbgStepOver;
+    $('dbg-cursor').onclick = () => { if (dbgCursor >= 0) dbgResume(() => api.dbgRunTo(dbgCursor)); };
+    $('dbg-follow').onchange = () => dbgRefresh();
+    $('dbg-dis-addr').addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      const a = dbgParseAddr(e.target.value);
+      if (!a || a.phys) return;
+      dbgDisStart = a.addr;
+      $('dbg-follow').checked = false;
+      dbgRefresh();
+    });
+    $('dbg-mem-addr').addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      const a = dbgParseAddr(e.target.value);
+      if (!a) return;
+      dbgMemAddr = a.addr;
+      dbgMemPhys = a.phys;
+      dbgPrevMem = null;
+      dbgRefresh();
+    });
+    $('dbg-bp-add').onclick = () => {
+      const a = dbgParseAddr($('dbg-bp-addr').value);
+      if (!a || a.phys) { setMessage('A töréspont címe hexadecimális CPU cím (pl. C000)', true); return; }
+      const type = $('dbg-bp-type').value;
+      const addr = type.startsWith('io') ? a.addr & 0xFF : a.addr;
+      if (!dbgBps.some((b) => b.type === type && b.addr === addr)) dbgBps.push({ type, addr });
+      dbgApplyBps();
+      dbgRenderBps();
+      dbgRenderDis();
+    };
+    // shortcuts while the focus is in the debugger
+    $('debugger').addEventListener('keydown', (e) => {
+      if (isTextInput(e.target)) return;
+      const k = { F5: 'dbg-run', F10: 'dbg-over', F11: 'dbg-step', F4: 'dbg-cursor' }[e.code];
+      if (k) {
+        e.preventDefault();
+        e.stopPropagation();
+        $(k).click();
+      } else if (e.code === 'F9' && dbgCursor >= 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        dbgToggleExecBp(dbgCursor);
+      }
+    });
+    dbgApplyBps();
+    let on = false;
+    try { on = localStorage.getItem('ep128web.debugger') === '1'; } catch (e) { }
+    if (on) dbgShow(true);
   }
 
   // --------------------------------------------------------------------------
@@ -3326,6 +3650,13 @@ registerProcessor('ep-output', EPOutput);
     lastTime = now;
     if (dt > 100) dt = 100;             // tab was in the background
     if (!ready || paused) return;
+    if (dbgStopped) {
+      // stopped in the debugger, until it continues (or a reset / new
+      // machine / snapshot starts the machine again)
+      if (api.dbgState()) return;
+      dbgStopped = false;
+      dbgRefresh();
+    }
     pollGamepads();
 
     let us = dt * 1000;
@@ -3359,7 +3690,7 @@ registerProcessor('ep-output', EPOutput);
           if (done < 20000) check(api.run(20000 - done), 'emuláció');
           api.audioClear();
           us += 20000;
-        } while (performance.now() - t0 < 14);
+        } while (performance.now() - t0 < 14 && !api.dbgState());
       } else {
         check(api.run(us), 'emuláció');
       }
@@ -3374,6 +3705,7 @@ registerProcessor('ep-output', EPOutput);
       return;
     }
     emulatedUs += us;
+    if (api.dbgState()) dbgOnStop();
     // ep128emu runs the floppy drives' motor-off timer (and writes the
     // buffered track to the image) when it is asked for the LED state, once
     // per 2 ms timeslice, like its own VM thread does
@@ -3487,7 +3819,22 @@ registerProcessor('ep-output', EPOutput);
       usbChdir: c('ep_usb_chdir', 'number', ['string']),
       usbInfo: c('ep_usb_info', 'number', ['number']),
       setTvcExtJoy: c('ep_set_tvc_ext_joy', null, ['number', 'number']),
-      set2dfx: c('ep_set_2dfx', null, ['number'])
+      set2dfx: c('ep_set_2dfx', null, ['number']),
+      dbgState: c('ep_dbg_state', 'number', []),
+      dbgInfo: c('ep_dbg_info', 'string', []),
+      dbgPause: c('ep_dbg_pause', null, []),
+      dbgContinue: c('ep_dbg_continue', null, []),
+      dbgStep: c('ep_dbg_step', null, []),
+      dbgRunTo: c('ep_dbg_run_to', null, ['number']),
+      dbgSetBp: c('ep_dbg_set_bp', null, ['number', 'number']),
+      dbgClearBps: c('ep_dbg_clear_bps', null, []),
+      dbgWatchClear: c('ep_dbg_watch_clear', null, []),
+      dbgWatchAdd: c('ep_dbg_watch_add', null, ['number', 'number', 'number', 'number']),
+      dbgRegs: c('ep_dbg_regs', 'string', []),
+      dbgSetReg: c('ep_dbg_set_reg', null, ['number', 'number']),
+      dbgDisasm: c('ep_dbg_disasm', 'string', ['number', 'number']),
+      dbgMem: c('ep_dbg_mem', 'number', ['number', 'number', 'number']),
+      dbgPoke: c('ep_dbg_poke', null, ['number', 'number', 'number'])
     };
     for (const d of ['/roms', '/files', '/tmp', '/disk', '/diskb', '/tape']) ensureDir(d);
 

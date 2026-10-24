@@ -89,6 +89,7 @@ SOURCES="
   web/src/twodfx/firmware_eggs/firmware_page.c
   $(ls web/src/twodfx/firmware_eggs/egg_*.c)
   web/src/twodfx_bridge.cpp
+  web/src/webdebug.cpp
   web/src/soundio_web.cpp
   web/src/sndfile_wav.cpp
   web/src/main.cpp

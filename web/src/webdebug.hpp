@@ -1,0 +1,61 @@
+// Ep128web: debugger support for the single threaded web build
+//
+// The desktop ep128emu stops the emulation thread inside the breakpoint
+// callback while its debugger window is in use. In the browser everything
+// runs on one thread, so the VMs (patches/zzzzz-webdebug.patch) ask
+// checkBreak() before each Z80 instruction while 'active' is set; when it
+// returns true, the VM's run() returns at that instruction boundary, keeping
+// the remaining time, and continues from there when it is run again.
+//
+// Execution breakpoints and stepping are handled here (CPU addresses);
+// memory and I/O watchpoints use ep128emu's own breakpoints, whose callback
+// requests a stop at the next instruction boundary (after the instruction
+// that made the access).
+
+#ifndef EP128WEB_WEBDEBUG_HPP
+#define EP128WEB_WEBDEBUG_HPP
+
+#include <stdint.h>
+
+namespace WebDebug {
+
+  enum StopReason {
+    RUNNING = 0,
+    BREAKPOINT = 1,             // execution breakpoint
+    STEP = 2,                   // step, step over, run to cursor finished
+    PAUSED = 3,                 // stopped by the user
+    MEM_READ = 4,               // watchpoints
+    MEM_WRITE = 5,
+    IO_READ = 6,
+    IO_WRITE = 7
+  };
+
+  // something to check at instruction boundaries
+  extern bool active;
+  // Enterprise: run() returned inside a NICK slot, continue there
+  extern bool resumeInner;
+
+  // called before each instruction while 'active' is set; true: stop
+  bool checkBreak(uint16_t pc);
+  // ep128emu breakpoint callback (memory and I/O watchpoints)
+  void breakPointCallback(void *userData, int type, uint16_t addr,
+                          uint8_t value);
+
+  int stopReason();
+  uint16_t stopPC();
+  uint16_t stopAddr();          // watchpoint: address accessed
+  uint8_t stopValue();          // watchpoint: value read or written
+  // continue running; 'stepInto': stop before the next instruction;
+  // 'tempBreak' >= 0: stop at that address (step over, run to cursor)
+  void resume(bool stepInto, int32_t tempBreak);
+  // stop at the next instruction boundary
+  void pause();
+  // forget the stop and the pending state (new machine, reset, snapshot)
+  void clearStop();
+
+  void setBreakPoint(uint16_t addr, bool enabled);
+  void clearBreakPoints();
+
+}
+
+#endif

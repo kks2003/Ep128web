@@ -22,6 +22,8 @@
 #include "tvc_soundcards.hpp"
 #include "tvc256kpp.hpp"
 #include "twodfx_bridge.hpp"
+#include "webdebug.hpp"
+#include "bplist.hpp"
 #include "decompm2.hpp"
 
 #include <emscripten/emscripten.h>
@@ -302,6 +304,19 @@ namespace {
 
 extern "C" {
 
+// debugger: memory and I/O watchpoints, set on each new machine
+static Ep128Emu::BreakPointList debugWatchPoints;
+
+static void applyDebugWatchPoints()
+{
+  if (!vm)
+    return;
+  vm->clearBreakPoints();
+  vm->setBreakPoints(debugWatchPoints);
+  vm->setBreakPointPriorityThreshold(0);
+  vm->setBreakPointCallback(&WebDebug::breakPointCallback, (void *) 0);
+}
+
 // 2dfx card (Enterprise and TVC), on ports F8h, F9h
 static bool twoDfxWanted = false;
 
@@ -346,6 +361,8 @@ EMSCRIPTEN_KEEPALIVE int ep_set_machine_type(int type)
       vm->setSoundClockFrequency(500000);
     }
     machineType = (type == 1 ? 1 : 0);
+    WebDebug::clearStop();              // a new machine runs
+    applyDebugWatchPoints();
     TwoDfx::configure(twoDfxWanted, machineType);
     vm->setEnableMemoryTimingEmulation(true);
     vm->setAudioOutputHighQuality(true);
@@ -406,6 +423,7 @@ EMSCRIPTEN_KEEPALIVE int ep_reset(int isColdReset)
 {
   try {
     vm->reset(isColdReset != 0);
+    WebDebug::clearStop();              // the machine starts again
     // the machine's RESET line is wired to the 2dfx microcontroller's reset
     // pin: a warm reset restarts the card just like switching it on
     TwoDfx::powerCycle();
@@ -419,6 +437,8 @@ EMSCRIPTEN_KEEPALIVE int ep_reset(int isColdReset)
 EMSCRIPTEN_KEEPALIVE int ep_run(int microseconds)
 {
   try {
+    if (WebDebug::stopReason() != WebDebug::RUNNING)
+      return 0;                         // stopped in the debugger
     vm->run(size_t(microseconds));
     return 0;
   }
@@ -493,6 +513,7 @@ EMSCRIPTEN_KEEPALIVE int ep_load_snapshot(const char *fileName)
     Ep128Emu::File  f(fileName);
     vm->registerChunkTypes(f);
     f.processAllChunks();
+    WebDebug::clearStop();
     return 0;
   }
   catch (...) {
@@ -944,6 +965,157 @@ EMSCRIPTEN_KEEPALIVE void ep_set_tvc_ext_joy(int joyIndex, int state)
     TVC64::TVC64VM *tvc = static_cast<TVC64::TVC64VM *>(vm);
     tvc->setExtJoyState(joyIndex, (uint8_t)state);
   }
+}
+
+// ----------------------------------------------------------------------------
+// Debugger (see webdebug.hpp)
+
+// 0: running, else the reason of the stop (WebDebug::StopReason)
+EMSCRIPTEN_KEEPALIVE int ep_dbg_state()
+{
+  return WebDebug::stopReason();
+}
+
+// "reason pc addr value" of the stop
+EMSCRIPTEN_KEEPALIVE const char *ep_dbg_info()
+{
+  static char buf[64];
+  std::snprintf(buf, sizeof(buf), "%d %d %d %d",
+                WebDebug::stopReason(), int(WebDebug::stopPC()),
+                int(WebDebug::stopAddr()), int(WebDebug::stopValue()));
+  return buf;
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_pause()
+{
+  WebDebug::pause();
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_continue()
+{
+  WebDebug::resume(false, -1);
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_step()
+{
+  WebDebug::resume(true, -1);
+}
+
+// runs until 'addr' (run to cursor, step over)
+EMSCRIPTEN_KEEPALIVE void ep_dbg_run_to(int addr)
+{
+  WebDebug::resume(false, int32_t(addr & 0xFFFF));
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_set_bp(int addr, int enabled)
+{
+  WebDebug::setBreakPoint(uint16_t(addr & 0xFFFF), enabled != 0);
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_clear_bps()
+{
+  WebDebug::clearBreakPoints();
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_watch_clear()
+{
+  debugWatchPoints = Ep128Emu::BreakPointList();
+  applyDebugWatchPoints();
+}
+
+// a memory (CPU address) or I/O port watchpoint, for reads and/or writes
+EMSCRIPTEN_KEEPALIVE void ep_dbg_watch_add(int isIO, int addr, int r, int w)
+{
+  if (isIO)
+    debugWatchPoints.addIOBreakPoint(uint16_t(addr & 0xFFFF), r != 0, w != 0, 0);
+  else
+    debugWatchPoints.addMemoryBreakPoint(uint16_t(addr & 0xFFFF),
+                                         r != 0, w != 0, false, false, 0);
+  applyDebugWatchPoints();
+}
+
+// the Z80 registers: PC AF BC DE HL IX IY SP AF' BC' DE' HL' I R IM IFF1
+// IFF2, then the segments of the 4 pages (space separated decimal numbers)
+EMSCRIPTEN_KEEPALIVE const char *ep_dbg_regs()
+{
+  static char buf[256];
+  const Ep128::Z80_REGISTERS& r =
+      static_cast< const Ep128Emu::VirtualMachine * >(vm)->getZ80Registers();
+  std::snprintf(buf, sizeof(buf),
+                "%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d",
+                int(r.PC.W.l), int(r.AF.W), int(r.BC.W), int(r.DE.W),
+                int(r.HL.W), int(r.IX.W), int(r.IY.W), int(r.SP.W),
+                int(r.altAF.W), int(r.altBC.W), int(r.altDE.W),
+                int(r.altHL.W), int(r.I),
+                int((r.R & 0x7F) | (r.RBit7 & 0x80)), int(r.IM),
+                int(r.IFF1 != 0), int(r.IFF2 != 0),
+                int(vm->getMemoryPage(0)), int(vm->getMemoryPage(1)),
+                int(vm->getMemoryPage(2)), int(vm->getMemoryPage(3)));
+  return buf;
+}
+
+// sets a register, in the order of ep_dbg_regs()
+EMSCRIPTEN_KEEPALIVE void ep_dbg_set_reg(int n, int value)
+{
+  Ep128::Z80_REGISTERS& r = vm->getZ80Registers();
+  uint16_t  v = uint16_t(value & 0xFFFF);
+  switch (n) {
+  case 0: vm->setProgramCounter(v); break;
+  case 1: r.AF.W = v; break;
+  case 2: r.BC.W = v; break;
+  case 3: r.DE.W = v; break;
+  case 4: r.HL.W = v; break;
+  case 5: r.IX.W = v; break;
+  case 6: r.IY.W = v; break;
+  case 7: r.SP.W = v; break;
+  case 8: r.altAF.W = v; break;
+  case 9: r.altBC.W = v; break;
+  case 10: r.altDE.W = v; break;
+  case 11: r.altHL.W = v; break;
+  case 12: r.I = uint8_t(v); break;
+  case 13: r.R = uint8_t(v & 0x7F); r.RBit7 = uint8_t(v & 0x80); break;
+  case 14: r.IM = uint8_t(v < 3 ? v : 2); break;
+  case 15: r.IFF1 = uint8_t(v ? 1 : 0); break;
+  case 16: r.IFF2 = uint8_t(v ? 1 : 0); break;
+  }
+}
+
+// 'count' disassembled lines from 'addr' (CPU address), one per line
+EMSCRIPTEN_KEEPALIVE const char *ep_dbg_disasm(int addr, int count)
+{
+  static std::string out;
+  out.clear();
+  uint32_t  a = uint32_t(addr & 0xFFFF);
+  std::string line;
+  for (int i = 0; i < count; i++) {
+    line.clear();
+    a = vm->disassembleInstruction(line, a, true) & 0xFFFF;
+    out += line;
+    out += '\n';
+  }
+  return out.c_str();
+}
+
+// 'len' bytes (max. 4096) from 'addr': a CPU address, or with 'physical'
+// a segment * 16384 + offset address
+EMSCRIPTEN_KEEPALIVE const uint8_t *ep_dbg_mem(int addr, int len, int physical)
+{
+  static uint8_t buf[4096];
+  if (len > 4096)
+    len = 4096;
+  for (int i = 0; i < len; i++) {
+    uint32_t  a = uint32_t(addr + i);
+    buf[i] = vm->readMemory(physical ? (a & 0x3FFFFF) : (a & 0xFFFF),
+                            physical == 0);
+  }
+  return buf;
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_poke(int addr, int value, int physical)
+{
+  uint32_t  a = uint32_t(addr);
+  vm->writeMemory(physical ? (a & 0x3FFFFF) : (a & 0xFFFF),
+                  uint8_t(value), physical == 0);
 }
 
 }       // extern "C"
