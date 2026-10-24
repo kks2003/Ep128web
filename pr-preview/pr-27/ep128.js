@@ -3640,7 +3640,7 @@ registerProcessor('ep-output', EPOutput);
     dbgRenderDis(r);
     dbgRenderMem();
     dbgStatus();
-    for (const id of ['dbg-step', 'dbg-over', 'dbg-out', 'dbg-cursor', 'dbg-run']) $(id).disabled = !dbgStopped;
+    for (const id of ['dbg-step', 'dbg-over', 'dbg-out', 'dbg-cursor', 'dbg-run', 'dbg-frame']) $(id).disabled = !dbgStopped;
     $('dbg-pause').disabled = dbgStopped;
     $('dbg-machine').textContent = machine ? '– ' + machine.name : '';
     // machine specific tabs
@@ -3730,8 +3730,75 @@ registerProcessor('ep-output', EPOutput);
     dbgStopped = false;
     fn();
     dbgStatus();
-    for (const id of ['dbg-step', 'dbg-over', 'dbg-out', 'dbg-cursor', 'dbg-run']) $(id).disabled = true;
+    for (const id of ['dbg-step', 'dbg-over', 'dbg-out', 'dbg-cursor', 'dbg-run', 'dbg-frame']) $(id).disabled = true;
     $('dbg-pause').disabled = false;
+  }
+
+  // runs one frame (20 ms of emulated time), then stops
+  let dbgFrameUs = -1;
+  function dbgFrameStep() {
+    dbgResume(() => { api.dbgContinue(); dbgFrameUs = 20000; });
+  }
+  // called by the main loop with the emulated time just run
+  function dbgFrameTick(us) {
+    if (dbgFrameUs < 0) return;
+    dbgFrameUs -= us;
+    if (dbgFrameUs <= 0) {
+      dbgFrameUs = -1;
+      if (!dbgStopped) api.dbgPause();
+    }
+  }
+
+  // --- memory value finder ---
+  let dbgFindPrev = null, dbgFindCand = null;
+  function dbgReadAll() {
+    const out = new Uint8Array(65536);
+    for (let a = 0; a < 65536; a += 4096) {
+      const p = api.dbgMem(a, 4096, 0);
+      out.set(M.HEAPU8.subarray(p, p + 4096), a);
+    }
+    return out;
+  }
+  function dbgFindRender() {
+    const box = $('dbg-find');
+    box.textContent = '';
+    if (!dbgFindCand) { $('dbg-find-count').textContent = ''; return; }
+    $('dbg-find-count').textContent = dbgFindCand.length + ' jelölt';
+    const cur = dbgReadAll();
+    for (const a of dbgFindCand.slice(0, 100)) {
+      const d = document.createElement('div');
+      d.textContent = hex(a, 4) + '  ' + hex(dbgFindPrev[a], 2) + ' → ' + hex(cur[a], 2) + (dbgLabel(a) ? '   ' + dbgLabel(a) : '');
+      d.style.cursor = 'pointer';
+      d.title = 'Írásfigyelés erre a címre';
+      d.onclick = () => {
+        if (!dbgBps.some((b) => b.type === 'w' && b.addr === a)) dbgBps.push({ type: 'w', addr: a, cond: '', on: true, hits: 0 });
+        dbgApplyBps(); dbgRenderBps();
+        setMessage('Írásfigyelés: ' + hex(a, 4));
+      };
+      box.append(d);
+    }
+    if (dbgFindCand.length > 100) box.append('… (' + (dbgFindCand.length - 100) + ' további)');
+  }
+  function dbgFindNew() {
+    dbgFindPrev = dbgReadAll();
+    dbgFindCand = Array.from({ length: 65536 }, (_, i) => i);
+    const v = parseInt($('dbg-find-val').value, 16);
+    if ($('dbg-find-op').value === 'eq' && !isNaN(v)) dbgFindCand = dbgFindCand.filter((a) => dbgFindPrev[a] === v);
+    dbgFindRender();
+  }
+  function dbgFindFilter() {
+    if (!dbgFindPrev) { dbgFindNew(); return; }
+    const cur = dbgReadAll();
+    const op = $('dbg-find-op').value;
+    const v = parseInt($('dbg-find-val').value, 16);
+    if ((op === 'eq' || op === 'ne') && isNaN(v)) { setMessage('Adj meg egy értéket (hex)', true); return; }
+    const test = {
+      eq: (o, n) => n === v, ne: (o, n) => n !== v, chg: (o, n) => n !== o, same: (o, n) => n === o,
+      inc: (o, n) => n > o, dec: (o, n) => n < o, inc1: (o, n) => n === ((o + 1) & 255), dec1: (o, n) => n === ((o - 1) & 255)
+    }[op];
+    dbgFindCand = dbgFindCand.filter((a) => test(dbgFindPrev[a], cur[a]));
+    dbgFindPrev = cur;
+    dbgFindRender();
   }
 
   // step over: CALL, RST (EXOS / TVC system call with its parameter byte),
@@ -3822,7 +3889,14 @@ registerProcessor('ep-output', EPOutput);
       case 'lpt': dbgRenderLpt(); break;
       case 'sound': $('dbg-sound').textContent = api.dbgSound(); break;
       case 'fx': $('dbg-fx').textContent = api.dbg2dfx(); break;
-      case 'c256': $('dbg-c256').textContent = api.dbgCard256(); break;
+      case 'c256': {
+        const t = api.dbgCard256();
+        $('dbg-c256').textContent = t + (t.startsWith('A TVC256k++') ? '' :
+          '\nB0/B1: P2/P3 lap  B2-B5: 8 MB-os lapok  B6: PSRAM MB  B7: ROM lap  C3/C4: firmware\n' +
+          'C5: meghajtó  C8-CA: PSRAM / flash / DSK érvényes  D0: USB  D4/D5: egér  E0-FF: vSID');
+        break;
+      }
+      case 'find': if (dbgFindCand) $('dbg-find-count').textContent = dbgFindCand.length + ' jelölt'; break;
       case 'sym': {
         const flt = $('dbg-sym-filter').value.trim().toUpperCase();
         const all = [...dbgSymAddr.entries()].filter(([n]) => !flt || n.includes(flt)).sort((x, y) => x[1] - y[1]);
@@ -3913,8 +3987,8 @@ registerProcessor('ep-output', EPOutput);
 
   const MON_HELP = [
     '.  A <cím> <utasítás>   assembler (pl. A 4000 LD A,5); utána a következő cím jön',
-    'D [kezdet [vég]]        disassembly',
-    'M [kezdet [vég]]        memória dump',
+    'D [kezdet [vég]] ["fájl"]  disassembly (fájlba is)',
+    'M [kezdet [vég]] ["fájl"]  memória dump (fájlba is)',
     '> <cím> <bájtok…>       memória írása (hex vagy "szöveg")',
     'F <kezdet> <vég> <minta…>  feltöltés mintával',
     'C <kezdet> <vég> <cél>  összehasonlítás',
@@ -3967,22 +4041,32 @@ registerProcessor('ep-output', EPOutput);
         return 'keep';
       }
       case 'D': {
+        const file = args.length && /^".*"$/.test(args[args.length - 1]) ? args.pop().slice(1, -1) : null;
+        const lines = [];
+        const print = file ? (t) => lines.push(t) : monPrint;
         let a = args.length ? monAddr(args[0]).addr : (monNextD >= 0 ? monNextD : dbgRegs()[0]);
         const end = args.length > 1 ? monAddr(args[1]).addr : -1;
         let n = end >= 0 ? 4096 : 20;
         while (n-- > 0) {
           const l = dbgDisasm(a, 1)[0];
           const lbl = dbgLabel(a);
-          if (lbl) monPrint(lbl + ':');
-          monPrint(dbgSymText(l.text));
+          if (lbl) print(lbl + ':');
+          print(dbgSymText(l.text));
           const nx = dbgDisasm(a, 2)[1].addr;
           if (end >= 0 && (a >= end || nx > end || nx < a)) { a = nx; break; }
           a = nx;
         }
         monNextD = a;
+        if (file) {
+          download(new TextEncoder().encode(lines.join('\n') + '\n'), file || 'disasm.txt');
+          monPrint(lines.length + ' sor: ' + file);
+        }
         break;
       }
       case 'M': {
+        const file = args.length && /^".*"$/.test(args[args.length - 1]) ? args.pop().slice(1, -1) : null;
+        const lines = [];
+        const print = file ? (t) => lines.push(t) : monPrint;
         let a = args.length ? monAddr(args[0]) : { addr: monNextM >= 0 ? monNextM : 0, phys: false };
         let len = args.length > 1 ? monAddr(args[1]).addr - a.addr + 1 : 128;
         if (len <= 0 || len > 65536) throw new Error('hibás tartomány');
@@ -3993,9 +4077,13 @@ registerProcessor('ep-output', EPOutput);
             s += ' ' + hex(v, 2);
             asc += (v >= 32 && v < 127) ? String.fromCharCode(v) : '.';
           }
-          monPrint(s.padEnd(a.phys ? 56 : 54) + '  ' + asc);
+          print(s.padEnd(a.phys ? 56 : 54) + '  ' + asc);
         }
         monNextM = a.addr + len;
+        if (file) {
+          download(new TextEncoder().encode(lines.join('\n') + '\n'), file);
+          monPrint(lines.length + ' sor: ' + file);
+        }
         break;
       }
       case '>': {
@@ -4194,6 +4282,9 @@ registerProcessor('ep-output', EPOutput);
     $('dbg-step').onclick = () => dbgResume(() => api.dbgStep());
     $('dbg-over').onclick = dbgStepOver;
     $('dbg-out').onclick = dbgStepOut;
+    $('dbg-frame').onclick = dbgFrameStep;
+    $('dbg-find-new').onclick = dbgFindNew;
+    $('dbg-find-go').onclick = dbgFindFilter;
     $('dbg-cursor').onclick = () => { if (dbgCursor >= 0) dbgResume(() => api.dbgRunTo(dbgCursor)); };
     $('dbg-follow').onchange = () => dbgRefresh();
     $('dbg-dis-addr').addEventListener('keydown', (e) => {
@@ -4380,6 +4471,7 @@ registerProcessor('ep-output', EPOutput);
       return;
     }
     emulatedUs += us;
+    dbgFrameTick(us);
     dbgHandleStops();
     // ep128emu runs the floppy drives' motor-off timer (and writes the
     // buffered track to the image) when it is asked for the LED state, once

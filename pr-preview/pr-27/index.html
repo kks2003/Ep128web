@@ -6,13 +6,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610241436-b359bf5">
-<meta name="build" content="202610241436-b359bf5">
+<link rel="stylesheet" href="style.css?v=202610241439-82da96e">
+<meta name="build" content="202610241439-82da96e">
 </head>
 <body>
-<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #27 előnézete, nem az éles oldal · fordítva: 2026.10.24 16:36 · b359bf5 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #27 előnézete, nem az éles oldal · fordítva: 2026.10.24 16:39 · 82da96e · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.24 16:36 · b359bf5</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.24 16:39 · 82da96e</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -119,6 +119,7 @@
       <button id="dbg-over" title="Egy utasítás, a CALL, RST, DJNZ és LDIR egészben fut le (F10)">Átlépés</button>
       <button id="dbg-out" title="Futás a visszatérésig (RET a jelenlegi szinten)">Kilépés</button>
       <button id="dbg-cursor" title="Futás a disassemblyben kijelölt sorig (F4)">Futás a kurzorig</button>
+      <button id="dbg-frame" title="Egy képkockányi (20 ms) futás, utána megáll">Képkocka</button>
       <span id="dbg-status"></span>
     </div>
     <div class="dbg-cols">
@@ -180,6 +181,7 @@
       <button data-tab="sound" data-tvc="1">Hangkártyák</button>
       <button data-tab="fx">2dfx</button>
       <button data-tab="c256" data-tvc="1">TVC256k++</button>
+      <button data-tab="find">Kereső</button>
       <button data-tab="sym">Szimbólumok</button>
       <button data-tab="script">Szkript</button>
     </div>
@@ -209,6 +211,26 @@
     <div class="dbg-box dbg-tab" data-pane="sound" hidden><div id="dbg-sound" class="dbg-mono"></div></div>
     <div class="dbg-box dbg-tab" data-pane="fx" hidden><div id="dbg-fx" class="dbg-mono"></div></div>
     <div class="dbg-box dbg-tab" data-pane="c256" hidden><div id="dbg-c256" class="dbg-mono"></div></div>
+    <div class="dbg-box dbg-tab" data-pane="find" hidden>
+      <div class="dbg-tool">
+        <button id="dbg-find-new" title="A teljes CPU memória (64K) pillanatképe; minden cím jelölt">Új keresés</button>
+        <select id="dbg-find-op">
+          <option value="eq">= érték</option>
+          <option value="ne">≠ érték</option>
+          <option value="chg">változott</option>
+          <option value="same">nem változott</option>
+          <option value="inc">nőtt</option>
+          <option value="dec">csökkent</option>
+          <option value="inc1">eggyel nőtt</option>
+          <option value="dec1">eggyel csökkent</option>
+        </select>
+        <input id="dbg-find-val" class="dbg-addr" placeholder="érték (hex)">
+        <button id="dbg-find-go" title="A jelöltek szűrése az előző állapothoz képest">Szűrés</button>
+        <span class="small" id="dbg-find-count"></span>
+      </div>
+      <div class="small">Pl. életek: Új keresés, = 03; veszíts egy életet; eggyel csökkent (vagy = 02)… A végén kattints a címre: írásfigyelés kerül rá.</div>
+      <div id="dbg-find" class="dbg-mono"></div>
+    </div>
     <div class="dbg-box dbg-tab" data-pane="sym" hidden>
       <div class="dbg-tool">
         <label class="file">Szimbólumfájl betöltése…<input type="file" id="dbg-sym-file" accept=".sym,.lst,.txt,.map,.lbl,.asm,.inc,.equ"></label>
@@ -368,7 +390,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610241436-b359bf5"></script>
-<script src="ep128.js?v=202610241436-b359bf5"></script>
+<script src="ep128emu.js?v=202610241439-82da96e"></script>
+<script src="ep128.js?v=202610241439-82da96e"></script>
 </body>
 </html>
