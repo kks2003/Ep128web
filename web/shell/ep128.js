@@ -3540,7 +3540,11 @@ registerProcessor('ep-output', EPOutput);
     0x71: 'HI_MEM_SET memóriafoglalás', 0xF1: 'HI_MEM_SET memóriafoglalás',
     0x72: 'EXP_DIRECT kártya kijelölés', 0xF2: 'EXP_DIRECT kártya kijelölés',
     0x73: 'I/O_DIRECT I/O hozzárendelés', 0xF3: 'I/O_DIRECT I/O hozzárendelés',
-    0x74: 'SLOT_NUM kártya pozíció', 0xF4: 'SLOT_NUM kártya pozíció'
+    0x74: 'SLOT_NUM kártya pozíció', 0xF4: 'SLOT_NUM kártya pozíció',
+    // floppy (VT-DOS), from the TVCinf table
+    0xD6: 'floppy: fájlmutató a fájl elejéhez képest', 0xD7: 'floppy: fájlmutató az aktuálishoz képest',
+    0xD8: 'floppy: fájlmutató a fájl végéhez képest', 0xD9: 'floppy: CLI puffer megadása',
+    0xDA: 'floppy: CLI parancs végrehajtása', 0xDB: 'floppy: FISH funkció'
   };
   const TVC_CLASS = ['video', 'billentyűzet', 'editor', 'hang', 'nyomtató', 'kazetta', 'csatolókártya', 'kernel'];
   function dbgTvcFnName(c) {
@@ -3560,6 +3564,8 @@ registerProcessor('ep-output', EPOutput);
     if (c === 0x0B) return 'C=' + ch(o.C) + ', DE=' + hex(o.DE, 4);
     if (c === 0x0C) return 'DE=' + hex(o.DE, 4);
     if (c === 0xD3 || c === 0x53) return 'név: ' + dbgExosName(o.DE);
+    if (c >= 0xD6 && c <= 0xD8) return 'BCDE=' + hex(o.BC, 4) + hex(o.DE, 4);
+    if (c === 0xDA) return 'parancs: ' + dbgExosName(o.DE);
     if ((c & 0x70) === 0x70) return 'DE=' + hex(o.DE, 4) + ', BC=' + hex(o.BC, 4);
     if (f === 1 && !(c & 0x80)) return 'C=' + ch(o.C);
     if (f === 2) return 'DE=' + hex(o.DE, 4) + ', BC=' + hex(o.BC, 4) + ' bájt';
@@ -3576,41 +3582,206 @@ registerProcessor('ep-output', EPOutput);
     0xEA: 'CRC hiba', 0xE9: 'nincs nyitott file', 0xE8: 'ellenőrzési hiba',
     0xE7: 'belső hiba', 0xE6: 'védelem megsértése', 0xE5: 'rossz blokksorszám'
   };
-  // TVC system variables in U0: [address, length, name, description]
+  // TVC system variables and work areas in U0: [address, length, name, description]
+  // ("TV-Computer Operációs rendszer" and the TVCinf table by KKS)
   const TVC_VARS = [
-    [0x0003, 1, 'P_SAVE', 'lapozás'], [0x0021, 14, 'USRTAB', 'EXT utasítások címtáblája'],
-    [0x0030, 8, 'OS_ENTRY', 'funkcióhívás belépési pont'], [0x0038, 8, 'IT_ENTRY', 'IT belépési pont'],
-    [0x0B00, 8, 'IN_TABLE', 'input hozzárendelés'], [0x0B08, 8, 'OUT_TABLE', 'output hozzárendelés'],
-    [0x0B10, 1, 'INT_DES', 'IT által kiszolgált eszközök'], [0x0B11, 1, 'PORT03', 'port 03 tükör'],
-    [0x0B12, 1, 'PORT05', 'port 05 tükör'], [0x0B13, 1, 'PORT06', 'port 06 tükör'],
-    [0x0B14, 1, 'SND_ACTIVE', 'hang folyamatban'], [0x0B15, 1, 'SND_IRQ', 'új hang megszakít'],
-    [0x0B16, 1, 'STOP_FLAG', 'CTRL+ESC'], [0x0B17, 2, 'ST_LIMIT', 'verem alsó határ (FILL)'],
-    [0x0B19, 2, 'HI_MEM', 'legmagasabb RAM cím'], [0x0B1B, 1, 'P3RAM', 'U3 RAM jó/hibás'],
-    [0x0B1C, 1, 'EX_DEF', 'bővítőkártya alaphozzárendelés'], [0x0B1D, 2, 'INTINC', 'IT számláló (20 ms)'],
-    [0x0B1F, 1, 'IRQ_STAT', 'kártya IT engedélyezés'], [0x0B20, 1, 'INT_FLAG', 'IT kiszolgálás alatt'],
-    [0x0B21, 1, 'WARM_FLAG', 'meleg reset folyamatban'], [0x0B22, 1, 'COLD_FLAG', 'meleg reset tiltva'],
-    [0x0B23, 20, 'INFUNC', 'funkcióhívás kezdő rész'], [0x0B37, 10, 'OUTFUNC', 'funkcióhívás befejező rész'],
-    [0x0B41, 8, 'INT_EXIT', 'IT befejező rész'], [0x0B49, 2, 'STACKT', 'SP ideiglenes'],
-    [0x0B4B, 1, 'L_MODE', 'vonalrajzolási mód'], [0x0B4C, 1, 'L_STYLE', 'vonaltípus'],
-    [0x0B4D, 1, 'INK', 'tintaszín'], [0x0B4E, 1, 'PAPER', 'papírszín'], [0x0B4F, 1, 'BORDER', 'keretszín'],
-    [0x0B50, 1, 'V_FLAG', 'karakter felülírás'], [0x0B51, 10, 'PICTURE', 'billentyűzet mátrix'],
-    [0x0B5B, 10, 'OLDPICT', 'előző billentyűzet mátrix'], [0x0B65, 1, 'DELAY_KEY', 'autorepeat késleltetés'],
-    [0x0B66, 1, 'LOCK_KEY', 'CAPS/SHIFT/ALT lock'], [0x0B67, 1, 'RATE_KEY', 'autorepeat ütem'],
-    [0x0B68, 1, 'HOLD_DIS', 'CTRL+P tiltás'], [0x0B69, 1, 'BAUD', 'soros sebesség'],
-    [0x0B6A, 1, 'FORMAT', 'USART mód'], [0x0B6B, 1, 'BUFFER', 'pufferelt file'],
-    [0x0B6C, 1, 'REMRED', 'motorvezérlés'], [0x0B6D, 1, 'PROTECT', 'védett file'],
-    [0x0B6E, 1, 'EOF', 'file vége'], [0x0B6F, 2, 'MUDDLE', 'CRC alapérték'],
-    [0x0B71, 1, 'SER_OK', 'soros órajel jó'], [0x0E98, 20, 'PROGID', 'programazonosító'],
-    [0x1703, 1, 'NEW', 'BASIC'], [0x1707, 1, 'AUTO', 'BASIC autoindítás'], [0x1708, 1, 'TYPE', 'BASIC'],
-    [0x170C, 2, 'START', 'aktuális BASIC sor'], [0x1720, 2, 'VLOMEM', 'BASIC terület kezdete'],
-    [0x1722, 2, 'TEXT', 'BASIC program kezdete'], [0x1724, 2, 'CHAIN', 'szimbólumtábla utolsó elem'],
-    [0x1726, 2, 'TOP', 'szimbólumtábla vége'], [0x1732, 255, 'COMMAND', 'BASIC sor puffer'],
-    [0x1831, 255, 'BUFFER', 'INPUT puffer'], [0x19C0, 7, 'X', 'lebegőpontos regiszter'],
-    [0x19C7, 7, 'Y', 'lebegőpontos regiszter'], [0x19CE, 17, 'FILENAME', 'alapértelmezett filenév']
+    [0x0000, 3, '', 'nem használt (3 byte)'],
+    [0x0003, 1, 'P_SAVE', 'memórialapozás [765432]'],
+    [0x0008, 1, 'RST 08', 'hibagenerálás;hibakód=(SP) (POP HL;LD A,(HL);OR A;PUSH HL)'],
+    [0x0010, 1, 'RST 10', 'hibagenerálás, ha Z=0;hibakód=A (RET Z;JP FD5C)'],
+    [0x0015, 1, '', 'aritmetikai rutin hívása, címállítás a ROM-ból'],
+    [0x0018, 1, 'RST 18', 'aritmetikai rutinok kezelése (JP FB82)'],
+    [0x001B, 1, '', 'az OS rutinjainak (RST 30) hívása;kód=A (LD (001F),A;RST 30;DEFB n)'],
+    [0x0020, 1, 'RST 20', 'nem használt (RET)'],
+    [0x0021, 14, 'USRTAB', 'EXT rutinok címeit tartalmazó táblázat (7*2 byte)'],
+    [0x002C, 1, '', 'SOUND használja VOLUME értékének tárolására'],
+    [0x002D, 1, '', 'SOUND használja DURATOIN értékének tárolására'],
+    [0x0030, 8, 'OS_ENTRY', 'az OS rutinjainak hívása;rutinkód=(SP)(JP 0B23)'],
+    [0x0038, 8, 'IT_ENTRY', 'megszakításkezelés (IRQ) (PUSH AF;LD A,70;OUT (02),A;JP C412)'],
+    [0x0040, 192, '', 'A csatolókártyák azonosítói (192 byte; 40-6F, 70-9F, A0-CF, D0-FF)'],
+    [0x0100, 1600, '', 'a képernyő ASCII-kód tárolója (24*64 byte=1600)'],
+    [0x0700, 64, '', '32k és 64k gépeken nem használt (64 byte) ; (64k+ gépeken BASIC és I/O rutinok használhatják)'],
+    [0x0740, 960, '', 'az átdefiniálható karakterek tárolója (96*10 byte=960)'],
+    [0x0B00, 8, 'IN_TABLE', 'OS hozzárendelési táblázat'],
+    [0x0B08, 8, 'OUT_TABLE', 'OS hozzárendelési táblázat'],
+    [0x0B10, 1, 'INT_DES', 'mutató a megszakítás számára [3210];amelyik bit 0,azt a megszakítást végrehajtja: 0.bit-képernyő,1.bit-billentyűzet,2.bit-editor,3.bit-hanggenerátor'],
+    [0x0B11, 1, 'PORT03', 'bővítő kártya kiválasztás [76],billentyűzetmátrix kiválasztás [3210]'],
+    [0x0B12, 1, 'PORT05', 'hangmagasság felső byte [3210]'],
+    [0x0B13, 1, 'PORT06', 'hangerő [5432],video felbontás [10]'],
+    [0x0B14, 1, 'SND_ACTIVE', 'FF=van futó hang'],
+    [0x0B15, 1, 'SND_IRQ', 'FF=van hangkitartás SOUND-nál'],
+    [0x0B16, 1, 'STOP_FLAG', 'CTRL-ESC mutató'],
+    [0x0B17, 2, 'ST_LIMIT', 'az SP legkisebb értéke,alapállapotban 0F10 (2 byte)'],
+    [0x0B19, 2, 'HI_MEM', 'a BASIC számára elérhető legmagasabb memória-cím 2 byte'],
+    [0x0B1B, 1, 'P3RAM', 'a 3.RAM állapotát mutatja (00=jó,FF=rossz)'],
+    [0x0B1C, 1, 'EX_DEF', 'Bővítőkártya alaphozzárendelés'],
+    [0x0B1D, 2, 'INTINC', 'számláló,értéke 20 ms-omként eggyel nő'],
+    [0x0B1F, 1, 'IRQ_STAT', 'IRQ-STAT, az IT források engedélyezése'],
+    [0x0B20, 1, 'INT_FLAG', 'FF=megszakítás-végrehajtás'],
+    [0x0B21, 1, 'WARM_FLAG', '00=WARM RESET,FF=COLD RESET'],
+    [0x0B22, 1, 'COLD_FLAG', 'ugyanaz mint 0B21'],
+    [0x0B23, 30, 'INFUNC', 'RST 30 kezelés 30 byte'],
+    [0x0B37, 10, 'OUTFUNC', 'funkcióhívás befejező rész'],
+    [0x0B41, 8, 'INT_EXIT', 'RST 38 (megszakítás) visszatérés 8 byte'],
+    [0x0B49, 2, 'STACKT', 'SP ideiglenes'],
+    [0x0B4B, 1, 'L_MODE', 'grafikus pont felülírási módja'],
+    [0x0B4C, 1, 'L_STYLE', 'vonaltípus'],
+    [0x0B4D, 1, 'INK', 'tintaszín'],
+    [0x0B4E, 1, 'PAPER', 'papírszín'],
+    [0x0B4F, 1, 'BORDER', 'keretszín;értéke a palettaszín kétszerese'],
+    [0x0B50, 1, 'V_FLAG', 'karakterfelülírási flag'],
+    [0x0B51, 10, 'PICTURE', 'a billentyűzetmátrix utoljára leolvasott értéke (10 byte)'],
+    [0x0B5B, 10, 'OLDPICT', 'a billentyűzetmátrix előzőleg leolvasott értéke (10 byte)'],
+    [0x0B65, 1, 'DELAY_KEY', 'auto-repeat késleltetés (*20ms)'],
+    [0x0B66, 1, 'LOCK_KEY', 'a kurzor állapotát mutatja;01=CAPS LOCK,02=SHIFT LOCK,08=ALT LOCK'],
+    [0x0B67, 1, 'RATE_KEY', 'auto-repeat késleltetés (*20ms)'],
+    [0x0B68, 1, 'HOLD_DIS', 'mutatja CTRL-P-vel felfüggeszthető-e a rendszer müködése (FF=nem,00=igen)'],
+    [0x0B69, 2, 'BAUD', 'BAUD, a soros vonal sebessége 2 byte'],
+    [0x0B6A, 1, 'FORMAT', 'USART mód'],
+    [0x0B6B, 1, 'BUFFER', 'mutató kimentéshez;FF=bufferelt,00=nem bufferelt'],
+    [0x0B6C, 1, 'REMRED', 'konstans (80h)'],
+    [0x0B6D, 1, 'PROTECT', 'a kazetta-OUT nullázza'],
+    [0x0B6E, 1, 'EOF', 'filevég mutató;00=nincs file vége,FF=file vége'],
+    [0x0B6F, 3, 'MUDDLE', 'MUDDLE, CRC kezdőérték 3 byte'],
+    [0x0B71, 1, 'SER_OK', 'soros órajel jó'],
+    [0x0B72, 1, '', 'nem használt'],
+    [0x0B73, 1, '', 'a grafikus felbontást mutatja (0,1 vagy 2)'],
+    [0x0B74, 1, '', 'sugár-mutató;FF=vonalhúzás,00=pontrajzolás'],
+    [0x0B75, 1, '', 'a koordináták és a felbontás alapján képzett érték'],
+    [0x0B76, 2, '', 'a koordináták alapján számolt képernyőcím 2 byte'],
+    [0x0B78, 2, '', 'valós x koordináta;(0;0) a bal felső sarok (2 byte)'],
+    [0x0B7A, 2, '', 'valós y koordináta;(0;0) a bal felső sarok (2 byte)'],
+    [0x0B7C, 2, '', 'logikai x koordináta;(0;0) a bal alsó sarok(2 byte)'],
+    [0x0B7E, 2, '', 'logikai y koordináta;(0;0) a bal alsó sarok(2 byte)'],
+    [0x0B80, 2, '', 'nem használt (2 byte)'],
+    [0x0B82, 1, '', '???'],
+    [0x0B83, 1, '', 'a STYLE alapján képzett érték'],
+    [0x0B84, 2, '', 'vonalhúzásnál az x-et változtató rutin címe(2 byte)'],
+    [0x0B86, 2, '', 'vonalhúzásnál az y-t változtató rutin címe (2 byte)'],
+    [0x0B88, 2, '', 'PAINT használja SP értékének tárolására (2 byte)'],
+    [0x0B8A, 1, '', 'PAINT használja;a pillanatnyi képernyőbyte értéke'],
+    [0x0B8B, 8, '', 'terület a PAINT változóinak (8 byte)'],
+    [0x0B93, 1, '', 'a papírszín és a felbontás alapján képzett érték'],
+    [0x0B94, 1, '', 'a tintaszín és a felbontás alapján képzett érték'],
+    [0x0B95, 80, '', 'nem használt 80 byte'],
+    [0x0BE5, 1, '', 'KEYBOARD STATUS - 00=nincs beolvasható karakter, FF=van beolvasható karakter'],
+    [0x0BE6, 1, '', 'ha értéke FF,billentyü lenyomásig felfüggeszti a KEYBOARD IRQ és a rendszer működését'],
+    [0x0BE7, 1, '', 'FF=kurzorváltás tiltás (a KEYBOARD IRQ nullázza)'],
+    [0x0BE8, 1, '', 'segédbillentyű-flag:00=nincs, 02=CTRL, 04=SHIFT, 08=ALT'],
+    [0x0BE9, 1, '', 'az utoljára lenyomott billentyű ASCII kódja'],
+    [0x0BEA, 1, '', 'a KEYBOARD IRQ tárolja DELAY értékét'],
+    [0x0BEB, 1, '', 'a KEYBOARD IRQ tárolja RATE értékét'],
+    [0x0BEC, 2, '', 'a billentyűzetmátrix melyik byte-ja tartalmazza a lenyomott billentyűt (2 byte)'],
+    [0x0BEE, 1, '', 'a 0BEC által mutatott byte melyik bitje 1'],
+    [0x0BEF, 1, '', 'hanghossz a SOUND IRQ-hoz'],
+    [0x0BF0, 1, '', 'LOAD-SAVE közben a képernyő színkódja'],
+    [0x0BF1, 1, '', 'VERIFY funkció jelzése'],
+    [0x0BF2, 1, '', 'PEEK(38h) tárolása,mert a magnókezelés tiltja a megszakítás-kezelést'],
+    [0x0BF3, 1, '', 'FF=LOAD tiltás:System error 230.'],
+    [0x0BF4, 17, '', 'filenév (keresett) - LOAD-hoz (17 byte)'],
+    [0x0C05, 2, '', 'a beolvasott fejléc;formátum:névhossz+név+00+típus-byte+hossz(2 byte)+auto-run-mutató (256 byte)'],
+    [0x0D05, 2, '', 'A szalagról beolvasott byte-ok száma 2 byte'],
+    [0x0D07, 2, '', 'a fejléc következő eleme (LOAD) (2 byte)'],
+    [0x0D09, 2, '', 'pillanatnyi filehossz 2 byte'],
+    [0x0D0B, 1, '', 'hibakód'],
+    [0x0D0C, 1, '', 'FF=SAVE tiltás:System error 230.'],
+    [0x0D0D, 256, '', 'a betöltött 256 byte-os blokkok száma'],
+    [0x0D0E, 1, '', 'EOF - lásd 0B6E'],
+    [0x0D0F, 1, '', 'Tömbtípus'],
+    [0x0D10, 2, '', 'a következő bemenő adat címe (2 byte)'],
+    [0x0D12, 1, '', 'nem használt'],
+    [0x0D13, 1, '', 'File megnyitása olvasásra'],
+    [0x0D14, 1, '', 'ha FF,- SAVE esetén CTRL-ESC-re System error 235.nincs LOAD végrehajtás és 0E2A is FF,SAVE esetén System error 235.'],
+    [0x0D15, 17, '', 'filenév - SAVE-hez (17 byte)'],
+    [0x0D26, 2, '', 'a kimenő fejléc;formátum:névhossz+név+00+típusbyte+hossz(2 byte)+auto-run-mutató (256 byte)'],
+    [0x0E26, 2, '', 'pillanatnyi filehossz (2 byte)'],
+    [0x0E28, 2, '', 'a fejléc következő eleme (SAVE) (2 byte)'],
+    [0x0E2A, 1, '', 'lásd 0D14'],
+    [0x0E2B, 1, '', 'SAVE FF-re állítja'],
+    [0x0E2C, 2, '', 'a kimenő byte címe (2 byte)'],
+    [0x0E2E, 1, '', 'A tárolandó byte'],
+    [0x0E2F, 1, '', 'A tárolandó file típusa'],
+    [0x0E30, 1, '', 'lásd 0B6D'],
+    [0x0E31, 256, '', 'a kimentett 256 byte-os blokkok száma'],
+    [0x0E33, 2, '', 'az SP értékét tárolja (2 byte)'],
+    [0x0E35, 19, '', 'nem használt 19 byte'],
+    [0x0E48, 1, '', 'számláló a kurzor villogtatásához'],
+    [0x0E49, 1, '', 'kurzorpozíció:sor (y koordináta)'],
+    [0x0E4A, 1, '', 'kurzorpozíció:oszlop (x koordináta)'],
+    [0x0E4B, 2, '', 'a kurzor címe az ASCII tárolóban(0100-06FF)(2 byte)'],
+    [0x0E4D, 1, '', 'RETURN tiltás [7]'],
+    [0x0E4E, 2, '', 'kurzorpozíció tárolás az EDITOR IRQ-nak (2 byte)'],
+    [0x0E50, 24, '', 'sorhossz mutató;ha a logikai sor átnyúlik a következő sorba,a 7.bit 1 (24 byte)'],
+    [0x0E68, 1, '', 'egy karakter kiírása;GRAPHICS 2 - JP D3AD,GRAPHICS 4 - JP D3BC,GRAPHICS16 - JP D3D9'],
+    [0x0E6B, 1, '', 'a képernyő oszlopszáma (64,32 vagy 16)'],
+    [0x0E6C, 1, '', 'egy karakter vízszintes byte-jainak száma (1,2,4)'],
+    [0x0E6D, 40, '', 'az EDITOR IRQ használja a kurzor alatt lévő karakter tárolására (40 byte)'],
+    [0x0E95, 1, '', 'a tintaszín és a felbontás alapján képzett érték'],
+    [0x0E96, 1, '', 'a papírszín és a felbontás alapján képzett érték'],
+    [0x0E97, 93, '', '32k és 64k gépeken: nem használt (93 byte)'],
+    [0x0E98, 20, 'PROGID', "v1.3, PROGID; Programazonosító 20 byte az 1.3 verziótól kezdve. A BASIC a következőt írja bele: \"TV COMPUTER BASIC\". A szöveget 00h kóddal kell zárni. Korábban az editor számára volt fenntartva, de nem volt kihasználva."],
+    [0x0EAC, 2, '', '64k+, belső használatra (2 byte)'],
+    [0x0EB2, 1, '', '64k+, BLINK; A billentyűzet input alatti kurzorvillogást vezérli. Ha értéke nulla, akkor nincs kurzorvillogás, egyéb értékek esetén villog a kurzor. Az editor input mindig törli.'],
+    [0x0EB3, 1, '', '64k+, RESTART; Alkalmazói programok reset választásához. Ha nem nulla, akkor a szokásos meleg reset történik, ha nulla, akkor az operációs rendszer meleg resetje után az alkalmazói program hideg resetje hajtódik végre.'],
+    [0x0EB4, 1, '', '64k+, MOPS_WARM; Jelzi az alkalmazói programoknak, hogy az operációs rendszer milyen resetet hajtott végre. Akkor van szerepe, ha az alkalmazói program hideg resetet kap.'],
+    [0x0EB5, 1, '', '64k+, CENBLE; Programmodul engedélyező. Nulla értékkel engedélyezi, egyéb értékkel letiltja a programmodul indítását a BASIC helyett.'],
+    [0x0EB6, 1, '', '64k+, BASFLG; A BASIC indítást vezérli. bit 0 : átlépi a V-alakban kiírt \'VIDEOTON\' képernyő kiírását\nbit 1 : átlépi a \'COPYRIGHT\' üzenet kiírását\nbit 2 : nem hajt végre kezdéskor \'NEW\' utasítást\nbit 3 : automatikusan végrehajt egy \'RUN\' utasítást'],
+    [0x0EB7, 1, '', '64k+, VERSION; Változatszám. A felső 4 bit a fő-, az alsó 4 bit pedig az alváltozatszámot adja. Pl. a 2.0 változatnál értéke 20h. A korábbi változatoknál az értéke 00h.'],
+    [0x0EF4, 1, '', 'PAINT esetén az SP legkisebb értéke'],
+    [0x0F10, 1, '', 'az SP előre definiált legkisebb értéke (lásd 0B17)'],
+    [0x16AC, 1, '', 'az SP előre definiált legnagyobb értéke'],
+    [0x16AD, 83, '', 'nem használt (83 byte)'],
+    [0x1700, 1, '', 'BASIC üzemmód-mutató 0.bit:1=TRACE ON,0=TRACE OFF, 1.bit:1=\'ok\' kiírás tiltás, 2.bit:1=program,0=parancs, 3.bit:1=OPEN volt,0=nem volt'],
+    [0x1701, 1, '', 'változókezelés-mutató 0.bit 1=tömbváltozó,0=nem, 1.bit 1=numerikus,0=string, 7.bit 1=új változó,0=nem új'],
+    [0x1702, 1, '', 'FF=ON GOTO-GOSUB-nál van ELSE ág'],
+    [0x1703, 1, 'NEW', 'FF=parancs üzemmódban automatikus NEW'],
+    [0x1704, 1, '', 'RST 18 használja A tárolására'],
+    [0x1705, 1, '', 'OUTPUT mutató;alapállapotban 20h (=EDITOR)'],
+    [0x1706, 1, '', 'TRACE esetén OUTPUT mutató'],
+    [0x1707, 1, 'AUTO', 'AUTO-RUN mutató'],
+    [0x1708, 1, 'TYPE', 'a szimbólumtábla aktuális elemének típusa'],
+    [0x1709, 3, '', 'RND mag (3 byte)'],
+    [0x170C, 2, 'START', 'az aktuális BASIC sor címe(2 byte)'],
+    [0x170E, 2, '', 'STOP tárolja 170C értékét CONTINUE számára (2 byte)'],
+    [0x1710, 2, '', 'mutató a program következő elemére (=HL\')(2 byte)'],
+    [0x1712, 2, '', 'az aktuális DATA sor címe a programban (2 byte)'],
+    [0x1714, 2, '', 'a következő adat címe a programban(2 byte)'],
+    [0x1716, 2, '', 'az utolsó byte címe a pufferben -INPUT-hoz (2 byte)'],
+    [0x1718, 2, '', 'RST 18 tárolja a visszatérési címet (2 byte)'],
+    [0x171A, 2, '', 'a BASIC munkaterület utolsó byte-ja (=IY)(2 byte)'],
+    [0x171C, 2, '', 'a munkaterület következő szabad byte-ja (2 byte)'],
+    [0x171E, 2, '', 'RST 18 használja HL tárolására(2 byte)'],
+    [0x1720, 2, 'VLOMEM', 'a BASIC terület kezdete(2 byte)'],
+    [0x1722, 2, 'TEXT', 'a BASIC program kezdőcíme(2 byte)'],
+    [0x1724, 2, 'CHAIN', 'a szimbólumtábla utolsó elemének címe(2 byte)'],
+    [0x1726, 2, 'TOP', 'a szimbólumtábla következő szabad byte-jának címe (2 byte)'],
+    [0x1728, 2, '', 'a program következő elemére mutat(kifejezés értékének kiszámítása közben)(2 byte)'],
+    [0x172A, 1, '', 'SOUND használja a hangmagasság értékének tárolására'],
+    [0x172C, 2, '', 'nem használt (2 byte)'],
+    [0x172E, 2, '', 'a PRINT USING pillanatnyi byte-jának címe (2 byte)'],
+    [0x1730, 2, '', 'a PRINT USING utolsó byte-jának címe (2 byte)'],
+    [0x1732, 255, 'COMMAND', 'az aktuális BASIC utasítássort tartalmazó, puffer;formátum:00+hossz+sor(tokenizált)+FF'],
+    [0x1831, 255, 'BUFFER', 'input puffer a klaviatúra számára; formátum:hossz+sor(karakteres)+FF'],
+    [0x1930, 1, '', 'PRINT puffer a számok karakterré alakításához'],
+    [0x193F, 2, '', '??? (2 byte)'],
+    [0x1941, 1, '', 'a SET utasítás paramétereinek tárolója'],
+    [0x19C0, 7, 'X', 'X aritmetikai regiszter (BCD számábrázolás)'],
+    [0x19C7, 7, 'Y', 'Y aritmetikai regiszter (BCD számábrázolás)'],
+    [0x19CE, 17, 'FILENAME', 'LOAD esetén,ha nincs filenév,innen veszi'],
+    [0x19DF, 2, '', 'fejléc a BASIC LOAD-SAVE-nél;formátum:00+típusbyte+hossz(2 byte)+auto-run-mutató'],
+    [0x19EF, 1, '', 'a BASIC program előre definiált kezdete']
   ];
   const TVC_VAR_AT = new Map();
-  for (const [a, n, name, desc] of TVC_VARS) {
-    for (let i = 0; i < n; i++) TVC_VAR_AT.set(a + i, (i ? name + '+' + i : name) + ' (' + desc + ')');
+  for (const v of TVC_VARS) {
+    for (let i = 0; i < v[1]; i++) TVC_VAR_AT.set(v[0] + i, { v, i });
+  }
+  // the name of a TVC variable byte; 'full': the whole description
+  function dbgTvcVarText(a, full) {
+    const { v: [base, , name, desc], i } = TVC_VAR_AT.get(a);
+    let d = desc;
+    if (!full && d.length > 44) d = d.slice(0, 42).replace(/[\s;,(]+\S*$/, '') + '…';
+    const off = i ? '+' + i + (full ? ' (' + hex(base, 4) + '-tól)' : '') : '';
+    return (name ? name + off + ' – ' : (off ? off + ' ' : '')) + d;
   }
   const TVC_SEGS = { 0x00: 'SYS', 0x01: 'CART', 0x02: 'EXT', 0x07: 'SDEXT',
                      0xF8: 'U0', 0xF9: 'U1', 0xFA: 'U2', 0xFB: 'U3',
@@ -3694,7 +3865,7 @@ registerProcessor('ep-output', EPOutput);
       if (p >= 0x70 && !(p & 1)) return 'R' + (v & 31) + (CRTC_REGS[v & 31] ? ' ' + CRTC_REGS[v & 31] : '');
       switch (p) {
         case 0x00: return dbgTvcColour(v >> 1);
-        case 0x05: return 'frekvencia felső ' + (v & 15) + ', hang IT ' + (v & 0x20 ? 'be' : 'ki') +
+        case 0x05: return 'frekvencia felső ' + (v & 15) + ', hang ' + (v & 0x10 ? 'be' : 'ki') + ', hang IT ' + (v & 0x20 ? 'be' : 'ki') +
                           ', motor ' + (v & 0xC0 ? 'be' : 'ki');
         case 0x02: {
           const p0 = ['SYS', 'CART', 'U0', 'U3'][v >> 3 & 3];
@@ -3717,12 +3888,12 @@ registerProcessor('ep-output', EPOutput);
   }
 
   // name of a known address with the current paging (CPU address)
-  function dbgAddrNote(a, pages) {
+  function dbgAddrNote(a, pages, full) {
     a &= 0xFFFF;
     const seg = pages[a >> 14];
     const sv = EP_SYSVARS[(a & 0x3FFF) | 0x8000];
     if (machine && machine.type === 0 && seg === 0xFF && sv) return sv;
-    if (machine && machine.type === 1 && seg === 0xF8 && TVC_VAR_AT.has(a)) return TVC_VAR_AT.get(a);
+    if (machine && machine.type === 1 && seg === 0xF8 && TVC_VAR_AT.has(a)) return dbgTvcVarText(a, full);
     let n = 'P' + (a >> 14) + ' ' + dbgSegText(seg);
     if (machine && machine.type === 1 && seg === 0x02 && a < 0xE000) n = 'P3 IOMEM';
     return n;
@@ -3885,7 +4056,7 @@ registerProcessor('ep-output', EPOutput);
         b.textContent = (i === 8 ? '  ' : ' ') + hex(v, 2);
         if (pages) {
           // the name of a known address; the label of a symbol
-          const ca = (a + i) & 0xFFFF, note = dbgAddrNote(ca, pages), lbl = dbgLabel(ca);
+          const ca = (a + i) & 0xFFFF, note = dbgAddrNote(ca, pages, true), lbl = dbgLabel(ca);
           b.title = hex(ca, 4) + (lbl ? ' ' + lbl : '') + ': ' + note + ' = ' + hex(v, 2) + ' (' + v + ')';
           if (lbl || !/^P\d /.test(note)) b.classList.add('kn');
         }
@@ -4265,6 +4436,7 @@ registerProcessor('ep-output', EPOutput);
       case 'ioregs': $('dbg-ioregs').textContent = api.dbgIoRegs(); break;
       case 'lpt': dbgRenderLpt(); break;
       case 'sound': $('dbg-sound').textContent = api.dbgSound(); break;
+      case 'basic': dbgRenderBasic(); break;
       case 'fx': $('dbg-fx').textContent = api.dbg2dfx(); break;
       case 'c256': {
         const t = api.dbgCard256();
@@ -4295,6 +4467,96 @@ registerProcessor('ep-output', EPOutput);
     const b = ((c & 4) >> 1 | (c & 32) >> 5) * 255 / 3;
     return 'rgb(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ')';
   }
+  // --- TVC BASIC program listing ---
+  // a CPU address in the BASIC RAM (U0..U3), whatever the current paging is
+  function dbgTvcRam(a, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const ca = (a + i) & 0xFFFF;
+      out.push(dbgPeekPhys((0xF8 + (ca >> 14)) * 16384 + (ca & 0x3FFF)));
+    }
+    return out;
+  }
+  function dbgPeekPhys(pa) {
+    return M.HEAPU8[api.dbgMem(pa, 1, 1)];
+  }
+  // the keyword table of the SYS ROM, found by the code of its lister
+  // (CPL / LD HL,table / BIT 7,(HL) / INC HL / JR Z,-5)
+  let dbgBasicKw = null;
+  function dbgTvcKeywords() {
+    if (dbgBasicKw && dbgBasicKw.id === machine.id) return dbgBasicKw.words;
+    const rom = ep.read(0, 16384, 1);
+    let table = -1;
+    for (let i = 0; i < rom.length - 9 && table < 0; i++) {
+      if (rom[i] === 0x2F && rom[i + 1] === 0x21 && rom[i + 4] === 0xCB && rom[i + 5] === 0x7E &&
+          rom[i + 6] === 0x23 && rom[i + 7] === 0x28 && rom[i + 8] === 0xFB) table = (rom[i + 2] | rom[i + 3] << 8) - 0xC000;
+    }
+    const words = [];
+    if (table >= 0 && table < 16384) {
+      // as the ROM does it: token t is the (~t)th entry after the first end mark
+      let p = table;
+      for (let n = 1; n <= 127; n++) {
+        while (p < 16383 && !(rom[p++] & 0x80)) { }
+        let w = '', k = p;
+        while (k < 16384) {
+          const c = rom[k++];
+          w += String.fromCharCode(c & 0x7F);
+          if (c & 0x80) break;
+        }
+        words[n] = w;
+      }
+    }
+    dbgBasicKw = { id: machine.id, words };
+    return words;
+  }
+  const TVC_HU = { 0x80: 'Á', 0x81: 'É', 0x82: 'Í', 0x83: 'Ó', 0x84: 'Ö', 0x85: 'Ő', 0x86: 'Ú', 0x87: 'Ü', 0x88: 'Ű',
+                   0x90: 'á', 0x91: 'é', 0x92: 'í', 0x93: 'ó', 0x94: 'ö', 0x95: 'ő', 0x96: 'ú', 0x97: 'ü', 0x98: 'ű' };
+  // the program as text lines: [{ addr, num, text }]
+  function dbgTvcBasic(maxLines) {
+    const kw = dbgTvcKeywords();
+    const lines = [];
+    let a = dbgTvcRam(0x1722, 2), p = a[0] | a[1] << 8;
+    while (lines.length < maxLines) {
+      const [len, lo, hi] = dbgTvcRam(p, 3);
+      if (!len) break;
+      const b = dbgTvcRam(p + 3, len - 3);
+      let t = '';
+      for (const c of b) {
+        if (c === 0xFF) break;
+        if (c >= 0x80) t += kw[(~c) & 0xFF] !== undefined ? kw[(~c) & 0xFF] : '{' + hex(c, 2) + '}';
+        else if (c < 0x20) t += TVC_HU[c + 0x80] || '{' + hex(c + 0x80, 2) + '}';
+        else t += String.fromCharCode(c);
+      }
+      lines.push({ addr: p, num: lo | hi << 8, text: t });
+      p = (p + len) & 0xFFFF;
+    }
+    return lines;
+  }
+  function dbgRenderBasic() {
+    const box = $('dbg-basic');
+    const lines = dbgTvcBasic(3000);
+    if (!dbgTvcKeywords().length) {
+      box.textContent = 'A BASIC kulcsszótábla nem található ebben a ROM-ban.';
+      return;
+    }
+    const cur = dbgTvcRam(0x170C, 2), curAddr = cur[0] | cur[1] << 8;
+    const running = (dbgTvcRam(0x1700, 1)[0] & 4) !== 0;
+    box.textContent = '';
+    const head = document.createElement('div');
+    head.className = 'small';
+    head.textContent = lines.length + ' sor' + (running ? ', fut – az aktuális sor kiemelve' : '') +
+      ' (kattintás: a sor címe a memórianézetben)';
+    box.append(head);
+    for (const l of lines) {
+      const d = document.createElement('div');
+      d.textContent = String(l.num).padStart(5) + ' ' + l.text;
+      d.title = 'Cím: ' + hex(l.addr, 4);
+      if (running && l.addr === curAddr) d.className = 'pc';
+      d.onclick = () => { dbgMemSrc = 0; $('dbg-mem-src').value = '0'; dbgMemAddr = l.addr; $('dbg-mem-addr').value = hex(l.addr, 4); dbgRenderMem(); };
+      box.append(d);
+    }
+  }
+
   function dbgRenderLpt() {
     const io = api.dbgIoRegs();
     const m = /Nick\s+80:\s*([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/.exec(io);
@@ -4610,7 +4872,14 @@ registerProcessor('ep-output', EPOutput);
     peek: (a) => dbgPeek(a & 0xFFFF),
     peek16: (a) => dbgPeek(a & 0xFFFF) | (dbgPeek((a + 1) & 0xFFFF) << 8),
     poke: (a, v) => api.dbgPoke(a & 0xFFFF, v & 0xFF, 0),
-    read: (a, n, src) => { const p = api.dbgMem(a, n, src || 0); return Array.from(M.HEAPU8.slice(p, p + n)); },
+    read: (a, n, src) => {
+      const out = [];
+      for (let o = 0; o < n; o += 4096) {
+        const k = Math.min(4096, n - o), p = api.dbgMem(src ? a + o : (a + o) & 0xFFFF, k, src || 0);
+        for (let i = 0; i < k; i++) out.push(M.HEAPU8[p + i]);
+      }
+      return out;
+    },
     out: (port, v) => api.dbgOut(port, v),
     disasm: (a, n) => dbgDisasm(a, n || 1).map((l) => dbgSymText(l.text)),
     assemble: (a, text) => api.dbgAssemble('A ' + hex(a, 4) + ' ' + String(text).toUpperCase()),

@@ -110,7 +110,7 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
   - Abszolút memóriacím: melyik lapra és szegmensre esik az aktuális lapozással, illetve az ismert rendszerváltozók neve: TVC-n az U0 lap változói (P_SAVE, IN_TABLE, PORT03, HI_MEM, INK, PICTURE…, a BASIC-éi is), EP-n LP_POINTER, ST_POINTER, USR_P0–3. TVC-n a `LD HL,0B51`-féle betöltéseknél is.
   - CALL/JP másik lapra: a cél szegmense.
 - Rendszerhívás átlépése (F10) után a megállási üzenet kiírja az A-ban visszaadott eredményt, TVC-n a hibakód jelentésével (pl. `F5 STOP`, `EA CRC hiba`).
-- A TVC funkciók, rendszerváltozók és hibakódok forrása a „TV-Computer Operációs rendszer” kézikönyv ([tvcdoc](https://github.com/kks2003/tvcdoc)).
+- A TVC funkciók, rendszerváltozók és hibakódok forrása a „TV-Computer Operációs rendszer” kézikönyv ([tvcdoc](https://github.com/kks2003/tvcdoc)) és KKS TVCinf táblázata (a teljes U0 címlista a kazetta-, editor-, video- és BASIC-munkaterülettel, a floppy D6–DB funkciók).
 - További kibontott portírások: TVC keretszín és paletta (színnévvel), CRTC regiszterválasztás (a 6845 regiszter neve), hangport 05; EP keretszín, billentyűsor.
 - A memórianézetben (CPU-cím) az ismert címek pontozottan aláhúzottak; az egér alatt a cím neve, lapja és értéke látszik.
 - Ugyanezek a megjegyzések a monitor `D` parancsában, az előzményekben, az I/O naplóban és a megállási üzenetben is megjelennek.
@@ -135,6 +135,7 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
 | I/O napló | Minden IN/OUT a PC-vel, portszűrővel. |
 | I/O regiszterek | NICK, DAVE, EXDOS, illetve a TVC CRTC-je, palettája, lapozása. |
 | NICK LPT (EP) | A sorparaméter-tábla: sorok, mód, színmód, margók, LD1/LD2, paletta színmintákkal, kiemelve az aktuális sort. |
+| BASIC (TVC) | A memóriában lévő BASIC program listája, a ROM saját kulcsszótáblájával (minden ROM-verzióval), ékezetekkel. Futás közben az aktuális sor kiemelve; kattintásra a sor címe a memórianézetben. |
 | Hangkártyák (TVC) | GameCard / Multichip: SN76489, SAA1099 és OPL regiszterek. |
 | 2dfx | Motor mód, státusz, demó, a bekapcsolt sprite-ok és a háttér/előtér 2DPT-lista. |
 | TVC256k++ | Port, lapozás, PSRAM, firmware, meghajtó, USB és a 256 regiszter. A PSRAM a memórianézetben látható. |
