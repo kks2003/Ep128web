@@ -3,6 +3,9 @@
 #include "opl3.h"
 #include "saa1099.hpp"
 #include <cstring>
+#include <cstdio>
+
+TVCSoundCards *TVCSoundCards::current = nullptr;
 
 TVCSoundCards::TVCSoundCards()
   : m_gameCardSlot(-1),
@@ -12,8 +15,14 @@ TVCSoundCards::TVCSoundCards()
     m_sng(nullptr),
     m_opl(nullptr),
     m_saa(nullptr),
-    m_oplSelectedReg(0)
+    m_oplSelectedReg(0),
+    m_snLatch(0),
+    m_saaSelected(0)
 {
+  current = this;
+  for (int i = 0; i < 8; i++) m_snRegs[i] = (i & 1) ? 15 : 0;
+  std::memset(m_saaRegs, 0, sizeof(m_saaRegs));
+  std::memset(m_oplRegs, 0, sizeof(m_oplRegs));
   m_sng = (void*)SNG_new(3579545, 390625);
   opl3_chip *opl = new opl3_chip();
   OPL3_Reset(opl, 390625);
@@ -23,6 +32,8 @@ TVCSoundCards::TVCSoundCards()
 
 TVCSoundCards::~TVCSoundCards()
 {
+  if (current == this)
+    current = nullptr;
   if (m_sng) {
     SNG_delete((SNG*)m_sng);
     m_sng = nullptr;
@@ -85,6 +96,7 @@ bool TVCSoundCards::handleWrite(uint16_t addr, uint8_t val)
   int gc = gameCardPort();
   if (gc >= 0 && addr == gc) {
     if (m_sng) SNG_writeIO((SNG*)m_sng, val);
+    snWrite(val);
     return true;
   }
 
@@ -93,18 +105,22 @@ bool TVCSoundCards::handleWrite(uint16_t addr, uint8_t val)
     switch (int(addr) - ms) {
     case 0:
       if (m_sng) SNG_writeIO((SNG*)m_sng, val);
+      snWrite(val);
       return true;
     case 2:
       if (m_saa) ((SAA1099*)m_saa)->writeData(val);
+      m_saaRegs[m_saaSelected & 31] = val;
       return true;
     case 3:
       if (m_saa) ((SAA1099*)m_saa)->writeAddress(val);
+      m_saaSelected = val;
       return true;
     case 4:
       m_oplSelectedReg = val;
       return true;
     case 5:
       if (m_opl) OPL3_WriteReg((opl3_chip*)m_opl, m_oplSelectedReg, val);
+      m_oplRegs[m_oplSelectedReg] = val;
       return true;
     }
   }
@@ -232,4 +248,58 @@ void TVCSoundCards::renderAudio(int32_t &outLeft, int32_t &outRight)
       outRight += int32_t(oplSamples[1]);
     }
   }
+}
+
+// SN76489: latch bytes (bit 7 set) select a register and write its low 4
+// bits, data bytes write the high 6 bits of a tone register
+void TVCSoundCards::snWrite(uint8_t val)
+{
+  if (val & 0x80) {
+    m_snLatch = uint8_t((val >> 4) & 7);
+    if (m_snLatch & 1 || m_snLatch == 6)
+      m_snRegs[m_snLatch] = uint16_t(val & 15);
+    else
+      m_snRegs[m_snLatch] = uint16_t((m_snRegs[m_snLatch] & 0x3F0) | (val & 15));
+  }
+  else if (!(m_snLatch & 1) && m_snLatch != 6) {
+    m_snRegs[m_snLatch] = uint16_t((m_snRegs[m_snLatch] & 15) | ((val & 0x3F) << 4));
+  }
+  else {
+    m_snRegs[m_snLatch] = uint16_t(val & 15);
+  }
+}
+
+std::string TVCSoundCards::debugInfo() const
+{
+  std::string s;
+  char buf[160];
+  if (m_gameCardSlot < 0 && m_multiSoundSlot < 0)
+    return "Nincs hangkártya a bővítőportokban.\n";
+  if (m_gameCardSlot >= 0) {
+    std::snprintf(buf, sizeof(buf), "GameCard: %d. port\n", m_gameCardSlot);
+    s += buf;
+  }
+  if (m_multiSoundSlot >= 0) {
+    std::snprintf(buf, sizeof(buf), "Multichip hangkártya: %d. port\n", m_multiSoundSlot);
+    s += buf;
+  }
+  std::snprintf(buf, sizeof(buf),
+                "SN76489  hang: %03X %03X %03X  zaj: %X  hangerő (0=max): %X %X %X %X\n",
+                m_snRegs[0], m_snRegs[2], m_snRegs[4], m_snRegs[6],
+                m_snRegs[1], m_snRegs[3], m_snRegs[5], m_snRegs[7]);
+  s += buf;
+  if (m_multiSoundSlot >= 0) {
+    s += "SAA1099 ";
+    for (int i = 0; i < 32; i++) {
+      std::snprintf(buf, sizeof(buf), "%s%02X", (i & 7) ? " " : (i ? "\n        " : ""), m_saaRegs[i]);
+      s += buf;
+    }
+    s += "\nOPL     ";
+    for (int i = 0; i < 256; i++) {
+      std::snprintf(buf, sizeof(buf), "%s%02X", (i & 15) ? " " : (i ? "\n        " : ""), m_oplRegs[i]);
+      s += buf;
+    }
+    s += "\n";
+  }
+  return s;
 }

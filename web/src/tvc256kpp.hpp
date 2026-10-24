@@ -95,6 +95,10 @@ class TVC256kpp {
   static void selectDrive(int drive);   // $D810 / REG_DRIVE_SELECT
   static bool putUsbFile(const char *name, const uint8_t *data, size_t size);
   uint8_t  baseRegister(int set) const { return sel_[set & 1]; }
+  // debugger: the register file, the PSRAM, the card of the running TVC
+  uint8_t  debugRegister(int r) const { return regs_[r & 255]; }
+  size_t   psramSize() const { return psram_.size(); }
+  static TVC256kpp *current;
 
  private:
   bool    enabled_;

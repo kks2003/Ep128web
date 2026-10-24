@@ -135,4 +135,9 @@ namespace TwoDfx {
     ovValid = false;
   }
 
+  void *device()
+  {
+    return dev;
+  }
+
 }

@@ -101,10 +101,13 @@ const size_t TVC256kpp::kIoAreaSize;
 const uint8_t TVC256kpp::kFwMajor;
 const uint8_t TVC256kpp::kFwMinor;
 
+TVC256kpp *TVC256kpp::current = (TVC256kpp *) 0;
+
 TVC256kpp::TVC256kpp()
   : enabled_(false), slot_(1), border_(0), romPage_(0),
     ioRam_(&TVC_ROM[kRamOffset]), pagingCb_(0), pagingCbData_(0)
 {
+  current = this;
   std::memset(TVC256kppFS::fastRam(), 0, TVC_RAM_SIZE);
   psram_.assign(kPsramSize, 0);
   // the PSRAM windows follow the fast RAM, as pages 16 and 17
@@ -118,6 +121,8 @@ TVC256kpp::TVC256kpp()
 
 TVC256kpp::~TVC256kpp()
 {
+  if (current == this)
+    current = (TVC256kpp *) 0;
   TVC256kppFS::resetPsramDrive();
   TVC256kppFS::attachPsram((uint8_t *) 0, 0);
 }

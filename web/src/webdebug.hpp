@@ -56,6 +56,34 @@ namespace WebDebug {
   void setBreakPoint(uint16_t addr, bool enabled);
   void clearBreakPoints();
 
+  // watchpoints that stop the machine (memory: CPU address, I/O: port)
+  void setWatchPoint(bool isIO, uint16_t addr, bool r, bool w);
+  void clearWatchPoints();
+
+  // execution history: the PC of the last instructions run
+  void enableHistory(bool on);
+  bool historyEnabled();
+  // the last 'n' PCs (oldest first) into 'buf'; returns their number
+  int getHistory(uint16_t *buf, int n);
+
+  // profiler: instructions run at each address
+  void enableProfiler(bool on);
+  bool profilerEnabled();
+  void clearProfiler();
+  const uint32_t *profilerCounts();     // 65536 counters
+
+  // I/O log: every IN / OUT with the PC (all ports are watched for it)
+  struct IOLogEntry {
+    uint16_t  pc;
+    uint16_t  port;
+    uint8_t   value;
+    uint8_t   isWrite;
+  };
+  void enableIOLog(bool on);
+  bool ioLogEnabled();
+  void clearIOLog();
+  int getIOLog(IOLogEntry *buf, int n);
+
 }
 
 #endif

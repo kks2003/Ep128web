@@ -2,6 +2,7 @@
 #define TVC_SOUNDCARDS_HPP_INCLUDED
 
 #include <cstdint>
+#include <string>
 
 class TVCSoundCards {
 public:
@@ -25,6 +26,10 @@ public:
   void renderAudio(int32_t &outLeft, int32_t &outRight);
   void reset();
 
+  // debugger: the chips' registers as written by the programs
+  std::string debugInfo() const;
+  static TVCSoundCards *current;        // the cards of the running TVC
+
 private:
   int m_gameCardSlot;
   int m_multiSoundSlot;
@@ -36,6 +41,13 @@ private:
   void *m_saa; // SAA1099*
 
   uint8_t m_oplSelectedReg;
+  // register shadows for the debugger
+  uint16_t m_snRegs[8];                 // tone 0, vol 0, tone 1, ..., noise, vol 3
+  uint8_t m_snLatch;
+  uint8_t m_saaRegs[32];
+  uint8_t m_saaSelected;
+  uint8_t m_oplRegs[256];
+  void snWrite(uint8_t val);
 
   int gameCardPort() const;
   int multiSoundPort() const;
