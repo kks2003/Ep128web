@@ -448,8 +448,47 @@
   // a disk image), else the TVC256k++ card if present, else FILE:
   let tvcLastLoadCard = -1;
 
+  // TVC: the default storage chosen by the user (a card id, or -1: as the
+  // machine chooses it, the card in the highest numbered slot). It is set
+  // after each boot, when the ROM and the cards have set theirs.
+  let tvcDefDev = -1;
+  try { tvcDefDev = Number(localStorage.getItem('ep128web.tvcDefDev') ?? -1); } catch (e) { }
+  if (![-1, SLOT_VTDOS, SLOT_FILEIO, SLOT_CARD256].includes(tvcDefDev)) tvcDefDev = -1;
+  // after a reset: waits until the ROM and the cards have set the redirect
+  // ($0B05 in U0 got a new value, a card's, at least 1 s after the reset,
+  // and it does not change for 0.1 s), then sets the chosen one (in U0)
+  let tvcDefDevWatch = null;            // { start, until, last, since, changed }
+  function tvcDefDevRedirect() {
+    return tvcDefDev >= 0 ? tvcRedirectFor(tvcDefDev) : 0;
+  }
+  const u0 = (a) => 0xF8 * 16384 + a;
+  // called after a reset (not by an autostart, which sets its own)
+  function scheduleTvcDefDev() {
+    tvcDefDevWatch = (machine && machine.type === 1 && tvcDefDevRedirect())
+      ? { start: emulatedUs, until: emulatedUs + 20e6, last: -1, since: emulatedUs, changed: false } : null;
+  }
+  // called by the main loop
+  function tvcDefDevTick() {
+    const w = tvcDefDevWatch;
+    if (!w) return;
+    if (autoTask || emulatedUs > w.until || machine.type !== 1) { tvcDefDevWatch = null; return; }
+    const v = M.HEAPU8[api.dbgMem(u0(2821), 1, 1)];
+    if (v !== w.last) {
+      if (w.last >= 0) w.changed = true;
+      w.last = v;
+      w.since = emulatedUs;
+      return;
+    }
+    if (w.changed && (v & 0x80) && emulatedUs - w.start >= 1e6 && emulatedUs - w.since >= 100000) {
+      tvcDefDevWatch = null;
+      const r = tvcDefDevRedirect();
+      if (v !== r) { api.dbgPoke(u0(2821), r, 1); api.dbgPoke(u0(2829), r, 1); }
+    }
+  }
+
   function defaultTvcLoadRedirect() {
     if (tapeName) return 5;
+    if (tvcDefDevRedirect()) return tvcDefDevRedirect();
     if (tvcLastLoadCard >= 0 && tvcSlotOf(tvcLastLoadCard) >= 0) return tvcRedirectFor(tvcLastLoadCard);
     return tvcSlotOf(SLOT_CARD256) >= 0 ? tvcRedirectFor(SLOT_CARD256) : tvcRedirectFor(SLOT_FILEIO);
   }
@@ -1335,6 +1374,7 @@ registerProcessor('ep-output', EPOutput);
   function startAutostart(command, onTyped, isTvcTape = false, tvcRedirect, prepare) {
     releaseAllKeys();
     api.reset(1);
+    tvcDefDevWatch = null;              // the task sets the redirect it needs
     keyedSinceReset = false;
     autoTask = {
       // the TVC starts BASIC directly, the Enterprise shows a logo first
@@ -3084,13 +3124,34 @@ registerProcessor('ep-output', EPOutput);
       sel.onchange = update;
     }
     show();
-    refreshTvcSlotsUI = () => { show(); update(); };
+    // the default storage
+    const dd = $('tvc-defdev');
+    const ddShow = () => {
+      for (const o of dd.options) {
+        const card = Number(o.value);
+        o.disabled = card >= 0 && tvcSlotOf(card) < 0;
+      }
+      dd.value = String(tvcDefDev);
+      const missing = tvcDefDev >= 0 && tvcSlotOf(tvcDefDev) < 0;
+      $('tvc-defdev-note').textContent = missing ? 'A kiválasztott kártya nincs bent: a gép választ (a legnagyobb sorszámú portban lévő).' : '';
+    };
+    dd.onchange = () => {
+      tvcDefDev = Number(dd.value);
+      try { localStorage.setItem('ep128web.tvcDefDev', String(tvcDefDev)); } catch (e) { }
+      ddShow();
+      // at once, too (the automatic one comes back with the next boot)
+      if (machine.type === 1 && tvcDefDevRedirect()) setTvcRedirect(tvcDefDevRedirect());
+      canvas.focus({ preventScroll: true });
+    };
+    ddShow();
+    refreshTvcSlotsUI = () => { show(); update(); ddShow(); };
     $('tvc-slots-apply').onclick = () => {
       const p = pending();
       if (!validTvcSlots(p)) { update(); return; }
       tvcSlots = p;
       try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots)); } catch (e) { }
       update();
+      ddShow();
       if (fxOn && tvcSlotOf(SLOT_CARD256) >= 0) {
         fxOn = false;
         try { localStorage.setItem('ep128web.2dfx', '0'); } catch (e) { }
@@ -6455,6 +6516,7 @@ ep.log('CTRL+ESC megnyomva');`
       return;
     }
     emulatedUs += us;
+    tvcDefDevTick();
     dbgFrameTick(us);
     dbgHandleStops();
     if (!dbgStopped) dbgScriptFrame(us);
@@ -6537,7 +6599,7 @@ ep.log('CTRL+ESC megnyomva');`
       fileMachineType: c('ep_file_machine_type', 'number', ['string']),
       resetMemory: c('ep_reset_memory', 'number', ['number']),
       loadRom: c('ep_load_rom', 'number', ['number', 'string', 'number']),
-      reset: newState(c('ep_reset', 'number', ['number'])),
+      reset: ((f) => (...a) => { const r = f(...a); scheduleTvcDefDev(); return r; })(newState(c('ep_reset', 'number', ['number']))),
       run: c('ep_run', 'number', ['number']),
       setKey: c('ep_set_key', null, ['number', 'number']),
       frameBuffer: c('ep_frame_buffer', 'number', []),
