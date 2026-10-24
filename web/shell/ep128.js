@@ -3627,7 +3627,7 @@ registerProcessor('ep-output', EPOutput);
     }
     const { why, pc, addr, value } = dbgInfo();
     const lbl = dbgLabel(pc);
-    let t = DBG_REASONS[why] + ' – PC: ' + hex(pc, 4) + (lbl ? ' (' + lbl + ')' : '');
+    let t = (dbgSteppedBack && why === 3 ? 'Visszalépve' : DBG_REASONS[why]) + ' – PC: ' + hex(pc, 4) + (lbl ? ' (' + lbl + ')' : '');
     if (why >= 4 && why <= 5) t += ', cím: ' + hex(addr, 4) + ' = ' + hex(value, 2) + ' (a hozzáférő utasítás után)';
     if (why >= 6) t += ', port: ' + hex(addr & 0xFF, 2) + ' = ' + hex(value, 2) + ' (az utasítás után)';
     st.textContent = t;
@@ -3641,6 +3641,8 @@ registerProcessor('ep-output', EPOutput);
     dbgRenderMem();
     dbgStatus();
     for (const id of ['dbg-step', 'dbg-over', 'dbg-out', 'dbg-cursor', 'dbg-run', 'dbg-frame']) $(id).disabled = !dbgStopped;
+    $('dbg-back').disabled = !dbgStopped || !dbgUndo.length;
+    $('dbg-back').title = 'Visszalépés (' + dbgUndo.length + ' állapot): az előző debugger-lépés előtti állapot (pillanatképből; a lemez- és kártyaállapot nem lép vissza)';
     $('dbg-pause').disabled = dbgStopped;
     $('dbg-machine').textContent = machine ? '– ' + machine.name : '';
     // machine specific tabs
@@ -3724,14 +3726,48 @@ registerProcessor('ep-output', EPOutput);
     dbgRefresh();
   }
 
+  // step back: a snapshot of the machine before each resume from a stop
+  const DBG_UNDO_MAX = 40;
+  let dbgUndo = [];                   // [{ file, machine }]
+  let dbgUndoSeq = 0;
+  let dbgSteppedBack = false;
+  function dbgSaveUndo() {
+    const file = '/tmp/dbgundo-' + (dbgUndoSeq++);
+    if (api.saveSnapshot(file) !== 0) return;
+    dbgUndo.push({ file, machine: machine.id });
+    while (dbgUndo.length > DBG_UNDO_MAX) {
+      try { M.FS.unlink(dbgUndo.shift().file); } catch (e) { }
+    }
+  }
+  function dbgStepBack() {
+    if (!dbgStopped) return;
+    const u = dbgUndo.pop();
+    if (!u) return;
+    try {
+      if (u.machine !== machine.id) throw new Error('másik gép');
+      check(api.loadSnapshot(u.file), 'visszalépés');
+    } catch (e) {
+      setMessage('A visszalépés nem sikerült: ' + (e.message || e), true);
+      return;
+    } finally {
+      try { M.FS.unlink(u.file); } catch (e) { }
+    }
+    // the snapshot runs again: stop it before its first instruction
+    api.dbgPause();
+    dbgSteppedBack = true;
+    dbgStopped = false;
+  }
+
   function dbgResume(fn) {
     if (!dbgStopped) return;
+    dbgSaveUndo();
     dbgPrevRegs = dbgRegs();
     dbgStopped = false;
     fn();
     dbgStatus();
-    for (const id of ['dbg-step', 'dbg-over', 'dbg-out', 'dbg-cursor', 'dbg-run', 'dbg-frame']) $(id).disabled = true;
+    for (const id of ['dbg-step', 'dbg-over', 'dbg-out', 'dbg-cursor', 'dbg-run', 'dbg-frame', 'dbg-back']) $(id).disabled = true;
     $('dbg-pause').disabled = false;
+    dbgSteppedBack = false;
   }
 
   // runs one frame (20 ms of emulated time), then stops
@@ -4283,6 +4319,7 @@ registerProcessor('ep-output', EPOutput);
     $('dbg-over').onclick = dbgStepOver;
     $('dbg-out').onclick = dbgStepOut;
     $('dbg-frame').onclick = dbgFrameStep;
+    $('dbg-back').onclick = dbgStepBack;
     $('dbg-find-new').onclick = dbgFindNew;
     $('dbg-find-go').onclick = dbgFindFilter;
     $('dbg-cursor').onclick = () => { if (dbgCursor >= 0) dbgResume(() => api.dbgRunTo(dbgCursor)); };

@@ -88,6 +88,7 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
 - Megállítás, Folytatás (F5), Lépés (F11).
 - Átlépés (F10): a CALL, az RST (az EXOS-/TVC-rendszerhívás paraméterbájtjával együtt), a DJNZ, az LDIR-féle és a HALT egyben fut le.
 - Kilépés: a verem tetején lévő visszatérési címig fut.
+- ⟲ Vissza: visszalépés az előző debugger-lépés (lépés, átlépés, folytatás…) előtti állapotra. Az utolsó 40 állapotot pillanatképből tölti vissza; a lemezek és a kártyák (2dfx, hangkártyák) állapota nem lép vissza.
 - Futás a kurzorig (F4).
 - Képkocka: 20 ms-nyi futás, utána megáll.
 - A billentyűk akkor működnek, ha a fókusz a panelen van.
