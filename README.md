@@ -45,6 +45,18 @@ jön az új változat, a tárolt példány csak offline kell. A telepített
 alkalmazással a `.cas`, `.dsk`, `.img`, `.tap`, `.zip` stb. fájlok közvetlenül
 is megnyithatók (Chrome/Edge asztali változatban).
 
+### Magnó: felvétel, .wav
+
+- **Felvétel**: „Üres kazetta”, „● Felvétel”, majd a gépen `SAVE` (TVC-n a
+  felvétel gomb a magnóra állítja a mentést is). A „Letöltés (.tap)” az
+  ep128emu saját formátumában, a „Letöltés (.wav)” hangfájlként tölti le a
+  kazettát; a .wav valódi gépbe (magnóbemenetre játszva) vagy más emulátorba is
+  betölthető.
+- **CAS → WAV…**: TVC `.cas` programokból (vagy egy `.zip`-ben lévőkből)
+  kazettás hangfelvételt készít, ugyanúgy kódolva, ahogy a TVC ROM-ja a
+  magnóra ír (fejblokk a névvel, adatblokk 256 bájtos szektorokkal,
+  szektoronkénti CRC).
+
 ### Gyorsmentés, visszatekerés, sebesség
 
 - **Gyorsmentés**: 4 hely, mindegyik egy kis képpel. 💾 elmenti a gép mostani

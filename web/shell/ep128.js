@@ -1874,6 +1874,11 @@ registerProcessor('ep-output', EPOutput);
   // The disk code is from TVC-DiskManager (web/shell/diskmgr, a copy); the
   // changes are written back to the slot (and the drive) at once.
   let DMLIB = null;
+  let TAPELIB = null;
+  async function tapeLib() {
+    if (!TAPELIB) TAPELIB = await import('./tapewav.js?v=' + encodeURIComponent((document.querySelector('meta[name="build"]') || {}).content || ''));
+    return TAPELIB;
+  }
   async function dmLib() {
     if (DMLIB) return DMLIB;
     const v = '?v=' + encodeURIComponent((document.querySelector('meta[name="build"]') || {}).content || '');
@@ -3762,7 +3767,14 @@ registerProcessor('ep-output', EPOutput);
     };
     $('tape-stop').onclick = () => { if (tapeName) api.tapeCommand(0); canvas.focus({ preventScroll: true }); };
     $('tape-rew').onclick = () => { if (tapeName) api.tapeCommand(2); canvas.focus({ preventScroll: true }); };
-    $('tape-rec').onclick = () => { if (tapeName) api.tapeCommand(3); canvas.focus({ preventScroll: true }); };
+    $('tape-rec').onclick = () => {
+      if (tapeName) {
+        // TVC: SAVE goes to the tape too
+        if (machine.type === 1) { writeMemory(2821, 5); writeMemory(2829, 5); }
+        api.tapeCommand(3);
+      }
+      canvas.focus({ preventScroll: true });
+    };
     $('tape-new').onclick = () => {
       tapeName = 'tape-' + Date.now().toString(36) + '.tap';
       check(api.setTape('/tape/' + tapeName), 'kazetta');
@@ -3774,6 +3786,41 @@ registerProcessor('ep-output', EPOutput);
       api.setTape('');                  // flush and close the tape file
       download(M.FS.readFile('/tape/' + tapeName), tapeName);
       check(api.setTape('/tape/' + tapeName), 'kazetta');
+    };
+    $('tape-wav').onclick = async () => {
+      if (!tapeName) return;
+      api.setTape('');
+      const bytes = M.FS.readFile('/tape/' + tapeName);
+      check(api.setTape('/tape/' + tapeName), 'kazetta');
+      try {
+        const base = tapeName.replace(/\.[^.]*$/, '');
+        download(extOf(tapeName) === 'wav' ? bytes : (await tapeLib()).tapToWav(bytes), base + '.wav');
+      } catch (e) {
+        setMessage('A kazetta nem alakítható át: ' + (e.message || e), true);
+      }
+    };
+    $('cas-wav').onchange = async (e) => {
+      const list = Array.from(e.target.files);
+      e.target.value = '';
+      try {
+        const lib = await tapeLib();
+        const files = [];
+        for (const f of list) {
+          const bytes = new Uint8Array(await f.arrayBuffer());
+          if (extOf(f.name) === 'zip') files.push(...await unzip(bytes));
+          else files.push({ name: f.name, bytes });
+        }
+        const cas = files.filter((f) => extOf(f.name) === 'cas');
+        if (!cas.length) throw new Error('nincs benne .cas fájl');
+        for (const f of cas) {
+          const name = f.name.split(/[\\/]/).pop();
+          download(lib.casToWav(f.bytes, name), name.replace(/\.[^.]*$/, '') + '.wav');
+        }
+        setMessage(cas.length + ' .wav fájl elkészült');
+      } catch (err) {
+        setMessage('CAS → WAV: ' + (err.message || err), true);
+      }
+      canvas.focus({ preventScroll: true });
     };
     renderDrives();
     setInterval(checkDiskActivity, 300);

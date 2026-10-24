@@ -379,7 +379,11 @@
       <button id="tape-rew">⏮ Elejére</button>
       <button id="tape-rec">● Felvétel</button>
       <button id="tape-new">Üres kazetta</button>
-      <button id="tape-save">Letöltés</button>
+      <button id="tape-save" title="A kazetta letöltése ep128emu formátumban">Letöltés (.tap)</button>
+      <button id="tape-wav" title="A kazetta letöltése hangfájlként: valódi gépbe vagy más emulátorba tölthető">Letöltés (.wav)</button>
+      <label class="file" title="TVC .cas programok átalakítása kazettás hangfájllá (.wav); .zip is lehet">CAS → WAV…
+        <input type="file" id="cas-wav" accept=".cas,.zip" multiple>
+      </label>
       <label class="name"><input type="checkbox" id="tape-fast" checked> Gyors betöltés (turbó, amíg forog a szalag)</label>
     </div>
     <div class="group drive">
