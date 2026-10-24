@@ -3325,7 +3325,7 @@ registerProcessor('ep-output', EPOutput);
                     "AF'", "BC'", "DE'", "HL'", 'I', 'R', 'IM', 'IFF1', 'IFF2'];
   const DBG_REASONS = ['', 'Töréspont', 'Lépés kész', 'Megállítva',
                        'Memória olvasás', 'Memória írás', 'Port olvasás (IN)', 'Port írás (OUT)'];
-  const DBG_MEM_NAMES = ['CPU', 'szegmens', '2dfx RAM', 'PSRAM'];
+  const DBG_MEM_NAMES = ['CPU', 'szegmens', '2dfx RAM', 'PSRAM', '256k++ RAM'];
   let dbgOpen = false;
   let dbgStopped = false;
   let dbgCursor = -1;                 // selected disassembly line (run to cursor)
@@ -3514,8 +3514,40 @@ registerProcessor('ep-output', EPOutput);
     31: 'Idő beállítása', 32: 'Idő olvasása', 33: 'Dátum beállítása', 34: 'Dátum olvasása'
   };
   // EXOS system segment (FF) variables, at their page 2 addresses
-  const EP_SYSVARS = { 0xBFF4: 'LP_POINTER (LPT címe)', 0xBFF6: 'ST_POINTER (állapotsor)',
-                       0xBFFC: 'USR_P0', 0xBFFD: 'USR_P1', 0xBFFE: 'USR_P2', 0xBFFF: 'USR_P3' };
+  // EXOS variables (EXOS 16), by number
+  const EXOS_VARS = ['IRQ_ENABLE_STATE', 'FLAG_SOFT_IRQ', 'CODE_SOFT_IRQ', 'DEF_TYPE', 'DEF_CHAN', 'TIMER',
+    'LOCK_KEY', 'CLICK_KEY', 'STOP_IRQ', 'KEY_IRQ', 'RATE_KEY', 'DELAY_KEY', 'TAPE_SND', 'WAIT_SND',
+    'MUTE_SND', 'BUF_SND', 'BAUD_SER', 'FORM_SER', 'ADDR_NET', 'NET_IRQ', 'CHAN_NET', 'MACH_NET',
+    'MODE_VID', 'COLR_VID', 'X_SIZ_VID', 'Y_SIZ_VID', 'ST_FLAG', 'BORD_VID', 'BIAS_VID', 'VID_EDIT',
+    'KEY_EDIT', 'BUF_EDIT', 'FLG_EDIT', 'SP_TAPE', 'PROTECT', 'LV_TAPE', 'REM1', 'REM2', 'SPRITE',
+    'RANDOM_IRQ'];
+  // the EXOS 2.1 system segment (FF) at its page 2 addresses, from the memory
+  // map of enterprise.iko.hu; [address, length, name]
+  const EP_SYSVAR_LIST = [
+    [0xB217, 25, 'EXOS lapozó rutinok'], [0xB230, 34, 'EXOS szerzők szövege'],
+    [0xB480, 1152, 'karakterkészlet (128 karakter)'], [0xBEB8, 40, 'állapotsor'],
+    [0xBF72, 1, 'idő: másodperc (BCD)'], [0xBF73, 1, 'idő: perc (BCD)'], [0xBF74, 1, 'idő: óra (BCD)'],
+    [0xBF75, 1, 'dátum: nap (BCD)'], [0xBF76, 1, 'dátum: hónap (BCD)'], [0xBF77, 1, 'dátum: év (BCD, 1980-tól)'],
+    [0xBF7E, 1, 'ROM CRC (védelem)'], [0xBF93, 2, 'eszközleírók alja'],
+    [0xBF95, 2, 'ROM-bővítők RAM-területének alja'], [0xBF97, 2, 'ROM-lista vége'],
+    [0xBF9A, 2, 'RAM-lista mutató'], [0xBF9C, 2, 'ROM-lista eleje'],
+    [0xBF9E, 1, 'SHARED szegmens (0: nincs)'], [0xBF9F, 1, 'szabad szegmensek száma'],
+    [0xBFA0, 1, 'USER szegmensek száma'], [0xBFA1, 1, 'DEVICE szegmensek száma'],
+    [0xBFA2, 1, 'SYSTEM szegmensek száma'], [0xBFA3, 1, 'munkaszegmensek száma'],
+    [0xBFA4, 1, 'hibás szegmensek száma'], [0xBFBA, 3, 'csatornalánc első mutatója'],
+    [0xBFBD, 3, 'eszközlánc első mutatója'], [0xBFC0, 3, 'rendszerbővítő-lánc első mutatója'],
+    [0xBFEF, 1, 'CRDISP_FLAG'], [0xBFF0, 2, 'SECOND_COUNTER'], [0xBFF2, 1, 'FLAG_SOFT_IRQ'],
+    [0xBFF3, 1, 'PORTB5 (B5 port másolata)'], [0xBFF4, 2, 'LP_POINTER (LPT címe)'],
+    [0xBFF6, 2, 'ST_POINTER (állapotsor címe)'], [0xBFF8, 2, 'RST_ADDR (meleg reset cím)'],
+    [0xBFFA, 2, 'STACK_LIMIT'], [0xBFFC, 1, 'USR_P0'], [0xBFFD, 1, 'USR_P1'], [0xBFFE, 1, 'USR_P2'],
+    [0xBFFF, 1, 'USR_P3']
+  ];
+  const EP_SYSVARS = {};
+  for (const [a, n, name] of EP_SYSVAR_LIST) {
+    for (let i = 0; i < n; i++) EP_SYSVARS[a + i] = name + (i ? ' +' + i : '');
+  }
+  // EXOS variables 0, 2..39 from BFC5h (variable 1 is FLAG_SOFT_IRQ at BFF2h)
+  EXOS_VARS.forEach((n, i) => { if (i !== 1) EP_SYSVARS[0xBFC5 + i] = 'EXOS változó ' + i + ': ' + n; });
   // TVC system calls (RST 30h + code), from "TV-Computer Operációs rendszer"
   // (tvcdoc): bit 7 = input, bits 6..4 = class, bits 3..0 = function
   const TVC_FN = {
@@ -3931,7 +3963,7 @@ registerProcessor('ep-output', EPOutput);
         if (atPC) {
           if (fn === 1 || fn === 2) notes.push('A=' + hex(o.A, 2) + ' ' + dbgExosName(o.DE));
           else if (fn >= 3 && fn <= 11) notes.push('csatorna ' + hex(o.A, 2) + (fn === 7 ? ', B=' + hex(o.B, 2) : ''));
-          else if (fn === 16) notes.push(['olvasás', 'írás', 'váltás'][o.B] + ' ' + o.C + '. változó' + (o.B === 1 ? ' = ' + hex(o.D, 2) : ''));
+          else if (fn === 16) notes.push(['olvasás', 'írás', 'váltás'][o.B] + ' ' + o.C + '. változó' + (EXOS_VARS[o.C] ? ' ' + EXOS_VARS[o.C] : '') + (o.B === 1 ? ' = ' + hex(o.D, 2) : ''));
         }
       }
       return notes.join(', ');
@@ -4495,7 +4527,7 @@ registerProcessor('ep-output', EPOutput);
     return 'rgb(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ')';
   }
   // --- graphics view: memory drawn as a bitmap ---
-  // TVC colour byte (bits 0 B, 2 R, 4 G, 6 I) -> CSS
+  // TVC colour byte (bits 0 B, 2 R, 4 G, 6 I) -> RGB
   function tvcColour(c) {
     const i = c & 0x40, f = (b) => (c & b) ? (i ? 255 : 170) : (i ? 85 : 0);
     return [f(4), f(16), f(1)];
@@ -4505,15 +4537,29 @@ registerProcessor('ep-output', EPOutput);
             ((c & 2) << 1 | (c & 16) >> 3 | (c & 128) >> 7) * 255 / 7,
             ((c & 4) >> 1 | (c & 32) >> 5) * 255 / 3].map(Math.round);
   }
-  const dbgGfx = { addr: null, bytes: 64, lines: 240, bpp: 1, zoom: 2, pal: null, fixbias: 0 };
+  // TVC256k++ overlay colour nibble (8: transparent), as the card's
+  // overlay is mixed into the picture (tvc256kpp.cpp overlayColor)
+  const cardRgb = (c) => tvcColour(((c & 1) ? 0x01 : 0) | ((c & 2) ? 0x10 : 0) | ((c & 4) ? 0x04 : 0) | ((c & 8) ? 0x40 : 0));
+  // 2dfx colour index on the TVC (the palette of patches/zzzz-2dfx.patch)
+  const TWODFX_TVC_PAL = [0x00, 0x40, 0x04, 0x44, 0x10, 0x50, 0x14, 0x54, 0x01, 0x41, 0x05, 0x45, 0x11, 0x51, 0x15, 0x55];
+  const GFX_TRANSPARENT = null;          // drawn as a checker pattern
+
+  // memories: 1 machine (segment:offset), 2 2dfx resource RAM, 4 TVC256k++
+  // card RAM, 3 TVC256k++ PSRAM; formats: 1/2/4/8 bits per pixel of the
+  // machine, '2dfx' (4 bits, low nibble left), 'c16' / 'c2' (TVC256k++)
+  const dbgGfx = { src: 1, addr: null, bytes: 64, lines: 240, fmt: '1', zoom: 2, pal: null, fixbias: 0, sheet: null };
+  const GFX_PPB = { 1: 8, 2: 4, 4: 2, 8: 1, '2dfx': 2, c16: 2, c2: 8 };
+
   // the displayed screen of the machine as the starting point
   function dbgGfxScreen() {
     const io = api.dbgIoRegs();
+    dbgGfx.src = 1;
+    dbgGfx.sheet = null;
     if (machine.type === 1) {
       const mode = +((/Mode:\s*(\d)/.exec(io) || [0, 0])[1]);
       const pal = ((/Palette:\s*([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/.exec(io)) || [0, '00', '01', '04', '54']).slice(1, 5).map((h) => parseInt(h, 16));
       const vram = parseInt((/VRAM:\s*([0-9A-F]{2})/.exec(io) || [0, '00'])[1], 16);
-      Object.assign(dbgGfx, { addr: (0xFC + (vram >> 4 & 3)) * 16384, bytes: 64, lines: 240, bpp: [1, 2, 4, 4][mode & 3], pal, sys: 'tvc' });
+      Object.assign(dbgGfx, { addr: (0xFC + (vram >> 4 & 3)) * 16384, bytes: 64, lines: 240, fmt: String([1, 2, 4, 4][mode & 3]), pal, sys: 'tvc' });
       return;
     }
     // Enterprise: the biggest pixel graphics (PIXEL mode, VRES) entry of the LPT
@@ -4521,107 +4567,254 @@ registerProcessor('ep-output', EPOutput);
     if (!m) return;
     // (IS-BASIC uses an entry per character row: consecutive entries that
     // continue each other in the video RAM are joined)
-    let a = (parseInt(m[3], 16) << 4) | ((parseInt(m[4], 16) & 0x0F) << 12), best = null, run = null;
+    let a = (parseInt(m[3], 16) << 4) | ((parseInt(m[4], 16) & 0x0F) << 12), best = null, run = null, first = null;
     for (let n = 0; n < 64; n++) {
       const p = api.dbgMem(0x3F0000 + a, 16, 1);
       const b = M.HEAPU8.slice(p, p + 16);
       const nl = 256 - b[0] || 256, bytes = ((b[3] & 63) - (b[2] & 63)) * 2, ld1 = b[4] | b[5] << 8;
-      const bpp = [1, 2, 4, 8][(b[1] >> 5) & 3];
+      const fmt = String([1, 2, 4, 8][(b[1] >> 5) & 3]);
+      if (!first) first = { pal: [...b.slice(8, 16)], fixbias: parseInt(m[1], 16) };
       if (((b[1] >> 1) & 7) === 1 && (b[1] & 16) && bytes > 0) {
-        if (run && run.bytes === bytes && run.bpp === bpp && ((run.addr + run.bytes * run.lines) & 0xFFFF) === ld1) {
+        if (run && run.bytes === bytes && run.fmt === fmt && ((run.addr + run.bytes * run.lines) & 0xFFFF) === ld1) {
           run.lines += nl;
         } else {
-          run = { addr: ld1, bytes, lines: nl, bpp, pal: [...b.slice(8, 16)], fixbias: parseInt(m[1], 16), sys: 'ep' };
+          run = { addr: ld1, bytes, lines: nl, fmt, pal: [...b.slice(8, 16)], fixbias: parseInt(m[1], 16), sys: 'ep' };
         }
         if (!best || run.lines * run.bytes > best.lines * best.bytes) best = run;
       } else run = null;
       if (b[1] & 1) break;
       a = (a + 16) & 0xFFFF;
     }
-    if (best) best = Object.assign({}, best, { addr: 0x3F0000 + best.addr });
-    if (best) Object.assign(dbgGfx, best);
+    if (best) Object.assign(dbgGfx, best, { addr: 0x3F0000 + best.addr });
+    else if (first) Object.assign(dbgGfx, first, { sys: 'ep' });
   }
+
+  // RGB of palette index k of an n colour mode of the machine (null: transparent)
+  function dbgGfxIdx(k, n) {
+    const gray = $('dbg-gfx-gray').checked || !dbgGfx.pal;
+    if (gray) return [k * 255 / (n - 1), k * 255 / (n - 1), k * 255 / (n - 1)].map(Math.round);
+    if (machine.type === 1) return tvcColour(dbgGfx.pal[k] || 0);
+    return epRgb(k < 8 ? dbgGfx.pal[k] || 0 : ((dbgGfx.fixbias & 0x1F) << 3) | (k - 8));
+  }
+  // the transparent colour index of the 2dfx card
+  function dbgFxTransparent() {
+    const m = /Átlátszó szín:\s*(\d+)/.exec(api.dbg2dfx());
+    return m ? +m[1] : -1;
+  }
+  // a 2dfx pixel (colour index) as RGB: the 16 basic colours of the card
+  // (on the Enterprise the picture uses the NICK palette of each line)
+  function dbgFxRgb(k, tr) {
+    if (k === tr) return GFX_TRANSPARENT;
+    if ($('dbg-gfx-gray').checked) return [k * 17, k * 17, k * 17];
+    return tvcColour(TWODFX_TVC_PAL[k]);
+  }
+  // pixel 'j' of byte 'v' in format 'fmt' as RGB (null: transparent)
+  function dbgGfxPixel(v, j, fmt, tr, ink) {
+    const tvc = machine.type === 1, gray = $('dbg-gfx-gray').checked;
+    switch (fmt) {
+      case '1': return dbgGfxIdx(v >> (7 - j) & 1, 2);
+      case '2': return dbgGfxIdx((v >> (7 - j) & 1) | (v >> (3 - j) & 1) << 1, 4);
+      case '4': {
+        const b = j ? v : v >> 1;          // pixel 0: bits 7 5 3 1, pixel 1: bits 6 4 2 0
+        if (tvc && !gray && dbgGfx.pal) return tvcColour((b & 2 ? 1 : 0) | (b & 8 ? 4 : 0) | (b & 32 ? 16 : 0) | (b & 128 ? 64 : 0));
+        return dbgGfxIdx((b >> 7 & 1) | (b >> 3 & 1) << 1 | (b >> 5 & 1) << 2 | (b >> 1 & 1) << 3, 16);
+      }
+      case '8': return gray ? [v, v, v] : epRgb(v);
+      case '2dfx': return dbgFxRgb(j ? v >> 4 : v & 15, tr);
+      case 'c16': {
+        const n = j ? v & 15 : v >> 4;
+        return n === 8 ? GFX_TRANSPARENT : (gray ? [n * 17, n * 17, n * 17] : cardRgb(n));
+      }
+      case 'c2': return (v >> (7 - j) & 1) ? (gray ? [255, 255, 255] : cardRgb(ink === undefined ? 15 : ink)) : GFX_TRANSPARENT;
+    }
+    return [0, 0, 0];
+  }
+
+  function dbgGfxAddrText(src, a) {
+    return src === 1 ? hex(a >> 14, 2) + ':' + hex(a & 0x3FFF, 4) : hex(a, 6);
+  }
+  function dbgGfxSyncInputs() {
+    $('dbg-gfx-src').value = String(dbgGfx.src);
+    $('dbg-gfx-addr').value = dbgGfxAddrText(dbgGfx.src, dbgGfx.addr || 0);
+    $('dbg-gfx-bytes').value = dbgGfx.bytes;
+    $('dbg-gfx-lines').value = dbgGfx.lines;
+    $('dbg-gfx-bpp').value = dbgGfx.fmt;
+  }
+
+  // sprite sheets: [{ label, w, h, px(x, y) -> RGB | null }], laid out in rows
+  function dbgGfxSheets() {
+    const list = [];
+    if (dbgGfx.sheet === 'fx') {
+      const t = api.dbg2dfx();
+      const tr = dbgFxTransparent();
+      for (const m of t.matchAll(/#(\d+)\s+X:\s*(\d+) Y:\s*(\d+)\s+(\d+)x(\d+)\s+cím: ([0-9A-F]{6})/g)) {
+        const w = +m[4], h = +m[5], a = parseInt(m[6], 16), stride = (w + 1) >> 1;
+        if (!w || !h || w * h > 65536) continue;
+        const data = ep.read(a, stride * h, 2);
+        list.push({ label: '2dfx sprite #' + m[1] + ' (' + w + '×' + h + ', ' + hex(a, 6) + ', X ' + m[2] + ' Y ' + m[3] + ')', w, h,
+                    px: (x, y) => dbgFxRgb((x & 1) ? data[y * stride + (x >> 1)] >> 4 : data[y * stride + (x >> 1)] & 15, tr) });
+      }
+      return list;
+    }
+    const lines = api.dbgCard256Gfx().trim().split('\n');
+    if (!lines[0]) return list;
+    const spriteBase = +lines[0].split(' ')[1];
+    if (dbgGfx.sheet === 'c256') {
+      // the 16 sprites with their current phase (24×21 pixels)
+      lines.slice(1).forEach((l, i) => {
+        const [x, y, en, fg, col, phase, full] = l.split(' ').map(Number);
+        const a = spriteBase + phase * (full ? 256 : 64);
+        const data = ep.read(a, full ? 252 : 63, 4);
+        list.push({ label: '256k++ sprite #' + i + (en ? ' (be' : ' (ki') + ', X ' + x + ' Y ' + y + ', fázis ' + phase + (full ? ', 16 szín' : ', szín ' + col) + (fg ? ', előtér' : '') + ')',
+                    w: 24, h: 21, dim: !en,
+                    px: (px, py) => full ? dbgGfxPixel(data[py * 12 + (px >> 1)], px & 1, 'c16') : dbgGfxPixel(data[py * 3 + (px >> 3)], px & 7, 'c2', -1, col) });
+      });
+    } else {
+      // every phase of the sprite area (16 kB): 2 colours (64 bytes) or 16 colours (256 bytes)
+      const full = dbgGfx.sheet === 'c256p16', size = full ? 256 : 64;
+      const data = ep.read(spriteBase, 16384, 4);
+      for (let ph = 0; ph < 16384 / size; ph++) {
+        const o = ph * size;
+        list.push({ label: '256k++ sprite-fázis ' + ph + ' (' + hex(spriteBase + o, 6) + ')', w: 24, h: 21,
+                    px: (px, py) => full ? dbgGfxPixel(data[o + py * 12 + (px >> 1)], px & 1, 'c16') : dbgGfxPixel(data[o + py * 3 + (px >> 3)], px & 7, 'c2') });
+      }
+    }
+    return list;
+  }
+
+  function dbgGfxPut(img, w, x, y, rgb, dim) {
+    const o = (y * w + x) * 4;
+    if (!rgb) rgb = ((x >> 2) + (y >> 2)) & 1 ? [60, 60, 60] : [40, 40, 40];   // transparent
+    const k = dim ? 0.4 : 1;
+    img.data[o] = rgb[0] * k; img.data[o + 1] = rgb[1] * k; img.data[o + 2] = rgb[2] * k; img.data[o + 3] = 255;
+  }
+
+  let dbgGfxCells = null;                // sheet layout for the mouse: [{ x, y, w, h, label }]
   function dbgRenderGfx() {
     if (dbgGfx.addr === null || dbgGfx.sys !== (machine.type === 1 ? 'tvc' : 'ep')) {
       dbgGfx.addr = null;
       dbgGfxScreen();
       if (dbgGfx.addr === null) Object.assign(dbgGfx, { addr: 0, sys: machine.type === 1 ? 'tvc' : 'ep' });
-      $('dbg-gfx-addr').value = hex(dbgGfx.addr >> 14, 2) + ':' + hex(dbgGfx.addr & 0x3FFF, 4);
-      $('dbg-gfx-bytes').value = dbgGfx.bytes;
-      $('dbg-gfx-lines').value = dbgGfx.lines;
-      $('dbg-gfx-bpp').value = dbgGfx.bpp;
+      dbgGfxSyncInputs();
     }
-    const { addr, bytes, lines, bpp, zoom } = dbgGfx;
-    const ppb = 8 / bpp, w = bytes * ppb, h = lines;
     const cv = $('dbg-gfx-canvas');
+    const ctx = cv.getContext('2d');
+    const zoom = dbgGfx.zoom;
+    if (dbgGfx.sheet) {
+      // sprite sheet
+      const list = dbgGfxSheets();
+      dbgGfxCells = [];
+      const maxW = 512, gap = 2;
+      let x = 0, y = 0, rowH = 0, W = 0;
+      for (const s of list) {
+        if (x && x + s.w > maxW) { x = 0; y += rowH + gap; rowH = 0; }
+        dbgGfxCells.push({ x, y, w: s.w, h: s.h, label: s.label });
+        x += s.w + gap; rowH = Math.max(rowH, s.h); W = Math.max(W, x);
+      }
+      const H = Math.max(1, y + rowH);
+      W = Math.max(1, W);
+      cv.width = W; cv.height = H;
+      cv.style.width = (W * zoom) + 'px'; cv.style.height = (H * zoom) + 'px';
+      const img = ctx.createImageData(W, H);
+      for (let i = 0; i < img.data.length; i += 4) { img.data[i] = 20; img.data[i + 1] = 20; img.data[i + 2] = 30; img.data[i + 3] = 255; }
+      list.forEach((s, n) => {
+        const c = dbgGfxCells[n];
+        for (let py = 0; py < s.h; py++) for (let px = 0; px < s.w; px++) dbgGfxPut(img, W, c.x + px, c.y + py, s.px(px, py), s.dim);
+      });
+      ctx.putImageData(img, 0, 0);
+      $('dbg-gfx-info').textContent = list.length ? list.length + ' kép – az egér alatt a leírása' :
+        (dbgGfx.sheet === 'fx' ? 'Nincs bekapcsolt 2dfx sprite (vagy a kártya nincs bekapcsolva).' : 'A TVC256k++ kártya nincs bent.');
+      return;
+    }
+    dbgGfxCells = null;
+    const { src, addr, bytes, lines, fmt } = dbgGfx;
+    const ppb = GFX_PPB[fmt], w = bytes * ppb, h = lines;
     cv.width = w;
     cv.height = h;
     cv.style.width = (bytes * 8 * zoom / 2) + 'px';     // a byte is 8 screen pixels wide on both machines
     cv.style.height = (h * zoom) + 'px';
-    const ctx = cv.getContext('2d');
     const img = ctx.createImageData(w, h);
-    const data = ep.read(addr, bytes * lines, 1);
-    const tvc = machine.type === 1;
-    const gray = $('dbg-gfx-gray').checked || !dbgGfx.pal;
-    const pal = dbgGfx.pal || [];
-    // colour of palette index k (2 / 4 colour modes, EP 16 colour)
-    const idx = (k, n) => {
-      if (gray) return [k * 255 / (n - 1), k * 255 / (n - 1), k * 255 / (n - 1)].map(Math.round);
-      if (tvc) return tvcColour(pal[k] || 0);
-      return epRgb(k < 8 ? pal[k] || 0 : ((dbgGfx.fixbias & 0x1F) << 3) | (k - 8));
-    };
-    let o = 0;
+    if (src !== 1 && !api.dbgMemValid(src)) {
+      $('dbg-gfx-info').textContent = src === 2 ? 'A 2dfx kártya nincs bekapcsolva.' : 'A TVC256k++ kártya nincs bent.';
+      ctx.putImageData(img, 0, 0);
+      return;
+    }
+    const data = ep.read(addr, bytes * lines, src);
+    const tr = fmt === '2dfx' ? dbgFxTransparent() : -1;
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < bytes; x++) {
         const v = data[y * bytes + x];
-        for (let j = 0; j < ppb; j++) {
-          let rgb;
-          if (bpp === 1) rgb = idx(v >> (7 - j) & 1, 2);
-          else if (bpp === 2) rgb = idx((v >> (7 - j) & 1) | (v >> (3 - j) & 1) << 1, 4);
-          else if (bpp === 4) {
-            const b = j ? v : v >> 1;          // pixel 0: bits 7 5 3 1, pixel 1: bits 6 4 2 0
-            if (tvc && !gray) rgb = tvcColour((b & 2 ? 1 : 0) | (b & 8 ? 4 : 0) | (b & 32 ? 16 : 0) | (b & 128 ? 64 : 0));
-            else rgb = idx((b >> 7 & 1) | (b >> 3 & 1) << 1 | (b >> 5 & 1) << 2 | (b >> 1 & 1) << 3, 16);
-          } else rgb = gray ? [v, v, v] : epRgb(v);
-          img.data[o++] = rgb[0]; img.data[o++] = rgb[1]; img.data[o++] = rgb[2]; img.data[o++] = 255;
-        }
+        for (let j = 0; j < ppb; j++) dbgGfxPut(img, w, x * ppb + j, y, dbgGfxPixel(v, j, fmt, tr));
       }
     }
     ctx.putImageData(img, 0, 0);
-    $('dbg-gfx-info').textContent = (addr >> 14).toString(16).toUpperCase().padStart(2, '0') + ':' + hex(addr & 0x3FFF, 4) +
-      (dbgSegName(addr >> 14) ? ' (' + dbgSegName(addr >> 14) + ')' : '') + ', ' + bytes + ' bájt × ' + lines + ' sor, ' +
-      (1 << bpp) + ' szín – az egér alatt a bájt címe';
+    $('dbg-gfx-info').textContent = dbgGfxAddrText(src, addr) +
+      (src === 1 && dbgSegName(addr >> 14) ? ' (' + dbgSegName(addr >> 14) + ')' : '') + ', ' + bytes + ' bájt × ' + lines + ' sor, ' +
+      $('dbg-gfx-bpp').selectedOptions[0].text + ' – az egér alatt a bájt címe';
   }
+
+  // the cell / byte under the mouse
+  function dbgGfxAt(e) {
+    const cv = $('dbg-gfx-canvas'), r = cv.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width * cv.width, py = (e.clientY - r.top) / r.height * cv.height;
+    if (dbgGfxCells) return { cell: dbgGfxCells.find((c) => px >= c.x && px < c.x + c.w && py >= c.y && py < c.y + c.h) };
+    const x = Math.floor(px / GFX_PPB[dbgGfx.fmt]), y = Math.floor(py);
+    return { a: dbgGfx.addr + y * dbgGfx.bytes + x, x, y };
+  }
+
   function setupGfx() {
     const upd = () => {
-      const a = dbgParseAddr($('dbg-gfx-addr').value);
-      // a CPU address: its physical address with the current paging
-      if (a) dbgGfx.addr = a.phys ? a.addr : dbgRegObj().pages[a.addr >> 14 & 3] * 16384 + (a.addr & 0x3FFF);
+      dbgGfx.src = +$('dbg-gfx-src').value;
+      const t = $('dbg-gfx-addr').value.trim();
+      if (dbgGfx.src === 1) {
+        const a = dbgParseAddr(t);
+        // a CPU address: its physical address with the current paging
+        if (a) dbgGfx.addr = a.phys ? a.addr : dbgRegObj().pages[a.addr >> 14 & 3] * 16384 + (a.addr & 0x3FFF);
+      } else if (/^[0-9a-f]+$/i.test(t)) dbgGfx.addr = parseInt(t, 16);
       dbgGfx.bytes = Math.max(1, Math.min(256, +$('dbg-gfx-bytes').value || 64));
       dbgGfx.lines = Math.max(1, Math.min(512, +$('dbg-gfx-lines').value || 240));
-      dbgGfx.bpp = +$('dbg-gfx-bpp').value;
+      dbgGfx.fmt = $('dbg-gfx-bpp').value;
       dbgGfx.zoom = +$('dbg-gfx-zoom').value;
+      dbgGfx.sheet = null;
       dbgRenderGfx();
     };
     for (const id of ['dbg-gfx-addr', 'dbg-gfx-bytes', 'dbg-gfx-lines']) $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') upd(); });
-    for (const id of ['dbg-gfx-bpp', 'dbg-gfx-zoom', 'dbg-gfx-gray']) $(id).onchange = upd;
-    $('dbg-gfx-screen').onclick = () => { dbgGfx.addr = null; dbgRenderGfx(); };
-    // step through memory: a line / a page
-    $('dbg-gfx-prev').onclick = () => { dbgGfx.addr = Math.max(0, dbgGfx.addr - dbgGfx.bytes * dbgGfx.lines); $('dbg-gfx-addr').value = hex(dbgGfx.addr >> 14, 2) + ':' + hex(dbgGfx.addr & 0x3FFF, 4); dbgRenderGfx(); };
-    $('dbg-gfx-next').onclick = () => { dbgGfx.addr += dbgGfx.bytes * dbgGfx.lines; $('dbg-gfx-addr').value = hex(dbgGfx.addr >> 14, 2) + ':' + hex(dbgGfx.addr & 0x3FFF, 4); dbgRenderGfx(); };
+    for (const id of ['dbg-gfx-src', 'dbg-gfx-bpp', 'dbg-gfx-gray']) $(id).onchange = upd;
+    $('dbg-gfx-zoom').onchange = () => { dbgGfx.zoom = +$('dbg-gfx-zoom').value; dbgRenderGfx(); };
+    $('dbg-gfx-preset').onchange = (e) => {
+      const v = e.target.value;
+      e.target.value = '';
+      if (v === 'screen') {
+        dbgGfx.addr = null;
+      } else if (v === 'c256bmp') {
+        const l = api.dbgCard256Gfx().split('\n')[0].split(' ').map(Number);
+        Object.assign(dbgGfx, { src: 4, addr: l.length > 2 ? l[2] : 0x8000, bytes: 128, lines: 240, fmt: 'c16', sheet: null });
+        dbgGfxSyncInputs();
+      } else if (v) {
+        dbgGfx.sheet = v;
+      }
+      dbgRenderGfx();
+    };
+    // step through memory: a page
+    const step = (d) => {
+      dbgGfx.sheet = null;
+      dbgGfx.addr = Math.max(0, dbgGfx.addr + d * dbgGfx.bytes * dbgGfx.lines);
+      dbgGfxSyncInputs();
+      dbgRenderGfx();
+    };
+    $('dbg-gfx-prev').onclick = () => step(-1);
+    $('dbg-gfx-next').onclick = () => step(1);
     $('dbg-gfx-canvas').onmousemove = (e) => {
-      const cv = e.target, r = cv.getBoundingClientRect();
-      const x = Math.floor((e.clientX - r.left) / r.width * dbgGfx.bytes), y = Math.floor((e.clientY - r.top) / r.height * dbgGfx.lines);
-      const a = dbgGfx.addr + y * dbgGfx.bytes + x;
-      cv.title = hex(a >> 14, 2) + ':' + hex(a & 0x3FFF, 4) + '  (sor ' + y + ', bájt ' + x + ')';
+      const at = dbgGfxAt(e);
+      e.target.title = at.cell ? at.cell.label : (at.a !== undefined ? dbgGfxAddrText(dbgGfx.src, at.a) + '  (sor ' + at.y + ', bájt ' + at.x + ')' : '');
     };
     $('dbg-gfx-canvas').onclick = (e) => {
-      // the clicked byte in the memory view (physical address)
-      const cv = e.target, r = cv.getBoundingClientRect();
-      const x = Math.floor((e.clientX - r.left) / r.width * dbgGfx.bytes), y = Math.floor((e.clientY - r.top) / r.height * dbgGfx.lines);
-      const a = dbgGfx.addr + y * dbgGfx.bytes + x;
-      dbgMemSrc = 1; $('dbg-mem-src').value = '1'; dbgMemAddr = a & ~15;
-      $('dbg-mem-addr').value = hex(a >> 14, 2) + ':' + hex(a & 0x3FF0, 4);
+      // the clicked byte in the memory view
+      const at = dbgGfxAt(e);
+      if (at.a === undefined) return;
+      const src = dbgGfx.src;
+      dbgMemSrc = src; $('dbg-mem-src').value = String(src); dbgMemAddr = at.a & ~15;
+      $('dbg-mem-addr').value = src === 1 ? hex(at.a >> 14, 2) + ':' + hex(at.a & 0x3FF0, 4) : hex(at.a & ~15, 6);
       dbgRenderMem();
     };
   }
@@ -5623,6 +5816,7 @@ ep.log('CTRL+ESC megnyomva');`
       dbgProfileClear: c('ep_dbg_profile_clear', null, []),
       dbgProfile: c('ep_dbg_profile', 'number', []),
       dbgIoLogEnable: c('ep_dbg_iolog_enable', null, ['number']),
+      dbgCard256Gfx: c('ep_dbg_card256_gfx', 'string', []),
       luaRun: c('ep_lua_run', 'number', ['string']),
       luaStop: c('ep_lua_stop', null, []),
       luaActive: c('ep_lua_active', 'number', []),

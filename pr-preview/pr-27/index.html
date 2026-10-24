@@ -6,13 +6,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610241902-cf1805c">
-<meta name="build" content="202610241902-cf1805c">
+<link rel="stylesheet" href="style.css?v=202610241910-c5cfc83">
+<meta name="build" content="202610241910-c5cfc83">
 </head>
 <body>
-<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #27 előnézete, nem az éles oldal · fordítva: 2026.10.24 21:02 · cf1805c · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #27 előnézete, nem az éles oldal · fordítva: 2026.10.24 21:10 · c5cfc83 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.24 21:02 · cf1805c</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.24 21:10 · c5cfc83</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -165,6 +165,7 @@
             <option value="1">szegmens:offset</option>
             <option value="2">2dfx resource RAM</option>
             <option value="3">TVC256k++ PSRAM</option>
+            <option value="4">TVC256k++ kártya-RAM</option>
           </select>
           <input id="dbg-mem-addr" class="dbg-addr" value="0000" title="Cím (hex) vagy címke; szegmensnél pl. FC:0000; Enter">
           <span class="small">dupla kattintás: írás</span>
@@ -213,16 +214,28 @@
     <div class="dbg-box dbg-tab" data-pane="lpt" hidden><div id="dbg-lpt" class="dbg-mono"></div></div>
     <div class="dbg-box dbg-tab" data-pane="gfx" hidden>
       <div class="dbg-tool">
-        <input id="dbg-gfx-addr" class="dbg-mono" size="8" title="Kezdőcím: szegmens:offset (pl. FC:0000) vagy fizikai cím; Enter">
+        <select id="dbg-gfx-preset" title="A kijelzett kép, illetve a kártyák képei">
+          <option value="">Előbeállítás…</option>
+          <option value="screen">Képernyő</option>
+          <option value="fx">2dfx sprite-ok</option>
+          <option value="c256bmp">256k++ háttérkép</option>
+          <option value="c256">256k++ sprite-ok</option>
+          <option value="c256p2">256k++ sprite-fázisok (2 szín)</option>
+          <option value="c256p16">256k++ sprite-fázisok (16 szín)</option>
+        </select>
+        <select id="dbg-gfx-src" title="Melyik memória">
+          <option value="1">gép (szegmens)</option><option value="2">2dfx RAM</option><option value="4">256k++ RAM</option><option value="3">256k++ PSRAM</option>
+        </select>
+        <input id="dbg-gfx-addr" class="dbg-mono" size="8" title="Kezdőcím: a gépnél szegmens:offset (pl. FC:0000) vagy CPU-cím, a kártyáknál hex cím; Enter">
         <label>bájt/sor <input id="dbg-gfx-bytes" type="number" min="1" max="256" style="width:4em"></label>
         <label>sor <input id="dbg-gfx-lines" type="number" min="1" max="512" style="width:4em"></label>
         <select id="dbg-gfx-bpp" title="Színmód">
           <option value="1">2 szín</option><option value="2">4 szín</option><option value="4">16 szín</option><option value="8">256 szín (EP)</option>
+          <option value="2dfx">2dfx 16 szín</option><option value="c16">256k++ 16 szín</option><option value="c2">256k++ 2 szín</option>
         </select>
         <select id="dbg-gfx-zoom" title="Nagyítás"><option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option></select>
         <label title="Szürke árnyalatok a gép palettája helyett"><input type="checkbox" id="dbg-gfx-gray"> szürke</label>
         <button id="dbg-gfx-prev" title="Előző terület">◀</button><button id="dbg-gfx-next" title="Következő terület">▶</button>
-        <button id="dbg-gfx-screen" title="A kijelzett képernyő címe, módja és palettája">Képernyő</button>
       </div>
       <div id="dbg-gfx-info" class="small"></div>
       <canvas id="dbg-gfx-canvas"></canvas>
@@ -425,7 +438,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610241902-cf1805c"></script>
-<script src="ep128.js?v=202610241902-cf1805c"></script>
+<script src="ep128emu.js?v=202610241910-c5cfc83"></script>
+<script src="ep128.js?v=202610241910-c5cfc83"></script>
 </body>
 </html>
