@@ -6,13 +6,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610241913-ad53c61">
-<meta name="build" content="202610241913-ad53c61">
+<link rel="stylesheet" href="style.css?v=202610241920-c47730f">
+<meta name="build" content="202610241920-c47730f">
 </head>
 <body>
-<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #27 előnézete, nem az éles oldal · fordítva: 2026.10.24 21:13 · ad53c61 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #27 előnézete, nem az éles oldal · fordítva: 2026.10.24 21:20 · c47730f · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.24 21:13 · ad53c61</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.24 21:20 · c47730f</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -236,6 +236,7 @@
         <select id="dbg-gfx-zoom" title="Nagyítás"><option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option></select>
         <label title="Szürke árnyalatok a gép palettája helyett"><input type="checkbox" id="dbg-gfx-gray"> szürke</label>
         <button id="dbg-gfx-prev" title="Előző terület">◀</button><button id="dbg-gfx-next" title="Következő terület">▶</button>
+        <button id="dbg-gfx-png" title="A kép mentése PNG-ként (nagyítva, ahogy látszik)">PNG</button><button id="dbg-gfx-txt" title="Mentés szövegként: a sprite-ok képpontjai és bájtjai, illetve a terület hex listája">Szöveg</button>
       </div>
       <div id="dbg-gfx-info" class="small"></div>
       <canvas id="dbg-gfx-canvas"></canvas>
@@ -438,7 +439,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610241913-ad53c61"></script>
-<script src="ep128.js?v=202610241913-ad53c61"></script>
+<script src="ep128emu.js?v=202610241920-c47730f"></script>
+<script src="ep128.js?v=202610241920-c47730f"></script>
 </body>
 </html>

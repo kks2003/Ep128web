@@ -3521,6 +3521,111 @@ registerProcessor('ep-output', EPOutput);
     'MODE_VID', 'COLR_VID', 'X_SIZ_VID', 'Y_SIZ_VID', 'ST_FLAG', 'BORD_VID', 'BIAS_VID', 'VID_EDIT',
     'KEY_EDIT', 'BUF_EDIT', 'FLG_EDIT', 'SP_TAPE', 'PROTECT', 'LV_TAPE', 'REM1', 'REM2', 'SPRITE',
     'RANDOM_IRQ'];
+  // EXDOS variables 64..90 (enterprise.iko.hu, variables.htm)
+  ['ROM_EXDOS', 'IS_P0', 'IS_P1', 'IS_P2', 'IS_P3', 'ECHO', 'VERIFY', 'DEF_UNIT', 'STEP_RATE', 'DSK_CHK',
+   'IN_ERROR', 'OUT_ERROR', 'IN_CLI', 'OUT_CLI', 'DT_FORM', 'ER_MESS', 'AB_ERR', 'DSK_ERR', 'CLI_PROT',
+   'RND_0', 'RND_1', 'RND_2', 'RND_3', 'CLI_EN', 'DCH_DIS', 'FAST_VID', 'CD_PROMPT'].forEach((n, i) => { EXOS_VARS[64 + i] = n; });
+  // EXOS, EXDOS and IS-DOS error codes (enterprise.iko.hu, errors.htm)
+  const EXOS_ERR = {
+    255: '.IFUNC Invalid EXOS function code',
+    254: '.ILLFN EXOS function call not allowed',
+    253: '.INAME Invalid EXOS string',
+    252: '.STACK EXOS stack overflow',
+    251: '.ICHAN Channel does not exist',
+    250: '.NODEV Device does not exist',
+    249: '.CHANX Channel exists',
+    248: '.NOBUF No ALLOCATE BUFFER call made',
+    247: '.NORAM Insufficient memory',
+    246: '.NOVID Insufficient video memory',
+    245: '.NOSEG No free segments',
+    244: '.ISEG Invalid segment',
+    243: '.IBOUN Invalid user boundary',
+    242: '.IVAR Unknown EXOS variable number',
+    241: '.IDESC Invalid device descriptor',
+    240: '.NOSTR Unrecognised command string',
+    239: '.ASCII Invalid file header',
+    238: '.ITYPE Unknown module type',
+    237: '.IREL Invalid relocatable module',
+    236: '.NOMOD End of file module found',
+    235: '.ITIME Invalid date or time value',
+    234: '.ISPEC Invalid special function call',
+    233: '.2NDCH Device in use',
+    232: '.IUNIT Invalid unit number',
+    231: '.NOFN Call not supported by this device',
+    230: '.ESC Invalid escape sequence',
+    229: '.STOP STOP key pressed',
+    228: '.EOF End of file',
+    227: '.PROT Protection violation',
+    226: '.KFSPC Function key string too long',
+    225: '.SENV Envelope too big',
+    224: '.SENBF Envelope storage full',
+    223: '.SQFUL Sound queue full',
+    222: '.VSIZE Invalid video page size',
+    221: '.VMODE Invalid video mode',
+    220: '.VMODE Invalid display parameters',
+    219: '.VLOAD Invalid file to LOAD',
+    218: '.VROW Invalid row number to scroll',
+    217: '.VCURS Invalid cursor coordinates',
+    216: '.VBEAM Invalid beam position',
+    215: '.SEROP Cannot use both serial and network',
+    214: '.NOADR Network address not set',
+    213: '.NETOP Network link exists',
+    212: '.EVID Editor video channel error',
+    211: '.EKEY Editor keyboard channel error',
+    210: '.EDINV Editor load file error',
+    209: '.EDBUF Editor load file too big',
+    208: '.CCRC Cassette CRC error',
+    207: '.NOFIL File not found',
+    191: '.NOUPB UPB needs re-building',
+    190: '.NORMD No RAM disk',
+    189: '.ICMD Invalid unit handler command',
+    188: '.IUNUM Invalid relative unit number',
+    187: '.ISECT Invalid sector number to unit handler',
+    186: '.NRDY Not ready',
+    185: '.VERFY Verify error',
+    184: '.DATA Data error',
+    183: '.RNF Sector not found',
+    182: '.WPROT Write protected disk',
+    181: '.UFORM Unformatted disk',
+    180: '.NDOS Not a DOS disk',
+    179: '.WDISK Wrong disk',
+    178: '.WFILE Wrong disk for file',
+    177: '.WDRV Insert disk for drive X:',
+    176: '.ICALL Invalid FISH call',
+    175: '.IDRV Invalid drive',
+    174: '.IPARM Invalid parameter',
+    173: '.DRFUL Root directory full',
+    172: '.DKFUL Disk full',
+    171: '.DUPF Duplicate filename',
+    170: '.NODIR Directory not found',
+    169: '.DIRE Inavalid directory move',
+    168: '.IPATH Invalid pathname string',
+    167: '.FILRO Read only file',
+    166: '.IFNM Invalid file name',
+    165: '.DIRNE Directory not empty',
+    164: '.ABORT Disk operation aborted',
+    163: '.IFAT Invalid FAT entry',
+    162: '.IMAP Invalid MAPDISK',
+    161: '.IATTR Invalid file attributes',
+    160: '.IFCB Invalid FCB',
+    159: '.INP Wrong number of parameters',
+    158: '.DOT Invalid . or .. operations',
+    157: '.RAMX RAM disk already exists',
+    156: '.BUFUL Command too long',
+    155: '.OV64K Transfer over top of RAM',
+    154: '.FILE File access error',
+    153: '.SYSX System file exists',
+    152: '.DIRX Directory exists',
+    151: '.FILEX File exists',
+    150: '.NCOMP Incompatible disk',
+    149: '.NCOMP File cannot be copied onto itself',
+    127: '.SHARE Shared segment allocated',
+    36: '.NOHLP File for HELP not found',
+    35: '.CTRLC Program terminated',
+    34: '.NEST Batch files nested too deeply',
+    33: '.BADCMD Unrecognised command',
+    32: '.IPSTR Invalid PATH string'
+  };
   // the EXOS 2.1 system segment (FF) at its page 2 addresses, from the memory
   // map of enterprise.iko.hu; [address, length, name]
   const EP_SYSVAR_LIST = [
@@ -3923,6 +4028,24 @@ registerProcessor('ep-output', EPOutput);
     return b.join(', ');
   }
 
+  // the overlay graphics of the TVC256k++ card: base addresses and sprites
+  function dbgCard256Overlay() {
+    const lines = api.dbgCard256Gfx().trim().split('\n');
+    if (!lines[0]) return '';
+    const [mode, spr, bmp, scr, col, font] = lines[0].split(' ').map(Number);
+    let t = '\n\nOverlay grafika: ' + ['nincs (csak sprite-ok)', '2 színű szöveg', '16 színű szöveg', '16 színű kép'][mode & 3] +
+      '\n  kártya-RAM címek: sprite-ok ' + hex(spr, 5) + '  háttérkép ' + hex(bmp, 5) + '  szöveg ' + hex(scr, 5) +
+      '  színek ' + hex(col, 5) + '  font ' + hex(font, 5) +
+      '\n  (a képek a Grafika fülön: Előbeállítás → 256k++…)\nSprite-ok:\n   #  be  réteg    X    Y  fázis  szín  cím\n';
+    lines.slice(1).forEach((l, i) => {
+      const [x, y, en, fg, c, ph, full] = l.split(' ').map(Number);
+      t += String(i).padStart(4) + '  ' + (en ? 'igen' : ' -  ') + ' ' + (fg ? 'előtér ' : 'háttér ') +
+        String(x).padStart(4) + ' ' + String(y).padStart(4) + '  ' + String(ph).padStart(5) + '  ' +
+        (full ? '  16 ' : String(c).padStart(4) + ' ') + ' ' + hex(spr + ph * (full ? 256 : 64), 5) + '\n';
+    });
+    return t;
+  }
+
   // the 2dfx commands of the I/O log: the F8h writes with the F9h bytes after them
   function dbgFxLog() {
     if (!fxOn) return '';
@@ -4215,8 +4338,8 @@ registerProcessor('ep-output', EPOutput);
     let t = (dbgSteppedBack && why === 3 ? 'Visszalépve' : DBG_REASONS[why]) + ' – PC: ' + hex(pc, 4) + (lbl ? ' (' + lbl + ')' : '');
     if (dbgCallRet && why === 2 && pc === dbgCallRet.ret) {
       const a = dbgRegs()[1] >> 8;
-      t += ', a hívás eredménye: A=' + hex(a, 2) + (a === 0 ? ' (rendben)' :
-           (machine.type === 1 && TVC_ERR[a] ? ' (' + TVC_ERR[a] + ')' : ''));
+      const err = machine.type === 1 ? TVC_ERR[a] : EXOS_ERR[a];
+      t += ', a hívás eredménye: A=' + hex(a, 2) + (a === 0 ? ' (rendben)' : (err ? ' (' + err + ')' : ''));
     }
     if (why >= 4 && why <= 5) {
       t += ', cím: ' + hex(addr, 4) + ' [' + dbgAddrNote(addr, dbgRegObj().pages) + '] = ' + hex(value, 2) + ' (a hozzáférő utasítás után)';
@@ -4560,7 +4683,7 @@ registerProcessor('ep-output', EPOutput);
         const t = api.dbgCard256();
         $('dbg-c256').textContent = t + (t.startsWith('A TVC256k++') ? '' :
           '\nB0/B1: P2/P3 lap  B2-B5: 8 MB-os lapok  B6: PSRAM MB  B7: ROM lap  C3/C4: firmware\n' +
-          'C5: meghajtó  C8-CA: PSRAM / flash / DSK érvényes  D0: USB  D4/D5: egér  E0-FF: vSID');
+          'C5: meghajtó  C8-CA: PSRAM / flash / DSK érvényes  D0: USB  D4/D5: egér  E0-FF: vSID') + dbgCard256Overlay();
         break;
       }
       case 'find': if (dbgFindCand) $('dbg-find-count').textContent = dbgFindCand.length + ' jelölt'; break;
@@ -4701,8 +4824,11 @@ registerProcessor('ep-output', EPOutput);
   }
 
   // sprite sheets: [{ label, w, h, px(x, y) -> RGB | null }], laid out in rows
+  // sprite sheets: [{ label, w, h, val(x, y) -> colour index | -1 (transparent),
+  // px(x, y) -> RGB | null, rows: the bytes of each pixel row }], laid out in rows
   function dbgGfxSheets() {
     const list = [];
+    const rowsOf = (data, o, rowBytes, h) => Array.from({ length: h }, (_, y) => data.slice(o + y * rowBytes, o + (y + 1) * rowBytes));
     if (dbgGfx.sheet === 'fx') {
       const t = api.dbg2dfx();
       const tr = dbgFxTransparent();
@@ -4710,36 +4836,80 @@ registerProcessor('ep-output', EPOutput);
         const w = +m[4], h = +m[5], a = parseInt(m[6], 16), stride = (w + 1) >> 1;
         if (!w || !h || w * h > 65536) continue;
         const data = ep.read(a, stride * h, 2);
+        const val = (x, y) => { const k = (x & 1) ? data[y * stride + (x >> 1)] >> 4 : data[y * stride + (x >> 1)] & 15; return k === tr ? -1 : k; };
         list.push({ label: '2dfx sprite #' + m[1] + ' (' + w + '×' + h + ', ' + hex(a, 6) + ', X ' + m[2] + ' Y ' + m[3] + ')', w, h,
-                    px: (x, y) => dbgFxRgb((x & 1) ? data[y * stride + (x >> 1)] >> 4 : data[y * stride + (x >> 1)] & 15, tr) });
+                    val, px: (x, y) => { const k = val(x, y); return k < 0 ? GFX_TRANSPARENT : dbgFxRgb(k, -1); },
+                    rows: rowsOf(data, 0, stride, h), fmt: '2dfx: 4 bit/pixel, az alsó félbájt a bal pixel' });
       }
       return list;
     }
     const lines = api.dbgCard256Gfx().trim().split('\n');
     if (!lines[0]) return list;
     const spriteBase = +lines[0].split(' ')[1];
+    // a 256k++ sprite image (24×21) at offset 'o' of 'data'
+    const cardSprite = (label, data, o, full, col, dim) => {
+      const val = full ? (x, y) => { const v = data[o + y * 12 + (x >> 1)], k = (x & 1) ? v & 15 : v >> 4; return k === 8 ? -1 : k; }
+                       : (x, y) => (data[o + y * 3 + (x >> 3)] >> (7 - (x & 7)) & 1) ? 1 : -1;
+      return { label, w: 24, h: 21, dim, val,
+               px: (x, y) => { const k = val(x, y); return k < 0 ? GFX_TRANSPARENT : ($('dbg-gfx-gray').checked ? [k * 17, k * 17, k * 17] : cardRgb(full ? k : col)); },
+               rows: rowsOf(data, o, full ? 12 : 3, 21),
+               fmt: full ? '256k++ 16 szín: 4 bit/pixel, a felső félbájt a bal pixel, 8 = átlátszó' : '256k++ 2 szín: 1 bit/pixel, szín ' + col };
+    };
     if (dbgGfx.sheet === 'c256') {
-      // the 16 sprites with their current phase (24×21 pixels)
+      // the 16 sprites with their current phase
       lines.slice(1).forEach((l, i) => {
         const [x, y, en, fg, col, phase, full] = l.split(' ').map(Number);
         const a = spriteBase + phase * (full ? 256 : 64);
-        const data = ep.read(a, full ? 252 : 63, 4);
-        list.push({ label: '256k++ sprite #' + i + (en ? ' (be' : ' (ki') + ', X ' + x + ' Y ' + y + ', fázis ' + phase + (full ? ', 16 szín' : ', szín ' + col) + (fg ? ', előtér' : '') + ')',
-                    w: 24, h: 21, dim: !en,
-                    px: (px, py) => full ? dbgGfxPixel(data[py * 12 + (px >> 1)], px & 1, 'c16') : dbgGfxPixel(data[py * 3 + (px >> 3)], px & 7, 'c2', -1, col) });
+        list.push(cardSprite('256k++ sprite #' + i + (en ? ' (be' : ' (ki') + ', X ' + x + ' Y ' + y + ', fázis ' + phase + (full ? ', 16 szín' : ', szín ' + col) + (fg ? ', előtér' : '') + ', ' + hex(a, 5) + ')',
+                             ep.read(a, full ? 252 : 63, 4), 0, !!full, col, !en));
       });
     } else {
       // every phase of the sprite area (16 kB): 2 colours (64 bytes) or 16 colours (256 bytes)
       const full = dbgGfx.sheet === 'c256p16', size = full ? 256 : 64;
       const data = ep.read(spriteBase, 16384, 4);
       for (let ph = 0; ph < 16384 / size; ph++) {
-        const o = ph * size;
-        list.push({ label: '256k++ sprite-fázis ' + ph + ' (' + hex(spriteBase + o, 6) + ')', w: 24, h: 21,
-                    px: (px, py) => full ? dbgGfxPixel(data[o + py * 12 + (px >> 1)], px & 1, 'c16') : dbgGfxPixel(data[o + py * 3 + (px >> 3)], px & 7, 'c2') });
+        list.push(cardSprite('256k++ sprite-fázis ' + ph + ' (' + hex(spriteBase + ph * size, 5) + ')', data, ph * size, full, 15, false));
       }
     }
     return list;
   }
+
+  // what the graphics view shows, as text: the pixels of the sprites (or a
+  // hex dump of the memory area)
+  function dbgGfxText() {
+    const out = [];
+    if (dbgGfx.sheet) {
+      for (const s of dbgGfxSheets()) {
+        out.push('; ' + s.label, '; ' + s.fmt + '; képpontok: . = átlátszó, 0-F = színkód');
+        for (let y = 0; y < s.h; y++) {
+          let r = '';
+          for (let x = 0; x < s.w; x++) { const k = s.val(x, y); r += k < 0 ? '.' : k.toString(16).toUpperCase(); }
+          out.push(r);
+        }
+        out.push('; bájtok soronként (hex)');
+        for (const r of s.rows) out.push(r.map((b) => hex(b, 2)).join(' '));
+        out.push('');
+      }
+    } else {
+      const { src, addr, bytes, lines } = dbgGfx;
+      const data = ep.read(addr, bytes * lines, src);
+      out.push('; ' + $('dbg-gfx-info').textContent.replace(/ – .*$/, ''));
+      for (let y = 0; y < lines; y++) {
+        out.push(dbgGfxAddrText(src, addr + y * bytes) + '  ' + data.slice(y * bytes, (y + 1) * bytes).map((b) => hex(b, 2)).join(' '));
+      }
+    }
+    return out.join('\n') + '\n';
+  }
+  function dbgDownload(name, blob) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  const dbgGfxName = () => (dbgGfx.sheet ? { fx: '2dfx-sprite', c256: '256k-sprite', c256p2: '256k-sprite-fazisok', c256p16: '256k-sprite-fazisok16' }[dbgGfx.sheet] :
+                            'grafika-' + dbgGfxAddrText(dbgGfx.src, dbgGfx.addr || 0).replace(':', '-'));
+
 
   function dbgGfxPut(img, w, x, y, rgb, dim) {
     const o = (y * w + x) * 4;
@@ -4861,6 +5031,17 @@ registerProcessor('ep-output', EPOutput);
       dbgGfxSyncInputs();
       dbgRenderGfx();
     };
+    $('dbg-gfx-png').onclick = () => {
+      // the picture as shown (each pixel enlarged, without smoothing)
+      const cv = $('dbg-gfx-canvas'), w = parseInt(cv.style.width) || cv.width, h = parseInt(cv.style.height) || cv.height;
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const x = c.getContext('2d');
+      x.imageSmoothingEnabled = false;
+      x.drawImage(cv, 0, 0, w, h);
+      c.toBlob((b) => { if (b) dbgDownload(dbgGfxName() + '.png', b); });
+    };
+    $('dbg-gfx-txt').onclick = () => dbgDownload(dbgGfxName() + '.txt', new Blob([dbgGfxText()], { type: 'text/plain;charset=utf-8' }));
     $('dbg-gfx-prev').onclick = () => step(-1);
     $('dbg-gfx-next').onclick = () => step(1);
     $('dbg-gfx-canvas').onmousemove = (e) => {
@@ -4953,6 +5134,11 @@ registerProcessor('ep-output', EPOutput);
     const cur = dbgTvcRam(0x170C, 2), curAddr = cur[0] | cur[1] << 8;
     const running = (dbgTvcRam(0x1700, 1)[0] & 4) !== 0;
     box.textContent = '';
+    const save = document.createElement('button');
+    save.textContent = 'Mentés szövegként';
+    save.title = 'A program listája .txt fájlba (UTF-8)';
+    save.onclick = () => dbgDownload('tvc-basic.txt', new Blob([lines.map((l) => l.num + ' ' + l.text).join('\r\n') + '\r\n'], { type: 'text/plain;charset=utf-8' }));
+    box.append(save);
     const head = document.createElement('div');
     head.className = 'small';
     head.textContent = lines.length + ' sor' + (running ? ', fut – az aktuális sor kiemelve' : '') +
