@@ -95,12 +95,21 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
 
 **Regiszterek**
 - Megállítva szerkeszthetők (hex, Enter). A legutóbbi megállás óta változottak pirosak.
-- Alattuk a jelzőbitek, a 4 lap szegmense és a verem teteje.
+- Alattuk a jelzőbitek, a 4 lap szegmense névvel és a verem teteje.
+- Szegmensnevek: TVC-n SYS, CART, EXT, SDEXT, U0–U3, VID0–VID3. Enterprise-on a ROM-ok neve (EXOS0, BASIC, EXDOS0…), RAM, VID (FC–FE) és SYS (FF, az EXOS rendszerszegmense, egyben videó-RAM).
 
 **Disassembly**
 - A PC körül mutat, vagy a megadott címtől (címke is megadható).
 - Kattintás: kurzor (futás a kurzorig).
 - Bal szélre kattintás vagy F9: végrehajtási töréspont be/ki.
+- Megjegyzések a sorok végén (`;`):
+  - IN/OUT: a port neve (NICK, DAVE, lapregiszter, TVC lapozás, CRTC, paletta, a bővítőhelyen lévő kártya…).
+  - Az aktuális (PC) sorban a kiírandó érték is, a lapozás kibontva: TVC port 02 → `P0=SYS P1=U1 P2=VID P3=CART`, port 0C → VID lapok, port 06 → GRAPHICS mód, EP B0–B3 → a szegmens neve. `OUT (C),r` és az OUTI-félék portját a C regiszterből veszi.
+  - Enterprise `EXOS nn`: a funkció neve, a PC-sorban a paraméterekkel (csatorna, eszköznév, EXOS változó).
+  - TVC: a rendszerhívás (RST 30h) kódja. A TVC ROM-rutinok nevei nincsenek beépítve; szimbólumfájllal adhatók meg.
+  - Abszolút memóriacím: melyik lapra és szegmensre esik az aktuális lapozással, illetve az ismert EXOS rendszerváltozók neve (LP_POINTER, ST_POINTER, USR_P0–3).
+  - CALL/JP másik lapra: a cél szegmense.
+- Ugyanezek a megjegyzések a monitor `D` parancsában, az előzményekben, az I/O naplóban és a megállási üzenetben is megjelennek.
 
 **Memória**
 - Forrás: CPU-cím (`C000`), szegmens:offset (`FC:0000`), a 2dfx resource RAM vagy a TVC256k++ PSRAM.
