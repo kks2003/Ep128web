@@ -6,17 +6,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610242230-2a84eff">
+<link rel="stylesheet" href="style.css?v=202610242232-b2c35d3">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <meta name="theme-color" content="#c8102e">
-<meta name="build" content="202610242230-2a84eff">
+<meta name="build" content="202610242232-b2c35d3">
 </head>
 <body>
-<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #28 előnézete, nem az éles oldal · fordítva: 2026.10.25 00:30 · 2a84eff · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #28 előnézete, nem az éles oldal · fordítva: 2026.10.25 00:32 · b2c35d3 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.25 00:30 · 2a84eff</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.25 00:32 · b2c35d3</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -456,6 +456,14 @@
       <div id="joy-map"></div>
       <span class="name" id="pad-status"></span>
     </div>
+    <div class="group" id="cfg-group">
+      <h3>Beállítások</h3>
+      <button id="cfg-export" title="A beállítások mentése egy fájlba (gép, kártyák, joystick, hangerő, debugger stb.)">Exportálás</button>
+      <label class="name" title="A lemezek, a gyorsmentések, a pendrive és a TVC256k++ flash tartalma is bekerül (a ROM-ok nem)"><input type="checkbox" id="cfg-data"> lemezekkel, gyorsmentésekkel együtt</label>
+      <label class="file" title="Korábban exportált beállítások visszatöltése (az oldal újratöltődik)">Importálás…
+        <input type="file" id="cfg-import" accept=".json,application/json">
+      </label>
+    </div>
   </section>
 
   <details id="help">
@@ -518,7 +526,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610242230-2a84eff"></script>
-<script src="ep128.js?v=202610242230-2a84eff"></script>
+<script src="ep128emu.js?v=202610242232-b2c35d3"></script>
+<script src="ep128.js?v=202610242232-b2c35d3"></script>
 </body>
 </html>
