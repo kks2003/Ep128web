@@ -3674,11 +3674,28 @@ registerProcessor('ep-output', EPOutput);
               0xF6: 'MIDI', 0xF7: 'MIDI' })[port] || '';
   }
 
-  // what writing 'v' to 'port' does (paging and video mode decoded)
+  // TVC colour: bits 0 B, 2 R, 4 G, 6 I (palette); the border uses bits 1, 3, 5, 7
+  function dbgTvcColour(v) {
+    const n = ['fekete', 'kék', 'piros', 'bíbor', 'zöld', 'cián', 'sárga', 'fehér'][(v & 1) | (v >> 1 & 2) | (v >> 2 & 4)];
+    if (n === 'fekete' && (v & 0x40)) return 'szürke';
+    return (v & 0x40 ? 'világos ' : (v & 0x15 ? 'sötét ' : '')) + n;
+  }
+  const CRTC_REGS = ['vízszintes teljes', 'vízszintes látható', 'HSYNC pozíció', 'szinkron szélességek',
+                     'függőleges teljes', 'függőleges finom', 'függőleges látható', 'VSYNC pozíció',
+                     'interlace', 'max. raszter cím', 'kurzor kezdet', 'kurzor vég', 'kezdőcím felső',
+                     'kezdőcím alsó', 'kurzor cím felső', 'kurzor cím alsó', 'fénytoll felső', 'fénytoll alsó'];
+
+  // what writing 'v' to 'port' does (paging, video mode, colours decoded)
   function dbgPortWriteNote(port, v) {
     port &= 0xFF;
     if (machine && machine.type === 1) {
-      switch (port & 0x7F) {
+      const p = port & 0x7F;
+      if (p >= 0x60 && p < 0x70) return dbgTvcColour(v);
+      if (p >= 0x70 && !(p & 1)) return 'R' + (v & 31) + (CRTC_REGS[v & 31] ? ' ' + CRTC_REGS[v & 31] : '');
+      switch (p) {
+        case 0x00: return dbgTvcColour(v >> 1);
+        case 0x05: return 'frekvencia felső ' + (v & 15) + ', hang IT ' + (v & 0x20 ? 'be' : 'ki') +
+                          ', motor ' + (v & 0xC0 ? 'be' : 'ki');
         case 0x02: {
           const p0 = ['SYS', 'CART', 'U0', 'U3'][v >> 3 & 3];
           const p1 = v & 0x04 ? 'VID' : 'U1';
@@ -3694,6 +3711,8 @@ registerProcessor('ep-output', EPOutput);
       return '';
     }
     if (port >= 0xB0 && port <= 0xB3) return dbgSegName(v);
+    if ((port & 0xF3) === 0x81) return 'szín ' + epColour(v);
+    if (port === 0xB5) return 'billentyűsor ' + (v & 15);
     return '';
   }
 
@@ -3851,6 +3870,7 @@ registerProcessor('ep-output', EPOutput);
     const p = api.dbgMem(dbgMemAddr, len, dbgMemSrc);
     const bytes = M.HEAPU8.slice(p, p + len);
     const aw = dbgMemSrc === 0 ? 4 : 6;
+    const pages = dbgMemSrc === 0 ? dbgRegObj().pages : null;
     for (let row = 0; row < len; row += 16) {
       const a = dbgMemAddr + row;
       const line = document.createElement('div');
@@ -3863,6 +3883,12 @@ registerProcessor('ep-output', EPOutput);
         if (dbgPrevMem && dbgPrevMem.addr === dbgMemAddr && dbgPrevMem.src === dbgMemSrc &&
             dbgPrevMem.bytes[row + i] !== v) b.classList.add('chg');
         b.textContent = (i === 8 ? '  ' : ' ') + hex(v, 2);
+        if (pages) {
+          // the name of a known address; the label of a symbol
+          const ca = (a + i) & 0xFFFF, note = dbgAddrNote(ca, pages), lbl = dbgLabel(ca);
+          b.title = hex(ca, 4) + (lbl ? ' ' + lbl : '') + ': ' + note + ' = ' + hex(v, 2) + ' (' + v + ')';
+          if (lbl || !/^P\d /.test(note)) b.classList.add('kn');
+        }
         b.ondblclick = () => {
           if (dbgMemSrc === 2) { setMessage('A 2dfx RAM csak a kártya portjain át írható', true); return; }
           const t = window.prompt('Új érték (hex): ' + hex(a + i, aw), hex(v, 2));
@@ -4608,9 +4634,94 @@ registerProcessor('ep-output', EPOutput);
     label: (a) => dbgLabel(a),
     history: (n) => api.dbgHistory(n || 64).trim().split(/\s+/).filter(Boolean).map((h) => parseInt(h, 16)),
     monitor: (cmd) => monExec(cmd),
-    log: (...a) => dbgScriptLog(a.map((x) => typeof x === 'string' ? x : JSON.stringify(x)).join(' '))
+    log: (...a) => dbgScriptLog(a.map((x) => typeof x === 'string' ? x : JSON.stringify(x)).join(' ')),
+    // names: a system call code, a known address (with the current paging), an I/O port
+    callName: (code) => machine.type === 1 ? dbgTvcFnName(code & 255) : 'EXOS ' + (code & 255) + ': ' + (EXOS_FN[code & 255] || '?'),
+    addrName: (a) => dbgAddrNote(a, dbgRegObj().pages),
+    portName: (port) => dbgPortName(port),
+    // called after each display frame while the machine runs: fn(emulated µs)
+    onFrame: (fn) => { dbgOnFrameFn = typeof fn === 'function' ? fn : null; },
+    // types on the emulated keyboard ('\n' = Enter); resolves when typed
+    type: (text) => {
+      typeText(String(text));
+      return ep.until(() => !autoTask);
+    },
+    // resolves after 'ms' milliseconds of emulated time
+    wait: (ms) => new Promise((resolve) => dbgWaits.push({ at: emulatedUs + ms * 1000, resolve })),
+    // resolves at the first frame where fn() is true
+    until: (fn) => new Promise((resolve) => dbgWaits.push({ fn, resolve })),
+    reset: (cold) => reset(!!cold),
+    time: () => emulatedUs / 1000
   };
   window.ep = ep;
+
+  // script hooks run by the main loop after each frame
+  let dbgOnFrameFn = null;
+  let dbgWaits = [];
+  function dbgScriptFrame(us) {
+    if (dbgOnFrameFn) {
+      try {
+        dbgOnFrameFn(us);
+      } catch (e) {
+        dbgScriptLog('onFrame hiba: ' + e.message);
+        dbgOnFrameFn = null;
+      }
+    }
+    if (!dbgWaits.length) return;
+    const left = [];
+    for (const w of dbgWaits) {
+      let done = false;
+      try {
+        done = w.fn ? !!w.fn() : emulatedUs >= w.at;
+      } catch (e) {
+        dbgScriptLog('until hiba: ' + e.message);
+        done = true;
+      }
+      if (done) w.resolve();
+      else left.push(w);
+    }
+    dbgWaits = left;
+  }
+  function dbgScriptStop() {
+    dbgOnBreakFn = null;
+    dbgOnFrameFn = null;
+    dbgWaits = [];
+    dbgScriptLog('szkript leállítva (onBreak, onFrame, várakozások)');
+  }
+
+  const DBG_SCRIPT_EXAMPLES = {
+    calls: `// Minden rendszerhívás (RST 30h) naplózása, a gép közben fut tovább
+ep.clearBps();
+ep.bp(0x0030);
+ep.onBreak((info) => {
+  if (info.why !== 1 || info.pc !== 0x0030) return false;   // más megállás: maradjon
+  const r = ep.regs();
+  const ret = ep.peek16(r.SP);                // a hívás utáni cím: a funkciókód
+  ep.log(ep.hex(ret - 1, 4), ep.hex(ep.peek(ret), 2), ep.callName(ep.peek(ret)));
+  return true;                                // fut tovább
+});`,
+    type: `// Gépelés, várakozás, majd a képernyő utáni állapot
+await ep.type('PRINT 6*7\\n');
+await ep.wait(500);                           // 0,5 s emulált idő
+ep.log('kész, PC =', ep.hex(ep.regs().PC, 4));`,
+    watch: `// Egy memóriacím írásainak naplózása (cím, érték, ki írta)
+const ADDR = 0x0B4F;                          // TVC: BORDER
+ep.clearBps();
+ep.watch('w', ADDR);
+ep.onBreak((info) => {
+  if (info.why !== 5) return false;
+  ep.log(ep.hex(info.pc, 4), '→', ep.hex(info.addr, 4), '=', ep.hex(info.value, 2), ep.addrName(info.addr));
+  return true;
+});`,
+    cheat: `// "Végtelen élet": képkockánként visszaírja az értéket
+// (a címet a Kereső füllel lehet megtalálni)
+const ADDR = 0x1234, VALUE = 5;
+ep.onFrame(() => ep.poke(ADDR, VALUE));`,
+    until: `// Futás addig, amíg egy feltétel teljesül, utána megállás
+await ep.until(() => ep.peek(0x0B16) === 0xFF);   // TVC: STOP_FLAG (CTRL+ESC)
+ep.pause();
+ep.log('CTRL+ESC megnyomva');`
+  };
 
   let dbgTimer = 0;
   function dbgShow(on) {
@@ -4717,15 +4828,44 @@ registerProcessor('ep-output', EPOutput);
     $('dbg-script-run').onclick = () => {
       const code = $('dbg-script').value;
       try { localStorage.setItem('ep128web.dbgScript', code); } catch (e) { }
+      // an async function: the script can 'await' ep.wait / ep.until / ep.type
+      const AsyncFunction = Object.getPrototypeOf(async function () { }).constructor;
+      let run;
       try {
-        const r = new Function('ep', code)(ep);
-        if (r !== undefined) dbgScriptLog(String(r));
+        run = new AsyncFunction('ep', code);
       } catch (e) {
         dbgScriptLog('Hiba: ' + e.message);
+        return;
       }
+      run(ep).then((r) => {
+        if (r !== undefined) dbgScriptLog(String(r));
+        dbgRefresh();
+      }, (e) => dbgScriptLog('Hiba: ' + (e && e.message || e)));
       dbgRefresh();
     };
-    $('dbg-script-stop').onclick = () => { dbgOnBreakFn = null; dbgScriptLog('onBreak kikapcsolva'); };
+    $('dbg-script-stop').onclick = dbgScriptStop;
+    $('dbg-script-example').onchange = (e) => {
+      const t = DBG_SCRIPT_EXAMPLES[e.target.value];
+      e.target.value = '';
+      if (!t) return;
+      const box = $('dbg-script');
+      if (box.value.trim() && !confirm('Lecseréled a szkriptet a példára?')) return;
+      box.value = t;
+    };
+    $('dbg-script-save').onclick = () => {
+      const blob = new Blob([$('dbg-script').value], { type: 'text/javascript' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'ep128web-szkript.js';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    };
+    $('dbg-script-load').onclick = () => $('dbg-script-file').click();
+    $('dbg-script-file').onchange = async (e) => {
+      const f = e.target.files[0];
+      e.target.value = '';
+      if (f) $('dbg-script').value = await f.text();
+    };
     try { $('dbg-script').value = localStorage.getItem('ep128web.dbgScript') || ''; } catch (e) { }
     // shortcuts while the focus is in the debugger
     $('debugger').addEventListener('keydown', (e) => {
@@ -4826,6 +4966,7 @@ registerProcessor('ep-output', EPOutput);
     emulatedUs += us;
     dbgFrameTick(us);
     dbgHandleStops();
+    if (!dbgStopped) dbgScriptFrame(us);
     // ep128emu runs the floppy drives' motor-off timer (and writes the
     // buffered track to the image) when it is asked for the LED state, once
     // per 2 ms timeslice, like its own VM thread does
