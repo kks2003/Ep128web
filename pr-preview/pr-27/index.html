@@ -6,13 +6,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610241738-aba9c69">
-<meta name="build" content="202610241738-aba9c69">
+<link rel="stylesheet" href="style.css?v=202610241902-cf1805c">
+<meta name="build" content="202610241902-cf1805c">
 </head>
 <body>
-<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #27 előnézete, nem az éles oldal · fordítva: 2026.10.24 19:38 · aba9c69 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #27 előnézete, nem az éles oldal · fordítva: 2026.10.24 21:02 · cf1805c · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.24 19:38 · aba9c69</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.24 21:02 · cf1805c</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -266,9 +266,13 @@
 // ep.onBreak(info => { ep.log(ep.hex(ep.regs().HL, 4)); return true; })  // true: fut tovább
 // ep.bp(0x0038)   ep.watch('w', 0xBFF0)   ep.poke(0x4000, 0xC9)   ep.step()
 // await ep.type('LIST\n');  await ep.wait(1000);  ep.onFrame(() => ep.poke(0x1234, 5))"></textarea>
-      <div class="dbg-tool"><button id="dbg-script-run">Futtatás</button><button id="dbg-script-stop" title="onBreak, onFrame és a várakozások leállítása">Leállítás</button>
+      <div class="dbg-tool"><select id="dbg-script-lang" title="A szkript nyelve: Lua az eredeti ep128emu API-jával, vagy JavaScript"><option value="js">JavaScript</option><option value="lua">Lua (ep128emu)</option></select>
+        <button id="dbg-script-run">Futtatás</button><button id="dbg-script-stop" title="onBreak, onFrame és a várakozások leállítása">Leállítás</button>
         <select id="dbg-script-example" title="Példaszkriptek">
           <option value="">Példák…</option>
+          <option value="luaexos" data-lua="1">EXOS 102-es csatorna (README példa)</option>
+          <option value="luatvc" data-lua="1">TVC rendszerhívások naplózása</option>
+          <option value="luawatch" data-lua="1">Memóriaírás feltétellel</option>
           <option value="calls">Rendszerhívások naplózása</option>
           <option value="type">Gépelés és várakozás</option>
           <option value="watch">Memóriaírások naplózása</option>
@@ -276,7 +280,7 @@
           <option value="until">Futás egy feltételig</option>
         </select>
         <button id="dbg-script-load" title="Szkript betöltése fájlból">Megnyitás</button><button id="dbg-script-save" title="Szkript mentése fájlba">Mentés</button>
-        <input type="file" id="dbg-script-file" accept=".js,.txt,text/*" hidden>
+        <input type="file" id="dbg-script-file" accept=".js,.lua,.txt,text/*" hidden>
         <span class="small">Az <code>ep</code> objektum a böngésző konzolából is elérhető (<code>window.ep</code>).</span></div>
       <div id="dbg-script-out" class="dbg-mono"></div>
     </div>
@@ -421,7 +425,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610241738-aba9c69"></script>
-<script src="ep128.js?v=202610241738-aba9c69"></script>
+<script src="ep128emu.js?v=202610241902-cf1805c"></script>
+<script src="ep128.js?v=202610241902-cf1805c"></script>
 </body>
 </html>

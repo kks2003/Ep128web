@@ -4234,17 +4234,27 @@ registerProcessor('ep-output', EPOutput);
 
   // step back: a snapshot of the machine before each resume from a stop
   const DBG_UNDO_MAX = 40;
-  let dbgUndo = [];                   // [{ file, machine }]
+  let dbgUndo = [];                   // [{ file, machine, pic }]
   let dbgUndoSeq = 0;
   let dbgSteppedBack = false;
   let dbgCallRet = null;              // stepping over a system call: { ret, fn }
   function dbgSaveUndo() {
     const file = '/tmp/dbgundo-' + (dbgUndoSeq++);
     if (api.saveSnapshot(file) !== 0) return;
-    dbgUndo.push({ file, machine: machine.id });
+    // the picture shown, as the snapshot does not hold the finished frame
+    const u = { file, machine: machine.id, pic: null };
+    try { canvas.toBlob((b) => { u.pic = b; }); } catch (e) { }
+    dbgUndo.push(u);
     while (dbgUndo.length > DBG_UNDO_MAX) {
       try { M.FS.unlink(dbgUndo.shift().file); } catch (e) { }
     }
+  }
+  // reset, new machine or loaded snapshot: no stepping back past them
+  function dbgUndoClear() {
+    for (const u of dbgUndo) {
+      try { M.FS.unlink(u.file); } catch (e) { }
+    }
+    dbgUndo = [];
   }
   function dbgStepBack() {
     if (!dbgStopped) return;
@@ -4252,17 +4262,33 @@ registerProcessor('ep-output', EPOutput);
     if (!u) return;
     try {
       if (u.machine !== machine.id) throw new Error('másik gép');
-      check(api.loadSnapshot(u.file), 'visszalépés');
+      check(api.loadSnapshotKeepUndo(u.file), 'visszalépés');
     } catch (e) {
       setMessage('A visszalépés nem sikerült: ' + (e.message || e), true);
       return;
     } finally {
       try { M.FS.unlink(u.file); } catch (e) { }
     }
-    // the snapshot runs again: stop it before its first instruction
+    // stop the restored machine before its first instruction, right now (a
+    // Run pressed before the next frame would otherwise be lost)
     api.dbgPause();
+    check(api.run(1), 'visszalépés');
+    api.audioClear();
     dbgSteppedBack = true;
-    dbgStopped = false;
+    if (api.dbgState()) {
+      dbgStopped = true;
+      dbgRenderBps();
+      dbgRefresh();
+    } else {
+      dbgStopped = false;
+    }
+    // and show the picture of that moment
+    if (u.pic) {
+      createImageBitmap(u.pic).then((bm) => {
+        ctx.drawImage(bm, 0, 0);
+        if (videoRec) drawRecCanvas();
+      }, () => { });
+    }
   }
 
   function dbgResume(fn) {
@@ -5062,6 +5088,7 @@ registerProcessor('ep-output', EPOutput);
   let dbgOnFrameFn = null;
   let dbgWaits = [];
   function dbgScriptFrame(us) {
+    dbgLuaPoll();
     if (dbgOnFrameFn) {
       try {
         dbgOnFrameFn(us);
@@ -5085,14 +5112,78 @@ registerProcessor('ep-output', EPOutput);
     }
     dbgWaits = left;
   }
+  // the text printed by the Lua script (mprint, errors)
+  function dbgLuaPoll() {
+    if (!api || !api.luaOutput) return;
+    const t = api.luaOutput();
+    if (t) dbgScriptLog(t.replace(/\n$/, ''));
+  }
+  let dbgScriptLang = 'js';
+  try { if (localStorage.getItem('ep128web.dbgScriptLang') === 'lua') dbgScriptLang = 'lua'; } catch (e) { }
+  function dbgScriptLangUi() {
+    const lua = dbgScriptLang === 'lua';
+    $('dbg-script-lang').value = dbgScriptLang;
+    for (const o of $('dbg-script-example').options) o.hidden = !!o.value && (o.dataset.lua === '1') !== lua;
+    $('dbg-script').placeholder = lua ? DBG_LUA_PLACEHOLDER : DBG_JS_PLACEHOLDER;
+  }
   function dbgScriptStop() {
+    if (api && api.luaStop) api.luaStop();
     dbgOnBreakFn = null;
     dbgOnFrameFn = null;
     dbgWaits = [];
     dbgScriptLog('szkript leállítva (onBreak, onFrame, várakozások)');
   }
 
+  const DBG_JS_PLACEHOLDER = `// JavaScript az ep objektummal, pl.:
+// ep.onBreak(info => { ep.log(ep.hex(ep.regs().HL, 4)); return true; })  // true: fut tovább
+// ep.bp(0x0038)   ep.watch('w', 0xBFF0)   ep.poke(0x4000, 0xC9)   ep.step()
+// await ep.type('LIST\\n');  await ep.wait(1000);  ep.onFrame(() => ep.poke(0x1234, 5))`;
+  const DBG_LUA_PLACEHOLDER = `-- Lua, az ep128emu szkript API-jával (a desktop emulátor README-je szerint):
+-- breakPointCallback(t, a, v), setBreakPoint(típus, cím, prioritás), clearBreakPoints(),
+-- readMemory/writeMemory, readMemoryRaw, getPC(), getA() … setA(n) …, readIOPort,
+-- getMemoryPage(n), getNextOpcodeAddr(a), mprint(...)`;
   const DBG_SCRIPT_EXAMPLES = {
+    luaexos: `-- Az ep128emu README példája (Enterprise): megáll, amikor a 102-es
+-- csatornát megnyitják, és kiírja a nevet
+mprint("Running Lua script example...")
+clearBreakPoints()
+setBreakPoint(4, 0x0040, 2)   -- break on reading Z80 opcode at 0x0040
+function breakPointCallback(t, a, v)
+  if t == 3 then              -- allow stepping
+    return true
+  end
+  -- check for EXOS 1 call with A=102
+  if getPC() ~= 0x0040 or getA() ~= 1 or readMemory(0x005A) ~= 102 then
+    return false
+  end
+  -- read name parameter from memory
+  s = ""
+  n = readMemory(getDE())
+  for i = 1, n do
+    s = s..string.char(readMemory(getDE() + i))
+  end
+  mprint("Channel #102 is opened with name '", s, "'")
+  return true
+end
+mprint("done.")`,
+    luatvc: `-- TVC: minden rendszerhívás (RST 30h) naplózása megállás nélkül
+clearBreakPoints()
+setBreakPoint(4, 0x0030, 2)
+function breakPointCallback(t, a, v)
+  if t ~= 0 or a ~= 0x0030 then return true end
+  local ret = readWord(getSP())          -- a hívás utáni bájt: a funkciókód
+  mprint(string.format("%04X  RST 30: %02X", ret - 1, readMemory(ret)))
+  return false                           -- false: fut tovább
+end`,
+    luawatch: `-- Memóriaírás figyelése: kiírja, ki írt a címre, és csak 00 értéknél áll meg
+clearBreakPoints()
+local ADDR = 0x0B4F                      -- TVC: BORDER
+setBreakPoint(2, ADDR, 2)
+function breakPointCallback(t, a, v)
+  if t ~= 2 then return true end
+  mprint(string.format("%04X: (%04X) = %02X", getPC(), a, v))
+  return v == 0
+end`,
     calls: `// Minden rendszerhívás (RST 30h) naplózása, a gép közben fut tovább
 ep.clearBps();
 ep.bp(0x0030);
@@ -5228,9 +5319,27 @@ ep.log('CTRL+ESC megnyomva');`
         monPrint('Hiba: ' + er.message);
       }
     });
+    $('dbg-script-lang').onchange = (e) => {
+      dbgScriptLang = e.target.value;
+      try {
+        localStorage.setItem('ep128web.dbgScriptLang', dbgScriptLang);
+        $('dbg-script').value = localStorage.getItem('ep128web.dbgScript' + (dbgScriptLang === 'lua' ? 'Lua' : '')) || '';
+      } catch (er) { }
+      dbgScriptLangUi();
+    };
     $('dbg-script-run').onclick = () => {
       const code = $('dbg-script').value;
-      try { localStorage.setItem('ep128web.dbgScript', code); } catch (e) { }
+      try { localStorage.setItem('ep128web.dbgScript' + (dbgScriptLang === 'lua' ? 'Lua' : ''), code); } catch (e) { }
+      if (dbgScriptLang === 'lua') {
+        // the Lua scripting of ep128emu: runs the script, its
+        // breakPointCallback stays active until Stop
+        const r = api.luaRun(code);
+        dbgLuaPoll();
+        dbgScriptLog(r === 1 ? '(breakPointCallback aktív)' : r === 0 ? '(kész)' : 'Hiba: ' + lastError());
+        dbgRenderBps();
+        dbgRefresh();
+        return;
+      }
       // an async function: the script can 'await' ep.wait / ep.until / ep.type
       const AsyncFunction = Object.getPrototypeOf(async function () { }).constructor;
       let run;
@@ -5260,7 +5369,7 @@ ep.log('CTRL+ESC megnyomva');`
       const blob = new Blob([$('dbg-script').value], { type: 'text/javascript' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'ep128web-szkript.js';
+      a.download = 'ep128web-szkript.' + (dbgScriptLang === 'lua' ? 'lua' : 'js');
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     };
@@ -5270,7 +5379,8 @@ ep.log('CTRL+ESC megnyomva');`
       e.target.value = '';
       if (f) $('dbg-script').value = await f.text();
     };
-    try { $('dbg-script').value = localStorage.getItem('ep128web.dbgScript') || ''; } catch (e) { }
+    try { $('dbg-script').value = localStorage.getItem('ep128web.dbgScript' + (dbgScriptLang === 'lua' ? 'Lua' : '')) || ''; } catch (e) { }
+    dbgScriptLangUi();
     // shortcuts while the focus is in the debugger
     $('debugger').addEventListener('keydown', (e) => {
       if (isTextInput(e.target)) return;
@@ -5441,14 +5551,16 @@ ep.log('CTRL+ESC megnyomva');`
       printErr: (s) => console.warn(s)
     });
     const c = (name, ret, args) => M.cwrap(name, ret, args);
+    // a new program / machine state: the debugger cannot step back past it
+    const newState = (f) => (...a) => { dbgUndoClear(); return f(...a); };
     api = {
       lastError: c('ep_last_error', 'number', []),
       init: c('ep_init', 'number', ['number']),
-      setMachineType: c('ep_set_machine_type', 'number', ['number']),
+      setMachineType: newState(c('ep_set_machine_type', 'number', ['number'])),
       fileMachineType: c('ep_file_machine_type', 'number', ['string']),
       resetMemory: c('ep_reset_memory', 'number', ['number']),
       loadRom: c('ep_load_rom', 'number', ['number', 'string', 'number']),
-      reset: c('ep_reset', 'number', ['number']),
+      reset: newState(c('ep_reset', 'number', ['number'])),
       run: c('ep_run', 'number', ['number']),
       setKey: c('ep_set_key', null, ['number', 'number']),
       frameBuffer: c('ep_frame_buffer', 'number', []),
@@ -5459,7 +5571,8 @@ ep.log('CTRL+ESC megnyomva');`
       audioFrames: c('ep_audio_frames', 'number', []),
       audioClear: c('ep_audio_clear', null, []),
       setVolume: c('ep_set_volume', null, ['number']),
-      loadSnapshot: c('ep_load_snapshot', 'number', ['string']),
+      loadSnapshot: newState(c('ep_load_snapshot', 'number', ['string'])),
+      loadSnapshotKeepUndo: c('ep_load_snapshot', 'number', ['string']),
       saveSnapshot: c('ep_save_snapshot', 'number', ['string']),
       setDisk: c('ep_set_disk', 'number', ['number', 'string']),
       setTape: c('ep_set_tape', 'number', ['string']),
@@ -5510,6 +5623,10 @@ ep.log('CTRL+ESC megnyomva');`
       dbgProfileClear: c('ep_dbg_profile_clear', null, []),
       dbgProfile: c('ep_dbg_profile', 'number', []),
       dbgIoLogEnable: c('ep_dbg_iolog_enable', null, ['number']),
+      luaRun: c('ep_lua_run', 'number', ['string']),
+      luaStop: c('ep_lua_stop', null, []),
+      luaActive: c('ep_lua_active', 'number', []),
+      luaOutput: c('ep_lua_output', 'string', []),
       dbgIoLog: c('ep_dbg_iolog', 'string', ['number']),
       dbg2dfx: c('ep_dbg_2dfx', 'string', []),
       dbgCard256: c('ep_dbg_card256', 'string', []),
