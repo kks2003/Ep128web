@@ -938,7 +938,14 @@
 
   function updateTvcCardsUI() {
     const grp = $('tvc-cards-group');
-    if (grp) grp.hidden = !(machine && machine.type === 1);
+    const tvc = !!(machine && machine.type === 1);
+    if (grp) grp.hidden = !tvc;
+    // the 2dfx card: on the TVC among the expansion ports (under port 3),
+    // on the Enterprise under the cartridge
+    const fx = $('fx-group');
+    if (tvc) $('tvc-slots-apply').before(fx);
+    else $('cart-group').after(fx);
+    fx.classList.toggle('in-ports', tvc);
     renderUsb();
   }
 
