@@ -106,9 +106,11 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
   - IN/OUT: a port neve (NICK, DAVE, lapregiszter, TVC lapozás, CRTC, paletta, a bővítőhelyen lévő kártya…).
   - Az aktuális (PC) sorban a kiírandó érték is, a lapozás kibontva: TVC port 02 → `P0=SYS P1=U1 P2=VID P3=CART`, port 0C → VID lapok, port 06 → GRAPHICS mód, EP B0–B3 → a szegmens neve. `OUT (C),r` és az OUTI-félék portját a C regiszterből veszi.
   - Enterprise `EXOS nn`: a funkció neve, a PC-sorban a paraméterekkel (csatorna, eszköznév, EXOS változó).
-  - TVC: a rendszerhívás (RST 30h) kódja. A TVC ROM-rutinok nevei nincsenek beépítve; szimbólumfájllal adhatók meg.
-  - Abszolút memóriacím: melyik lapra és szegmensre esik az aktuális lapozással, illetve az ismert EXOS rendszerváltozók neve (LP_POINTER, ST_POINTER, USR_P0–3).
+  - TVC `RST 30: nn` funkcióhívás: a funkció neve (VID_CHOUT, VMODE, CAS_OPEN, TONE_SET, HI_MEM_SET…), a PC-sorban a paraméterekkel. Az ismeretlen kódoknál az osztály, az irány és a funkciószám.
+  - Abszolút memóriacím: melyik lapra és szegmensre esik az aktuális lapozással, illetve az ismert rendszerváltozók neve: TVC-n az U0 lap változói (P_SAVE, IN_TABLE, PORT03, HI_MEM, INK, PICTURE…, a BASIC-éi is), EP-n LP_POINTER, ST_POINTER, USR_P0–3. TVC-n a `LD HL,0B51`-féle betöltéseknél is.
   - CALL/JP másik lapra: a cél szegmense.
+- Rendszerhívás átlépése (F10) után a megállási üzenet kiírja az A-ban visszaadott eredményt, TVC-n a hibakód jelentésével (pl. `F5 STOP`, `EA CRC hiba`).
+- A TVC funkciók, rendszerváltozók és hibakódok forrása a „TV-Computer Operációs rendszer” kézikönyv ([tvcdoc](https://github.com/kks2003/tvcdoc)).
 - Ugyanezek a megjegyzések a monitor `D` parancsában, az előzményekben, az I/O naplóban és a megállási üzenetben is megjelennek.
 
 **Memória**

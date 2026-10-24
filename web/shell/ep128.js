@@ -3480,10 +3480,13 @@ registerProcessor('ep-output', EPOutput);
     return r;
   }
 
+  // the TVC has no EXOS: RST 30h + code is written as in its documentation
+  const dbgFixText = (t) => (machine && machine.type === 1) ? t.replace(/EXOS  ([0-9A-F]{2})$/, 'RST   30: $1') : t;
+
   // disassembly lines from 'start': [{ addr, text }]
   function dbgDisasm(start, count) {
     return api.dbgDisasm(start & 0xFFFF, count).split('\n').filter((l) => l.trim())
-      .map((text) => ({ addr: parseInt(text.trim().slice(0, 4), 16), text: text.replace(/\s+$/, '') }));
+      .map((text) => ({ addr: parseInt(text.trim().slice(0, 4), 16), text: dbgFixText(text.replace(/\s+$/, '')) }));
   }
 
   // operand addresses replaced by their symbols
@@ -3513,6 +3516,102 @@ registerProcessor('ep-output', EPOutput);
   // EXOS system segment (FF) variables, at their page 2 addresses
   const EP_SYSVARS = { 0xBFF4: 'LP_POINTER (LPT címe)', 0xBFF6: 'ST_POINTER (állapotsor)',
                        0xBFFC: 'USR_P0', 0xBFFD: 'USR_P1', 0xBFFE: 'USR_P2', 0xBFFF: 'USR_P3' };
+  // TVC system calls (RST 30h + code), from "TV-Computer Operációs rendszer"
+  // (tvcdoc): bit 7 = input, bits 6..4 = class, bits 3..0 = function
+  const TVC_FN = {
+    0x01: 'VID_CHOUT karakter kiírás', 0x02: 'VID_BKOUT szövegblokk kiírás',
+    0x03: 'BTEXT sugár a karakterpozícióba', 0x04: 'VMODE grafikus mód', 0x05: 'CLS képernyőtörlés',
+    0x06: 'BABS sugár abszolút', 0x07: 'BREL sugár relatív', 0x08: 'BON sugár be',
+    0x09: 'BOFF sugár ki', 0x0A: 'FILL kitöltés', 0x0B: 'DEFC karakterdefiníció',
+    0x0C: 'PAL paletta', 0x91: 'KBD_CHIN billentyű olvasás', 0x93: 'KBD_STATUS billentyűzet állapot',
+    0x20: 'ED_INT', 0xA0: 'ED_INT', 0xA1: 'ED_CHIN karakter beolvasás', 0x21: 'ED_CHOUT karakter kiírás',
+    0xA2: 'ED_BKIN szövegblokk beolvasás', 0x22: 'ED_BKOUT szövegblokk kiírás',
+    0x23: 'CPOS kurzor pozíció', 0xA3: 'CPOS kurzor pozíció', 0x24: 'CFIX kurzor megjegyzés',
+    0xA4: 'CFIX kurzor megjegyzés', 0x33: 'TONE_SET hang',
+    0x41: 'PAR_CHOUT nyomtató karakter', 0x42: 'PAR_BKOUT nyomtató blokk',
+    0xD1: 'CAS_CHIN kazetta karakter be', 0x51: 'CAS_CHOUT kazetta karakter ki',
+    0xD2: 'CAS_BKIN kazetta blokk be', 0x52: 'CAS_BKOUT kazetta blokk ki',
+    0xD3: 'CAS_OPEN file megnyitás', 0x53: 'CAS_CRTE file létrehozás',
+    0xD4: 'CAS_CLOSE olvasott file lezárás', 0x54: 'CAS_CLOSE írt file lezárás',
+    0xD5: 'CAS_VERIFY összehasonlítás',
+    0x61: 'SER_CHOUT soros karakter ki', 0xE1: 'SER_CHIN soros karakter be',
+    0x62: 'SER_BKOUT soros blokk ki', 0xE2: 'SER_BKIN soros blokk be',
+    0x63: 'RS232_SET', 0xE3: 'RS232_SET', 0x64: 'RS232_CLOSE', 0xE4: 'RS232_CLOSE',
+    0x71: 'HI_MEM_SET memóriafoglalás', 0xF1: 'HI_MEM_SET memóriafoglalás',
+    0x72: 'EXP_DIRECT kártya kijelölés', 0xF2: 'EXP_DIRECT kártya kijelölés',
+    0x73: 'I/O_DIRECT I/O hozzárendelés', 0xF3: 'I/O_DIRECT I/O hozzárendelés',
+    0x74: 'SLOT_NUM kártya pozíció', 0xF4: 'SLOT_NUM kártya pozíció'
+  };
+  const TVC_CLASS = ['video', 'billentyűzet', 'editor', 'hang', 'nyomtató', 'kazetta', 'csatolókártya', 'kernel'];
+  function dbgTvcFnName(c) {
+    if (TVC_FN[c]) return TVC_FN[c];
+    const f = c & 15;
+    return TVC_CLASS[c >> 4 & 7] + ' osztály ' + (c & 0x80 ? 'input ' : 'output ') +
+           (f === 0 ? 'IT' : f === 1 ? 'karakter' : f === 2 ? 'blokk' : f + '. funkció');
+  }
+  // what the registers mean at a TVC call
+  function dbgTvcFnArgs(c, o) {
+    const ch = (v) => hex(v, 2) + (v >= 32 && v < 127 ? " '" + String.fromCharCode(v) + "'" : '');
+    const f = c & 15;
+    if (c === 0x33) return 'B=' + o.B + ' (×20 ms), C=' + o.C + ', DE=' + hex(o.DE, 4);
+    if (c === 0x03 || c === 0x23 || c === 0xA3) return 'oszlop ' + o.B + ', sor ' + o.C;
+    if (c === 0x04) return 'C=' + o.C + ' (GRAPHICS ' + ([2, 4, 16][o.C] || '?') + ')';
+    if (c === 0x06 || c === 0x07) return 'X=' + hex(o.BC, 4) + ', Y=' + hex(o.DE, 4);
+    if (c === 0x0B) return 'C=' + ch(o.C) + ', DE=' + hex(o.DE, 4);
+    if (c === 0x0C) return 'DE=' + hex(o.DE, 4);
+    if (c === 0xD3 || c === 0x53) return 'név: ' + dbgExosName(o.DE);
+    if ((c & 0x70) === 0x70) return 'DE=' + hex(o.DE, 4) + ', BC=' + hex(o.BC, 4);
+    if (f === 1 && !(c & 0x80)) return 'C=' + ch(o.C);
+    if (f === 2) return 'DE=' + hex(o.DE, 4) + ', BC=' + hex(o.BC, 4) + ' bájt';
+    return '';
+  }
+  // error codes returned in A (TVC)
+  const TVC_ERR = {
+    0xFF: 'nem létező funkció', 0xFE: 'I/O hozzárendelési hiba', 0xFD: 'nem létező kártya',
+    0xFC: 'hibás blokk I/O paraméter (LAP3)', 0xFB: 'nincs elég memória',
+    0xFA: 'hibás blokk I/O paraméter (HI_MEM)', 0xF9: 'nem létező sugárpozíció',
+    0xF8: 'nem definiálható karakter', 0xF7: 'nem létező grafikus mód',
+    0xF6: 'nem létező kurzorpozíció', 0xF5: 'STOP (CTRL+ESC)', 0xF4: 'paritáshiba',
+    0xF3: 'kerethiba', 0xF2: 'túlfutás', 0xEC: 'file vége', 0xEB: 'a file már nyitva van',
+    0xEA: 'CRC hiba', 0xE9: 'nincs nyitott file', 0xE8: 'ellenőrzési hiba',
+    0xE7: 'belső hiba', 0xE6: 'védelem megsértése', 0xE5: 'rossz blokksorszám'
+  };
+  // TVC system variables in U0: [address, length, name, description]
+  const TVC_VARS = [
+    [0x0003, 1, 'P_SAVE', 'lapozás'], [0x0021, 14, 'USRTAB', 'EXT utasítások címtáblája'],
+    [0x0030, 8, 'OS_ENTRY', 'funkcióhívás belépési pont'], [0x0038, 8, 'IT_ENTRY', 'IT belépési pont'],
+    [0x0B00, 8, 'IN_TABLE', 'input hozzárendelés'], [0x0B08, 8, 'OUT_TABLE', 'output hozzárendelés'],
+    [0x0B10, 1, 'INT_DES', 'IT által kiszolgált eszközök'], [0x0B11, 1, 'PORT03', 'port 03 tükör'],
+    [0x0B12, 1, 'PORT05', 'port 05 tükör'], [0x0B13, 1, 'PORT06', 'port 06 tükör'],
+    [0x0B14, 1, 'SND_ACTIVE', 'hang folyamatban'], [0x0B15, 1, 'SND_IRQ', 'új hang megszakít'],
+    [0x0B16, 1, 'STOP_FLAG', 'CTRL+ESC'], [0x0B17, 2, 'ST_LIMIT', 'verem alsó határ (FILL)'],
+    [0x0B19, 2, 'HI_MEM', 'legmagasabb RAM cím'], [0x0B1B, 1, 'P3RAM', 'U3 RAM jó/hibás'],
+    [0x0B1C, 1, 'EX_DEF', 'bővítőkártya alaphozzárendelés'], [0x0B1D, 2, 'INTINC', 'IT számláló (20 ms)'],
+    [0x0B1F, 1, 'IRQ_STAT', 'kártya IT engedélyezés'], [0x0B20, 1, 'INT_FLAG', 'IT kiszolgálás alatt'],
+    [0x0B21, 1, 'WARM_FLAG', 'meleg reset folyamatban'], [0x0B22, 1, 'COLD_FLAG', 'meleg reset tiltva'],
+    [0x0B23, 20, 'INFUNC', 'funkcióhívás kezdő rész'], [0x0B37, 10, 'OUTFUNC', 'funkcióhívás befejező rész'],
+    [0x0B41, 8, 'INT_EXIT', 'IT befejező rész'], [0x0B49, 2, 'STACKT', 'SP ideiglenes'],
+    [0x0B4B, 1, 'L_MODE', 'vonalrajzolási mód'], [0x0B4C, 1, 'L_STYLE', 'vonaltípus'],
+    [0x0B4D, 1, 'INK', 'tintaszín'], [0x0B4E, 1, 'PAPER', 'papírszín'], [0x0B4F, 1, 'BORDER', 'keretszín'],
+    [0x0B50, 1, 'V_FLAG', 'karakter felülírás'], [0x0B51, 10, 'PICTURE', 'billentyűzet mátrix'],
+    [0x0B5B, 10, 'OLDPICT', 'előző billentyűzet mátrix'], [0x0B65, 1, 'DELAY_KEY', 'autorepeat késleltetés'],
+    [0x0B66, 1, 'LOCK_KEY', 'CAPS/SHIFT/ALT lock'], [0x0B67, 1, 'RATE_KEY', 'autorepeat ütem'],
+    [0x0B68, 1, 'HOLD_DIS', 'CTRL+P tiltás'], [0x0B69, 1, 'BAUD', 'soros sebesség'],
+    [0x0B6A, 1, 'FORMAT', 'USART mód'], [0x0B6B, 1, 'BUFFER', 'pufferelt file'],
+    [0x0B6C, 1, 'REMRED', 'motorvezérlés'], [0x0B6D, 1, 'PROTECT', 'védett file'],
+    [0x0B6E, 1, 'EOF', 'file vége'], [0x0B6F, 2, 'MUDDLE', 'CRC alapérték'],
+    [0x0B71, 1, 'SER_OK', 'soros órajel jó'], [0x0E98, 20, 'PROGID', 'programazonosító'],
+    [0x1703, 1, 'NEW', 'BASIC'], [0x1707, 1, 'AUTO', 'BASIC autoindítás'], [0x1708, 1, 'TYPE', 'BASIC'],
+    [0x170C, 2, 'START', 'aktuális BASIC sor'], [0x1720, 2, 'VLOMEM', 'BASIC terület kezdete'],
+    [0x1722, 2, 'TEXT', 'BASIC program kezdete'], [0x1724, 2, 'CHAIN', 'szimbólumtábla utolsó elem'],
+    [0x1726, 2, 'TOP', 'szimbólumtábla vége'], [0x1732, 255, 'COMMAND', 'BASIC sor puffer'],
+    [0x1831, 255, 'BUFFER', 'INPUT puffer'], [0x19C0, 7, 'X', 'lebegőpontos regiszter'],
+    [0x19C7, 7, 'Y', 'lebegőpontos regiszter'], [0x19CE, 17, 'FILENAME', 'alapértelmezett filenév']
+  ];
+  const TVC_VAR_AT = new Map();
+  for (const [a, n, name, desc] of TVC_VARS) {
+    for (let i = 0; i < n; i++) TVC_VAR_AT.set(a + i, (i ? name + '+' + i : name) + ' (' + desc + ')');
+  }
   const TVC_SEGS = { 0x00: 'SYS', 0x01: 'CART', 0x02: 'EXT', 0x07: 'SDEXT',
                      0xF8: 'U0', 0xF9: 'U1', 0xFA: 'U2', 0xFB: 'U3',
                      0xFC: 'VID0', 0xFD: 'VID1', 0xFE: 'VID2', 0xFF: 'VID3' };
@@ -3604,6 +3703,7 @@ registerProcessor('ep-output', EPOutput);
     const seg = pages[a >> 14];
     const sv = EP_SYSVARS[(a & 0x3FFF) | 0x8000];
     if (machine && machine.type === 0 && seg === 0xFF && sv) return sv;
+    if (machine && machine.type === 1 && seg === 0xF8 && TVC_VAR_AT.has(a)) return TVC_VAR_AT.get(a);
     let n = 'P' + (a >> 14) + ' ' + dbgSegText(seg);
     if (machine && machine.type === 1 && seg === 0x02 && a < 0xE000) n = 'P3 IOMEM';
     return n;
@@ -3628,10 +3728,14 @@ registerProcessor('ep-output', EPOutput);
     const reg8 = { A: o.A, B: o.B, C: o.C, D: o.D, E: o.E, H: o.H, L: o.L };
     const notes = [];
     let k;
-    if (mn === 'EXOS' && (k = /^([0-9A-F]{2})/.exec(ops))) {
+    if ((mn === 'EXOS' && (k = /^([0-9A-F]{2})/.exec(ops))) || (mn === 'RST' && (k = /^30: ([0-9A-F]{2})/.exec(ops)))) {
       const fn = parseInt(k[1], 16);
       if (machine && machine.type === 1) {
-        notes.push('TVC rendszerhívás (RST 30h) ' + k[1] + 'h');
+        notes.push(dbgTvcFnName(fn));
+        if (atPC) {
+          const a = dbgTvcFnArgs(fn, o);
+          if (a) notes.push(a);
+        }
       } else {
         notes.push('EXOS ' + fn + ': ' + (EXOS_FN[fn] || '?'));
         if (atPC) {
@@ -3670,6 +3774,9 @@ registerProcessor('ep-output', EPOutput);
     const pages = o.pages;
     if ((k = /\(([0-9A-F]{4})\)/.exec(ops))) {
       notes.push(hex(parseInt(k[1], 16), 4) + ': ' + dbgAddrNote(parseInt(k[1], 16), pages));
+    } else if (mn === 'LD' && machine && machine.type === 1 && (k = /^(BC|DE|HL|SP|IX|IY), ([0-9A-F]{4})$/.exec(ops))) {
+      const a = parseInt(k[2], 16);
+      if (pages[0] === 0xF8 && TVC_VARS.some((v) => v[0] === a)) notes.push(dbgAddrNote(a, pages));
     } else if (/^(CALL|JP)$/.test(mn) && (k = /\b([0-9A-F]{4})$/.exec(ops))) {
       const pc = parseInt(text.trim().slice(0, 4), 16), t = parseInt(k[1], 16);
       if (pages[t >> 14] !== pages[pc >> 14]) notes.push('→ ' + dbgAddrNote(t, pages));
@@ -3820,6 +3927,11 @@ registerProcessor('ep-output', EPOutput);
     const { why, pc, addr, value } = dbgInfo();
     const lbl = dbgLabel(pc);
     let t = (dbgSteppedBack && why === 3 ? 'Visszalépve' : DBG_REASONS[why]) + ' – PC: ' + hex(pc, 4) + (lbl ? ' (' + lbl + ')' : '');
+    if (dbgCallRet && why === 2 && pc === dbgCallRet.ret) {
+      const a = dbgRegs()[1] >> 8;
+      t += ', a hívás eredménye: A=' + hex(a, 2) + (a === 0 ? ' (rendben)' :
+           (machine.type === 1 && TVC_ERR[a] ? ' (' + TVC_ERR[a] + ')' : ''));
+    }
     if (why >= 4 && why <= 5) {
       t += ', cím: ' + hex(addr, 4) + ' [' + dbgAddrNote(addr, dbgRegObj().pages) + '] = ' + hex(value, 2) + ' (a hozzáférő utasítás után)';
     }
@@ -3928,6 +4040,7 @@ registerProcessor('ep-output', EPOutput);
   let dbgUndo = [];                   // [{ file, machine }]
   let dbgUndoSeq = 0;
   let dbgSteppedBack = false;
+  let dbgCallRet = null;              // stepping over a system call: { ret, fn }
   function dbgSaveUndo() {
     const file = '/tmp/dbgundo-' + (dbgUndoSeq++);
     if (api.saveSnapshot(file) !== 0) return;
@@ -3957,6 +4070,7 @@ registerProcessor('ep-output', EPOutput);
 
   function dbgResume(fn) {
     if (!dbgStopped) return;
+    dbgCallRet = null;
     dbgSaveUndo();
     dbgPrevRegs = dbgRegs();
     dbgStopped = false;
@@ -4049,6 +4163,7 @@ registerProcessor('ep-output', EPOutput);
     else if (b0 === 0xED && (b1 & 0xF4) === 0xB0) len = 2;      // LDIR, LDDR, CPIR...
     if (len) dbgResume(() => api.dbgRunTo((pc + len) & 0xFFFF));
     else dbgResume(() => api.dbgStep());
+    if (b0 === 0xF7) dbgCallRet = { ret: (pc + 2) & 0xFFFF, fn: b1 };
   }
 
   // step out: runs to the return address on the top of the stack
