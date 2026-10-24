@@ -451,6 +451,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 #dbg-dis div.cur { outline: 1px dashed var(--muted); }
 #dbg-dis div.bp::before { content: '●'; color: #d00; position: absolute; left: 2px; }
 #dbg-dis div.lbl { color: var(--muted); cursor: default; }
+#dbg-dis span.cm { color: var(--muted); }
 #dbg-mem span.b { cursor: pointer; }
 #dbg-mem span.b:hover { background: var(--button-hover); }
 #dbg-mem span.chg, .dbg-tab .chg { color: var(--accent); font-weight: 700; }
