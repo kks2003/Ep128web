@@ -84,25 +84,51 @@ Gépkonfigurációk:
 
 A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
 
-- **Vezérlés:**
-  - Megállítás: a következő utasításnál.
-  - Folytatás (F5).
-  - Lépés (F11): egy utasítás.
-  - Átlépés (F10): a CALL, az RST (az EXOS-/TVC-rendszerhívás paraméterbájtjával együtt), a DJNZ, az LDIR-féle és a HALT egyben fut le.
-  - Futás a kurzorig (F4).
-  - A billentyűk akkor működnek, ha a fókusz a panelen van.
-- **Regiszterek:** megállítva szerkeszthetők (hex, Enter). A legutóbbi megállás óta változottak pirosak. Alattuk a jelzőbitek és a 4 lap szegmensei.
-- **Disassembly:**
-  - A PC körül mutat, vagy a megadott címtől.
-  - Kattintás: kurzor (futás a kurzorig).
-  - Bal szélre kattintás vagy F9: végrehajtási töréspont be/ki.
-- **Memória:** 256 bájt CPU-címről (`C000`) vagy szegmens:offset címről (`FC:0000`). A változott bájtok pirosak, dupla kattintással felülírhatók.
-- **Töréspontok:**
-  - Végrehajtási töréspont: a gép az utasítás előtt áll meg.
-  - Memória-olvasás és -írás, illetve port-IN és -OUT figyelése: a gép a hozzáférő utasítás után áll meg, a panel kiírja a címet és az értéket.
-  - A töréspontokat a böngésző megjegyzi.
+**Vezérlés**
+- Megállítás, Folytatás (F5), Lépés (F11).
+- Átlépés (F10): a CALL, az RST (az EXOS-/TVC-rendszerhívás paraméterbájtjával együtt), a DJNZ, az LDIR-féle és a HALT egyben fut le.
+- Kilépés: a verem tetején lévő visszatérési címig fut.
+- Futás a kurzorig (F4).
+- Képkocka: 20 ms-nyi futás, utána megáll.
+- A billentyűk akkor működnek, ha a fókusz a panelen van.
 
-A böngészőben minden egy szálon fut, ezért a gép az utasításhatárokon áll meg (`web/src/webdebug.cpp`, `patches/zzzzz-webdebug.patch`). Töréspontok nélkül ez nem lassítja az emulációt.
+**Regiszterek**
+- Megállítva szerkeszthetők (hex, Enter). A legutóbbi megállás óta változottak pirosak.
+- Alattuk a jelzőbitek, a 4 lap szegmense és a verem teteje.
+
+**Disassembly**
+- A PC körül mutat, vagy a megadott címtől (címke is megadható).
+- Kattintás: kurzor (futás a kurzorig).
+- Bal szélre kattintás vagy F9: végrehajtási töréspont be/ki.
+
+**Memória**
+- Forrás: CPU-cím (`C000`), szegmens:offset (`FC:0000`), a 2dfx resource RAM vagy a TVC256k++ PSRAM.
+- A változott bájtok pirosak, dupla kattintással felülírhatók.
+
+**Töréspontok**
+- Fajták: végrehajtás, memória-olvasás/-írás, port-IN/-OUT.
+- Végrehajtási töréspontnál a gép az utasítás előtt áll meg, figyelésnél a hozzáférő utasítás után. A panel kiírja a címet és az értéket.
+- Feltétel: JavaScript-kifejezés, pl. `A == 3 && HL > 0x4000`, `VALUE == 0xA8`, `mem(0x1234) == 0`, `HITS == 10`. Hamis feltételnél a gép azonnal fut tovább.
+- A töréspontok találatszámot mutatnak, ki-be kapcsolhatók, és a böngésző megjegyzi őket.
+
+**Fülek**
+
+| Fül | Tartalom |
+|---|---|
+| Monitor | Az ep128emu monitorának parancsai, `?` a súgó. `A`/`.` assembler, `D` disassembly, `M` dump (a `D` és az `M` fájlba is: `D 0000 0100 "lista.txt"`), `>` írás, `F` feltöltés, `C` összehasonlítás, `H` keresés, `SR` keresés és csere, `T` másolás, `R`/`;`/`;;` regiszterek, `G`/`X`/`Z`/`Y` futtatás, `IO`/`O` portok, `L`/`S`/`V` fájlbetöltés, -mentés és -összevetés, `I` állapot. |
+| Előzmények | Az utolsó 16384 lefutott utasítás címe, a legutóbbi 64 disassemblyvel. |
+| Profiler | Címenkénti utasításszámláló, a 40 leggyakoribb címmel. |
+| I/O napló | Minden IN/OUT a PC-vel, portszűrővel. |
+| I/O regiszterek | NICK, DAVE, EXDOS, illetve a TVC CRTC-je, palettája, lapozása. |
+| NICK LPT (EP) | A sorparaméter-tábla: sorok, mód, színmód, margók, LD1/LD2, paletta színmintákkal, kiemelve az aktuális sort. |
+| Hangkártyák (TVC) | GameCard / Multichip: SN76489, SAA1099 és OPL regiszterek. |
+| 2dfx | Motor mód, státusz, demó, a bekapcsolt sprite-ok és a háttér/előtér 2DPT-lista. |
+| TVC256k++ | Port, lapozás, PSRAM, firmware, meghajtó, USB és a 256 regiszter. A PSRAM a memórianézetben látható. |
+| Kereső | Memóriaérték-kereső („cheat finder”): pillanatkép, majd szűrés (= érték, változott, nőtt, eggyel csökkent…). Egy jelöltre kattintva írásfigyelés kerül rá. |
+| Szimbólumok | Címkék betöltése (sjasmplus, pasmo, tniASM: `címke EQU 1234h`, `címke = $1234`, `1234 címke`). A disassemblyben, a címmezőkben és a monitorban is használhatók. |
+| Szkript | JavaScript a `ep` objektummal, a böngésző konzolából is (`window.ep`): `regs`, `setReg`, `peek`/`poke`, `read`, `out`, `disasm`, `assemble`, `bp`, `watch`, `step`, `cont`, `runTo`, `monitor`, `onBreak(fn)`. Az `onBreak` `true` értékkel visszatérve továbbengedi a gépet. |
+
+**Működés:** a böngészőben minden egy szálon fut, ezért a gép az utasításhatárokon áll meg (`web/src/webdebug.cpp`, `patches/zzzzz-webdebug.patch`). Töréspontok, előzmények és profiler nélkül ez nem lassítja az emulációt.
 
 ### TVC programkatalógus frissítése
 

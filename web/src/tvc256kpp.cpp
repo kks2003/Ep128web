@@ -270,6 +270,17 @@ void TVC256kpp::mapPsram(int i)
 // ---------------------------------------------------------------------------
 // register file
 
+// the debugger's view of a register: the value a read returns, except for
+// the registers whose read has side effects (mouse movement, firmware and
+// vSID registers), which show the stored value
+uint8_t TVC256kpp::debugRegister(int r_)
+{
+  uint8_t r = uint8_t(r_);
+  if (r == 0xD2 || r == 0xD3 || isFirmwareRegister(r) || r >= REG_VSID_BASE)
+    return regs_[r];
+  return regRead(r);
+}
+
 uint8_t TVC256kpp::regRead(uint8_t r)
 {
   if (isFirmwareRegister(r))

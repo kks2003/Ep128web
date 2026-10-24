@@ -1352,7 +1352,7 @@ EMSCRIPTEN_KEEPALIVE const char *ep_dbg_card256()
     out = "A TVC256k++ kártya nincs bent egyik bővítőportban sem.\n";
     return out.c_str();
   }
-  char    tmp[160];
+  char    tmp[480];
   std::snprintf(tmp, sizeof(tmp),
                 "Port: %d (I/O %02X-%02X)  Kiválasztott regiszter: %02X / %02X  Border: %02X\n"
                 "Lapok: P2 %02X  P3 %02X  8M P2: %02X%02X  8M P3: %02X%02X  ROM lap: %02X\n"
