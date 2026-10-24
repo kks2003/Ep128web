@@ -4437,6 +4437,7 @@ registerProcessor('ep-output', EPOutput);
       case 'lpt': dbgRenderLpt(); break;
       case 'sound': $('dbg-sound').textContent = api.dbgSound(); break;
       case 'basic': dbgRenderBasic(); break;
+      case 'gfx': dbgRenderGfx(); break;
       case 'fx': $('dbg-fx').textContent = api.dbg2dfx(); break;
       case 'c256': {
         const t = api.dbgCard256();
@@ -4467,6 +4468,138 @@ registerProcessor('ep-output', EPOutput);
     const b = ((c & 4) >> 1 | (c & 32) >> 5) * 255 / 3;
     return 'rgb(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ')';
   }
+  // --- graphics view: memory drawn as a bitmap ---
+  // TVC colour byte (bits 0 B, 2 R, 4 G, 6 I) -> CSS
+  function tvcColour(c) {
+    const i = c & 0x40, f = (b) => (c & b) ? (i ? 255 : 170) : (i ? 85 : 0);
+    return [f(4), f(16), f(1)];
+  }
+  function epRgb(c) {
+    return [((c & 1) << 2 | (c & 8) >> 2 | (c & 64) >> 6) * 255 / 7,
+            ((c & 2) << 1 | (c & 16) >> 3 | (c & 128) >> 7) * 255 / 7,
+            ((c & 4) >> 1 | (c & 32) >> 5) * 255 / 3].map(Math.round);
+  }
+  const dbgGfx = { addr: null, bytes: 64, lines: 240, bpp: 1, zoom: 2, pal: null, fixbias: 0 };
+  // the displayed screen of the machine as the starting point
+  function dbgGfxScreen() {
+    const io = api.dbgIoRegs();
+    if (machine.type === 1) {
+      const mode = +((/Mode:\s*(\d)/.exec(io) || [0, 0])[1]);
+      const pal = ((/Palette:\s*([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/.exec(io)) || [0, '00', '01', '04', '54']).slice(1, 5).map((h) => parseInt(h, 16));
+      const vram = parseInt((/VRAM:\s*([0-9A-F]{2})/.exec(io) || [0, '00'])[1], 16);
+      Object.assign(dbgGfx, { addr: (0xFC + (vram >> 4 & 3)) * 16384, bytes: 64, lines: 240, bpp: [1, 2, 4, 4][mode & 3], pal, sys: 'tvc' });
+      return;
+    }
+    // Enterprise: the biggest pixel graphics (PIXEL mode, VRES) entry of the LPT
+    const m = /Nick\s+80:\s*([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/.exec(io);
+    if (!m) return;
+    // (IS-BASIC uses an entry per character row: consecutive entries that
+    // continue each other in the video RAM are joined)
+    let a = (parseInt(m[3], 16) << 4) | ((parseInt(m[4], 16) & 0x0F) << 12), best = null, run = null;
+    for (let n = 0; n < 64; n++) {
+      const p = api.dbgMem(0x3F0000 + a, 16, 1);
+      const b = M.HEAPU8.slice(p, p + 16);
+      const nl = 256 - b[0] || 256, bytes = ((b[3] & 63) - (b[2] & 63)) * 2, ld1 = b[4] | b[5] << 8;
+      const bpp = [1, 2, 4, 8][(b[1] >> 5) & 3];
+      if (((b[1] >> 1) & 7) === 1 && (b[1] & 16) && bytes > 0) {
+        if (run && run.bytes === bytes && run.bpp === bpp && ((run.addr + run.bytes * run.lines) & 0xFFFF) === ld1) {
+          run.lines += nl;
+        } else {
+          run = { addr: ld1, bytes, lines: nl, bpp, pal: [...b.slice(8, 16)], fixbias: parseInt(m[1], 16), sys: 'ep' };
+        }
+        if (!best || run.lines * run.bytes > best.lines * best.bytes) best = run;
+      } else run = null;
+      if (b[1] & 1) break;
+      a = (a + 16) & 0xFFFF;
+    }
+    if (best) best = Object.assign({}, best, { addr: 0x3F0000 + best.addr });
+    if (best) Object.assign(dbgGfx, best);
+  }
+  function dbgRenderGfx() {
+    if (dbgGfx.addr === null || dbgGfx.sys !== (machine.type === 1 ? 'tvc' : 'ep')) {
+      dbgGfx.addr = null;
+      dbgGfxScreen();
+      if (dbgGfx.addr === null) Object.assign(dbgGfx, { addr: 0, sys: machine.type === 1 ? 'tvc' : 'ep' });
+      $('dbg-gfx-addr').value = hex(dbgGfx.addr >> 14, 2) + ':' + hex(dbgGfx.addr & 0x3FFF, 4);
+      $('dbg-gfx-bytes').value = dbgGfx.bytes;
+      $('dbg-gfx-lines').value = dbgGfx.lines;
+      $('dbg-gfx-bpp').value = dbgGfx.bpp;
+    }
+    const { addr, bytes, lines, bpp, zoom } = dbgGfx;
+    const ppb = 8 / bpp, w = bytes * ppb, h = lines;
+    const cv = $('dbg-gfx-canvas');
+    cv.width = w;
+    cv.height = h;
+    cv.style.width = (bytes * 8 * zoom / 2) + 'px';     // a byte is 8 screen pixels wide on both machines
+    cv.style.height = (h * zoom) + 'px';
+    const ctx = cv.getContext('2d');
+    const img = ctx.createImageData(w, h);
+    const data = ep.read(addr, bytes * lines, 1);
+    const tvc = machine.type === 1;
+    const gray = $('dbg-gfx-gray').checked || !dbgGfx.pal;
+    const pal = dbgGfx.pal || [];
+    // colour of palette index k (2 / 4 colour modes, EP 16 colour)
+    const idx = (k, n) => {
+      if (gray) return [k * 255 / (n - 1), k * 255 / (n - 1), k * 255 / (n - 1)].map(Math.round);
+      if (tvc) return tvcColour(pal[k] || 0);
+      return epRgb(k < 8 ? pal[k] || 0 : ((dbgGfx.fixbias & 0x1F) << 3) | (k - 8));
+    };
+    let o = 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < bytes; x++) {
+        const v = data[y * bytes + x];
+        for (let j = 0; j < ppb; j++) {
+          let rgb;
+          if (bpp === 1) rgb = idx(v >> (7 - j) & 1, 2);
+          else if (bpp === 2) rgb = idx((v >> (7 - j) & 1) | (v >> (3 - j) & 1) << 1, 4);
+          else if (bpp === 4) {
+            const b = j ? v : v >> 1;          // pixel 0: bits 7 5 3 1, pixel 1: bits 6 4 2 0
+            if (tvc && !gray) rgb = tvcColour((b & 2 ? 1 : 0) | (b & 8 ? 4 : 0) | (b & 32 ? 16 : 0) | (b & 128 ? 64 : 0));
+            else rgb = idx((b >> 7 & 1) | (b >> 3 & 1) << 1 | (b >> 5 & 1) << 2 | (b >> 1 & 1) << 3, 16);
+          } else rgb = gray ? [v, v, v] : epRgb(v);
+          img.data[o++] = rgb[0]; img.data[o++] = rgb[1]; img.data[o++] = rgb[2]; img.data[o++] = 255;
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    $('dbg-gfx-info').textContent = (addr >> 14).toString(16).toUpperCase().padStart(2, '0') + ':' + hex(addr & 0x3FFF, 4) +
+      (dbgSegName(addr >> 14) ? ' (' + dbgSegName(addr >> 14) + ')' : '') + ', ' + bytes + ' bájt × ' + lines + ' sor, ' +
+      (1 << bpp) + ' szín – az egér alatt a bájt címe';
+  }
+  function setupGfx() {
+    const upd = () => {
+      const a = dbgParseAddr($('dbg-gfx-addr').value);
+      // a CPU address: its physical address with the current paging
+      if (a) dbgGfx.addr = a.phys ? a.addr : dbgRegObj().pages[a.addr >> 14 & 3] * 16384 + (a.addr & 0x3FFF);
+      dbgGfx.bytes = Math.max(1, Math.min(256, +$('dbg-gfx-bytes').value || 64));
+      dbgGfx.lines = Math.max(1, Math.min(512, +$('dbg-gfx-lines').value || 240));
+      dbgGfx.bpp = +$('dbg-gfx-bpp').value;
+      dbgGfx.zoom = +$('dbg-gfx-zoom').value;
+      dbgRenderGfx();
+    };
+    for (const id of ['dbg-gfx-addr', 'dbg-gfx-bytes', 'dbg-gfx-lines']) $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') upd(); });
+    for (const id of ['dbg-gfx-bpp', 'dbg-gfx-zoom', 'dbg-gfx-gray']) $(id).onchange = upd;
+    $('dbg-gfx-screen').onclick = () => { dbgGfx.addr = null; dbgRenderGfx(); };
+    // step through memory: a line / a page
+    $('dbg-gfx-prev').onclick = () => { dbgGfx.addr = Math.max(0, dbgGfx.addr - dbgGfx.bytes * dbgGfx.lines); $('dbg-gfx-addr').value = hex(dbgGfx.addr >> 14, 2) + ':' + hex(dbgGfx.addr & 0x3FFF, 4); dbgRenderGfx(); };
+    $('dbg-gfx-next').onclick = () => { dbgGfx.addr += dbgGfx.bytes * dbgGfx.lines; $('dbg-gfx-addr').value = hex(dbgGfx.addr >> 14, 2) + ':' + hex(dbgGfx.addr & 0x3FFF, 4); dbgRenderGfx(); };
+    $('dbg-gfx-canvas').onmousemove = (e) => {
+      const cv = e.target, r = cv.getBoundingClientRect();
+      const x = Math.floor((e.clientX - r.left) / r.width * dbgGfx.bytes), y = Math.floor((e.clientY - r.top) / r.height * dbgGfx.lines);
+      const a = dbgGfx.addr + y * dbgGfx.bytes + x;
+      cv.title = hex(a >> 14, 2) + ':' + hex(a & 0x3FFF, 4) + '  (sor ' + y + ', bájt ' + x + ')';
+    };
+    $('dbg-gfx-canvas').onclick = (e) => {
+      // the clicked byte in the memory view (physical address)
+      const cv = e.target, r = cv.getBoundingClientRect();
+      const x = Math.floor((e.clientX - r.left) / r.width * dbgGfx.bytes), y = Math.floor((e.clientY - r.top) / r.height * dbgGfx.lines);
+      const a = dbgGfx.addr + y * dbgGfx.bytes + x;
+      dbgMemSrc = 1; $('dbg-mem-src').value = '1'; dbgMemAddr = a & ~15;
+      $('dbg-mem-addr').value = hex(a >> 14, 2) + ':' + hex(a & 0x3FF0, 4);
+      dbgRenderMem();
+    };
+  }
+
   // --- TVC BASIC program listing ---
   // a CPU address in the BASIC RAM (U0..U3), whatever the current paging is
   function dbgTvcRam(a, n) {
@@ -4911,7 +5044,8 @@ registerProcessor('ep-output', EPOutput);
     // called after each display frame while the machine runs: fn(emulated µs)
     onFrame: (fn) => { dbgOnFrameFn = typeof fn === 'function' ? fn : null; },
     // types on the emulated keyboard ('\n' = Enter); resolves when typed
-    type: (text) => {
+    type: async (text) => {
+      await ep.until(() => !autoTask);          // after an earlier typing / autostart
       typeText(String(text));
       return ep.until(() => !autoTask);
     },
@@ -5113,6 +5247,7 @@ ep.log('CTRL+ESC megnyomva');`
       dbgRefresh();
     };
     $('dbg-script-stop').onclick = dbgScriptStop;
+    setupGfx();
     $('dbg-script-example').onchange = (e) => {
       const t = DBG_SCRIPT_EXAMPLES[e.target.value];
       e.target.value = '';

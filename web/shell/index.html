@@ -178,6 +178,7 @@
       <button data-tab="ioregs">I/O regiszterek</button>
       <button data-tab="lpt" data-ep="1">NICK LPT</button>
       <button data-tab="basic" data-tvc="1">BASIC</button>
+      <button data-tab="gfx">Grafika</button>
       <button data-tab="sound" data-tvc="1">Hangkártyák</button>
       <button data-tab="fx">2dfx</button>
       <button data-tab="c256" data-tvc="1">TVC256k++</button>
@@ -208,6 +209,22 @@
     </div>
     <div class="dbg-box dbg-tab" data-pane="ioregs" hidden><div id="dbg-ioregs" class="dbg-mono"></div></div>
     <div class="dbg-box dbg-tab" data-pane="lpt" hidden><div id="dbg-lpt" class="dbg-mono"></div></div>
+    <div class="dbg-box dbg-tab" data-pane="gfx" hidden>
+      <div class="dbg-tool">
+        <input id="dbg-gfx-addr" class="dbg-mono" size="8" title="Kezdőcím: szegmens:offset (pl. FC:0000) vagy fizikai cím; Enter">
+        <label>bájt/sor <input id="dbg-gfx-bytes" type="number" min="1" max="256" style="width:4em"></label>
+        <label>sor <input id="dbg-gfx-lines" type="number" min="1" max="512" style="width:4em"></label>
+        <select id="dbg-gfx-bpp" title="Színmód">
+          <option value="1">2 szín</option><option value="2">4 szín</option><option value="4">16 szín</option><option value="8">256 szín (EP)</option>
+        </select>
+        <select id="dbg-gfx-zoom" title="Nagyítás"><option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option></select>
+        <label title="Szürke árnyalatok a gép palettája helyett"><input type="checkbox" id="dbg-gfx-gray"> szürke</label>
+        <button id="dbg-gfx-prev" title="Előző terület">◀</button><button id="dbg-gfx-next" title="Következő terület">▶</button>
+        <button id="dbg-gfx-screen" title="A kijelzett képernyő címe, módja és palettája">Képernyő</button>
+      </div>
+      <div id="dbg-gfx-info" class="small"></div>
+      <canvas id="dbg-gfx-canvas"></canvas>
+    </div>
     <div class="dbg-box dbg-tab" data-pane="basic" hidden><div id="dbg-basic" class="dbg-mono"></div></div>
     <div class="dbg-box dbg-tab" data-pane="sound" hidden><div id="dbg-sound" class="dbg-mono"></div></div>
     <div class="dbg-box dbg-tab" data-pane="fx" hidden><div id="dbg-fx" class="dbg-mono"></div></div>

@@ -135,6 +135,7 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
 | I/O napló | Minden IN/OUT a PC-vel, portszűrővel. |
 | I/O regiszterek | NICK, DAVE, EXDOS, illetve a TVC CRTC-je, palettája, lapozása. |
 | NICK LPT (EP) | A sorparaméter-tábla: sorok, mód, színmód, margók, LD1/LD2, paletta színmintákkal, kiemelve az aktuális sort. |
+| Grafika | A memória képként: kezdőcím (szegmens:offset vagy CPU-cím), bájt/sor, sorok, 2/4/16/256 szín, a gép palettája vagy szürke. A Képernyő gomb a kijelzett képet állítja be (TVC: a VID lap, mód, paletta; EP: az LPT legnagyobb grafikus területe, a karaktersoronkénti bejegyzéseket összefűzve). ◀ ▶ lapoz, az egér alatt a bájt címe, kattintásra a memórianézetben. Sprite-ok, betűkészletek keresésére is. |
 | BASIC (TVC) | A memóriában lévő BASIC program listája, a ROM saját kulcsszótáblájával (minden ROM-verzióval), ékezetekkel. Futás közben az aktuális sor kiemelve; kattintásra a sor címe a memórianézetben. |
 | Hangkártyák (TVC) | GameCard / Multichip: SN76489, SAA1099 és OPL regiszterek. |
 | 2dfx | Motor mód, státusz, demó, a bekapcsolt sprite-ok és a háttér/előtér 2DPT-lista. |
