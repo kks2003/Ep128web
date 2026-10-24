@@ -6,13 +6,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610242202-99bf342">
-<meta name="build" content="202610242202-99bf342">
+<link rel="stylesheet" href="style.css?v=202610242219-b38ab61">
+<meta name="build" content="202610242219-b38ab61">
 </head>
 <body>
-<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #28 előnézete, nem az éles oldal · fordítva: 2026.10.25 00:02 · 99bf342 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #28 előnézete, nem az éles oldal · fordítva: 2026.10.25 00:19 · b38ab61 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.25 00:02 · 99bf342</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.25 00:19 · b38ab61</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -22,6 +22,10 @@
     <button id="btn-pause" title="Szünet (Pause)">Szünet</button>
     <button id="btn-debug" title="Debugger: regiszterek, disassembly, memória, töréspontok">🐞 Debugger</button>
     <button id="btn-turbo" title="Gyorsítás (F12)">Turbó</button>
+    <select id="speed" title="Sebesség (a hang csak 100%-on szól)" aria-label="Sebesség">
+      <option value="0.25">25%</option><option value="0.5">50%</option><option value="1" selected>100%</option>
+      <option value="2">200%</option><option value="4">400%</option>
+    </select>
     <label class="file">Fájl betöltése…
       <input type="file" id="file-any" multiple>
     </label>
@@ -355,6 +359,15 @@
   </section>
 
   <section id="media">
+    <div class="group" id="qs-group">
+      <h3>Gyorsmentés</h3>
+      <div id="qs-slots"></div>
+      <div class="qs-rw">
+        <label title="Az utolsó ~30 másodperc megőrzése másodpercenként egy pillanatképben"><input type="checkbox" id="rw-on"> Visszatekerés</label>
+        <button id="rw-back" title="Vissza 5 másodpercet (többször is nyomható)">⏪ 5 mp</button>
+        <span class="name" id="rw-note"></span>
+      </div>
+    </div>
     <div class="group">
       <h3>Magnó</h3>
       <span id="tape-name" class="name">nincs kazetta</span>
@@ -496,7 +509,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610242202-99bf342"></script>
-<script src="ep128.js?v=202610242202-99bf342"></script>
+<script src="ep128emu.js?v=202610242219-b38ab61"></script>
+<script src="ep128.js?v=202610242219-b38ab61"></script>
 </body>
 </html>

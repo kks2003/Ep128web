@@ -506,3 +506,14 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 #dm td.act button { padding: 1px 6px; margin-left: 2px; }
 #dm .warn { color: var(--accent); margin: 4px 0; }
 #dm #dm-main.drag { outline: 2px dashed var(--accent); }
+
+/* quick save, rewind */
+#qs-slots { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.qs-slot { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 4px; border: 1px solid var(--border); border-radius: 6px; font-size: 11px; }
+.qs-slot img, .qs-slot .qs-empty { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #000; border-radius: 3px; cursor: pointer; }
+.qs-slot .qs-empty { display: flex; align-items: center; justify-content: center; color: var(--muted); cursor: default; }
+.qs-slot .qs-label { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qs-slot .qs-btns { display: flex; gap: 3px; }
+.qs-slot .qs-btns button { flex: 1 1 0; min-width: 0; padding: 2px 4px; font-size: 12px; }
+.qs-rw { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+#speed { min-height: 28px; }
