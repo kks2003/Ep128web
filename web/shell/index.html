@@ -6,6 +6,10 @@
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
 <link rel="stylesheet" href="style.css?v=__BUILD_V__">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="theme-color" content="#c8102e">
 <meta name="build" content="__BUILD_V__">
 </head>
 <body>
@@ -19,6 +23,7 @@
     <button id="btn-cold" title="Hideg reset / bekapcsolás (Shift+F11)">Hideg reset</button>
     <button id="btn-pause" title="Szünet (Pause)">Szünet</button>
     <button id="btn-debug" title="Debugger: regiszterek, disassembly, memória, töréspontok">🐞 Debugger</button>
+    <button id="btn-install" hidden title="Telepítés alkalmazásként (offline is működik)">Telepítés</button>
     <button id="btn-turbo" title="Gyorsítás (F12)">Turbó</button>
     <select id="speed" title="Sebesség (a hang csak 100%-on szól)" aria-label="Sebesség">
       <option value="0.25">25%</option><option value="0.5">50%</option><option value="1" selected>100%</option>

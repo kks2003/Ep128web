@@ -35,6 +35,16 @@ letöltését külön kell betölteni.
 | `.ep128s` / `.ep128d` | ep128emu pillanatkép / demó |
 | `.bin` (ROM-csomag), `.rom` | ROM-ok telepítése |
 
+### Telepítés alkalmazásként, offline használat
+
+Az oldal telepíthető (PWA): Chrome/Edge alatt a „Telepítés” gomb (vagy a
+címsor ikonja), Androidon a menü „Alkalmazás telepítése”, iOS-en a Megosztás →
+„Főképernyőhöz adás”. Az első betöltés után internet nélkül is indul (a ROM-ok
+és lemezek amúgy is a böngészőben vannak). Frissítéskor mindig a hálózatról
+jön az új változat, a tárolt példány csak offline kell. A telepített
+alkalmazással a `.cas`, `.dsk`, `.img`, `.tap`, `.zip` stb. fájlok közvetlenül
+is megnyithatók (Chrome/Edge asztali változatban).
+
 ### Gyorsmentés, visszatekerés, sebesség
 
 - **Gyorsmentés**: 4 hely, mindegyik egy kis képpel. 💾 elmenti a gép mostani

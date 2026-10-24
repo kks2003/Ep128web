@@ -517,3 +517,4 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 .qs-slot .qs-btns button { flex: 1 1 0; min-width: 0; padding: 2px 4px; font-size: 12px; }
 .qs-rw { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
 #speed { min-height: 28px; }
+#btn-install[hidden] { display: none; }
