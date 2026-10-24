@@ -454,6 +454,14 @@
       <div id="joy-map"></div>
       <span class="name" id="pad-status"></span>
     </div>
+    <div class="group" id="cfg-group">
+      <h3>Beállítások</h3>
+      <button id="cfg-export" title="A beállítások mentése egy fájlba (gép, kártyák, joystick, hangerő, debugger stb.)">Exportálás</button>
+      <label class="name" title="A lemezek, a gyorsmentések, a pendrive és a TVC256k++ flash tartalma is bekerül (a ROM-ok nem)"><input type="checkbox" id="cfg-data"> lemezekkel, gyorsmentésekkel együtt</label>
+      <label class="file" title="Korábban exportált beállítások visszatöltése (az oldal újratöltődik)">Importálás…
+        <input type="file" id="cfg-import" accept=".json,application/json">
+      </label>
+    </div>
   </section>
 
   <details id="help">

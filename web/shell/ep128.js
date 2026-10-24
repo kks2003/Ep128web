@@ -896,9 +896,12 @@
         t.onerror = () => reject(t.error);
       });
     }
+    let frozen = false;
     return {
-      put: (key, value) => tx('readwrite', (s) => s.put(value, key)).catch(() => {}),
-      del: (key) => tx('readwrite', (s) => s.delete(key)).catch(() => {}),
+      put: (key, value) => frozen ? Promise.resolve() : tx('readwrite', (s) => s.put(value, key)).catch(() => {}),
+      del: (key) => frozen ? Promise.resolve() : tx('readwrite', (s) => s.delete(key)).catch(() => {}),
+      // no more writes: the page is about to reload after an import
+      freeze: () => { frozen = true; },
       getAll: async () => {
         try {
           const d = await open();
@@ -3865,6 +3868,7 @@ registerProcessor('ep-output', EPOutput);
     setupDiskManager();
     setupSpeed();
     setupQuickSaves();
+    setupSettingsIO();
 
     const wrap = $('screen-wrap');
     wrap.addEventListener('dragover', (e) => { e.preventDefault(); wrap.classList.add('drag'); });
@@ -6959,6 +6963,71 @@ ep.log('CTRL+ESC megnyomva');`
     canvas.focus({ preventScroll: true });
     requestAnimationFrame(frame);
     setupPwa();
+  }
+
+  // --- settings export / import ---
+  // localStorage ep128web.* and optionally the stored disks, quick saves,
+  // pendrive and card flash (not the ROMs); byte arrays as base64
+  const CFG_FORMAT = 'ep128web-settings';
+  const cfgDataKey = (k) => /^(disk:|qs:)/.test(k) || k === 'usbfiles' || k === 'cardflash';
+  function b64(u8) {
+    let s = '';
+    for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
+  function unb64(str) {
+    const s = atob(str);
+    const u8 = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) u8[i] = s.charCodeAt(i);
+    return u8;
+  }
+  async function cfgExport(withData) {
+    persistDrives();
+    const settings = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k.startsWith('ep128web.')) settings[k] = localStorage.getItem(k);
+    }
+    const out = { format: CFG_FORMAT, version: 1, time: new Date().toISOString(), settings };
+    if (withData) {
+      out.data = {};
+      for (const [k, v] of await db.getAll()) if (cfgDataKey(k)) out.data[k] = v;
+    }
+    const json = JSON.stringify(out, (k, v) => (v instanceof Uint8Array ? { $u8: b64(v) } : v));
+    const d = new Date();
+    const p2 = (n) => String(n).padStart(2, '0');
+    download(new TextEncoder().encode(json), 'ep128web-beallitasok-' + d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) + '.json');
+  }
+  async function cfgImport(file) {
+    let cfg;
+    try {
+      cfg = JSON.parse(await file.text(), (k, v) => (v && typeof v === 'object' && typeof v.$u8 === 'string' ? unb64(v.$u8) : v));
+    } catch (e) {
+      throw new Error('nem olvasható JSON fájl');
+    }
+    if (!cfg || cfg.format !== CFG_FORMAT || !cfg.settings) throw new Error('nem Ep128web beállításfájl');
+    const n = Object.keys(cfg.data || {}).length;
+    if (!window.confirm('A mostani beállítások' + (n ? ' és a fájlban lévő lemezek/mentések' : '') +
+                        ' felülíródnak, és az oldal újratöltődik. Mehet?')) return;
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+    for (const k of keys) if (k.startsWith('ep128web.')) localStorage.removeItem(k);
+    for (const [k, v] of Object.entries(cfg.settings)) if (k.startsWith('ep128web.')) localStorage.setItem(k, String(v));
+    if (n) {
+      // the disks and quick saves of the file replace the stored ones
+      for (const [k] of await db.getAll()) if (cfgDataKey(k) && !(k in cfg.data)) await db.del(k);
+      for (const [k, v] of Object.entries(cfg.data)) if (cfgDataKey(k)) await db.put(k, v);
+    }
+    db.freeze();
+    location.reload();
+  }
+  function setupSettingsIO() {
+    $('cfg-export').onclick = () => cfgExport($('cfg-data').checked).catch((e) => setMessage('Exportálás: ' + (e.message || e), true));
+    $('cfg-import').onchange = (e) => {
+      const f = e.target.files[0];
+      e.target.value = '';
+      if (f) cfgImport(f).catch((err) => setMessage('Importálás: ' + (err.message || err), true));
+    };
   }
 
   // --- installable app (PWA): offline worker, install button, files opened from the OS ---

@@ -57,6 +57,16 @@ is megnyithatók (Chrome/Edge asztali változatban).
   magnóra ír (fejblokk a névvel, adatblokk 256 bájtos szektorokkal,
   szektoronkénti CRC).
 
+### Beállítások exportálása / importálása
+
+A „Beállítások” panel „Exportálás” gombja egy `.json` fájlba menti az oldal
+beállításait (gép, TVC-kártyák, alapértelmezett tároló, joystick, hangerő,
+sebesség, debugger-töréspontok, -címkék, -szkriptek stb.). A „lemezekkel,
+gyorsmentésekkel együtt” bejelölésével a tárolt lemezek, a gyorsmentések, a
+pendrive és a TVC256k++ flash tartalma is bekerül (a ROM-ok nem). Az
+„Importálás…” egy másik gépen vagy böngészőben visszaállítja mindezt (az oldal
+újratöltődik).
+
 ### Gyorsmentés, visszatekerés, sebesség
 
 - **Gyorsmentés**: 4 hely, mindegyik egy kis képpel. 💾 elmenti a gép mostani
