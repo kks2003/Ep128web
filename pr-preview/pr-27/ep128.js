@@ -3314,7 +3314,9 @@ registerProcessor('ep-output', EPOutput);
   }
 
   // --------------------------------------------------------------------------
-  // Debugger: registers, disassembly, memory, breakpoints and watchpoints.
+  // Debugger: registers, disassembly, memory, breakpoints and watchpoints
+  // (with conditions), monitor, history, profiler, I/O log, machine and
+  // card views, symbols and a JavaScript API (window.ep).
   // The emulator stops at instruction boundaries (web/src/webdebug.cpp);
   // while it is stopped, the main loop does not run it.
 
@@ -3323,21 +3325,60 @@ registerProcessor('ep-output', EPOutput);
                     "AF'", "BC'", "DE'", "HL'", 'I', 'R', 'IM', 'IFF1', 'IFF2'];
   const DBG_REASONS = ['', 'Töréspont', 'Lépés kész', 'Megállítva',
                        'Memória olvasás', 'Memória írás', 'Port olvasás (IN)', 'Port írás (OUT)'];
+  const DBG_MEM_NAMES = ['CPU', 'szegmens', '2dfx RAM', 'PSRAM'];
   let dbgOpen = false;
   let dbgStopped = false;
   let dbgCursor = -1;                 // selected disassembly line (run to cursor)
   let dbgDisStart = -1;               // start address when not following the PC
-  let dbgMemAddr = 0, dbgMemPhys = false;
+  let dbgMemAddr = 0, dbgMemSrc = 0;
   let dbgPrevRegs = null, dbgPrevMem = null;
-  let dbgBps = [];                    // { type: 'x' | 'r' | 'w' | 'rw' | 'ior' | 'iow' | 'iorw', addr }
+  let dbgTab = 'mon';
+  let dbgOnBreakFn = null;            // script callback: true = continue
+  // { type: 'x' | 'r' | 'w' | 'rw' | 'ior' | 'iow' | 'iorw', addr, cond, on, hits }
+  let dbgBps = [];
   try { dbgBps = JSON.parse(localStorage.getItem('ep128web.dbgBps')) || []; } catch (e) { }
   if (!Array.isArray(dbgBps)) dbgBps = [];
+  dbgBps.forEach((b) => { b.hits = 0; if (b.on === undefined) b.on = true; });
+
+  // --- symbols ---
+  let dbgSyms = new Map();            // address -> name
+  let dbgSymAddr = new Map();         // NAME -> address
+  function dbgLoadSymbols(text) {
+    const syms = new Map(), byName = new Map();
+    const num = (t) => {
+      let m = /^(?:0x|\$|#|&)([0-9a-f]+)$/i.exec(t) || /^([0-9][0-9a-f]*)h$/i.exec(t) || /^([0-9a-f]{4,6})$/i.exec(t);
+      if (m) return parseInt(m[1], 16);
+      if (/^[0-9]+$/.test(t)) return parseInt(t, 10);
+      return NaN;
+    };
+    for (let line of String(text).split(/\r?\n/)) {
+      line = line.replace(/;.*$/, '').trim();
+      if (!line) continue;
+      let name = null, val = NaN, m;
+      if ((m = /^([A-Za-z_.@?][\w.@?$]*):?\s*(?:equ|=|defl|:=)\s*([^\s,]+)/i.exec(line))) {
+        name = m[1]; val = num(m[2]);
+      } else if ((m = /^(?:0x|\$)?([0-9A-Fa-f]{4,6})h?\s+([A-Za-z_.@?][\w.@?$]*):?$/.exec(line))) {
+        val = parseInt(m[1], 16); name = m[2];
+      } else if ((m = /^([A-Za-z_.@?][\w.@?$]*):?\s+(?:0x|\$)?([0-9A-Fa-f]{4,6})h?$/.exec(line))) {
+        name = m[1]; val = parseInt(m[2], 16);
+      }
+      if (!name || isNaN(val) || val < 0 || val > 0xFFFF) continue;
+      if (!syms.has(val) || syms.get(val).startsWith('.')) syms.set(val, name);
+      byName.set(name.toUpperCase(), val);
+    }
+    dbgSyms = syms;
+    dbgSymAddr = byName;
+    return byName.size;
+  }
+  try { const t = localStorage.getItem('ep128web.dbgSyms'); if (t) dbgLoadSymbols(t); } catch (e) { }
+  const dbgLabel = (a) => dbgSyms.get(a & 0xFFFF);
 
   function dbgApplyBps() {
     if (!api || !api.dbgClearBps) return;
     api.dbgClearBps();
     api.dbgWatchClear();
     for (const b of dbgBps) {
+      if (!b.on) continue;
       if (b.type === 'x') api.dbgSetBp(b.addr, 1);
       else {
         const io = b.type.startsWith('io') ? 1 : 0;
@@ -3345,13 +3386,15 @@ registerProcessor('ep-output', EPOutput);
         api.dbgWatchAdd(io, b.addr, t.includes('r') ? 1 : 0, t.includes('w') ? 1 : 0);
       }
     }
-    try { localStorage.setItem('ep128web.dbgBps', JSON.stringify(dbgBps)); } catch (e) { }
+    try {
+      localStorage.setItem('ep128web.dbgBps', JSON.stringify(dbgBps.map((b) => ({ type: b.type, addr: b.addr, cond: b.cond || '', on: b.on }))));
+    } catch (e) { }
   }
 
   function dbgToggleExecBp(addr) {
     const i = dbgBps.findIndex((b) => b.type === 'x' && b.addr === addr);
     if (i >= 0) dbgBps.splice(i, 1);
-    else dbgBps.push({ type: 'x', addr });
+    else dbgBps.push({ type: 'x', addr, cond: '', on: true, hits: 0 });
     dbgApplyBps();
     dbgRenderBps();
     dbgRenderDis();
@@ -3361,13 +3404,35 @@ registerProcessor('ep-output', EPOutput);
     return api.dbgRegs().split(' ').map(Number);
   }
 
-  // parses "1234" (hex) or "seg:offset" (physical); null if invalid
+  // the registers as an object (also for conditions and scripts)
+  function dbgRegObj(r) {
+    r = r || dbgRegs();
+    const o = { PC: r[0], AF: r[1], BC: r[2], DE: r[3], HL: r[4], IX: r[5], IY: r[6], SP: r[7],
+                AF_: r[8], BC_: r[9], DE_: r[10], HL_: r[11], I: r[12], R: r[13], IM: r[14],
+                IFF1: r[15], IFF2: r[16], pages: r.slice(17, 21) };
+    o.A = o.AF >> 8; o.F = o.AF & 255; o.B = o.BC >> 8; o.C = o.BC & 255;
+    o.D = o.DE >> 8; o.E = o.DE & 255; o.H = o.HL >> 8; o.L = o.HL & 255;
+    return o;
+  }
+
+  function dbgPeek(a, src) {
+    const p = api.dbgMem(a, 1, src || 0);
+    return M.HEAPU8[p];
+  }
+
+  // parses a hex number, "seg:offset" (physical) or a symbol; null if invalid
   function dbgParseAddr(text) {
     const t = String(text).trim();
     let m = /^([0-9a-f]{1,2}):([0-9a-f]{1,4})$/i.exec(t);
     if (m) return { addr: parseInt(m[1], 16) * 16384 + (parseInt(m[2], 16) & 0x3FFF), phys: true };
-    m = /^(?:0x|\$|&)?([0-9a-f]{1,4})h?$/i.exec(t);
+    m = /^(?:0x|\$|&|#)?([0-9a-f]{1,7})h?$/i.exec(t);
     if (m) return { addr: parseInt(m[1], 16), phys: false };
+    if (dbgSymAddr.has(t.toUpperCase())) return { addr: dbgSymAddr.get(t.toUpperCase()), phys: false };
+    m = /^([A-Za-z_.@?][\w.@?$]*)\s*([+-])\s*(?:0x|\$)?([0-9a-f]+)h?$/i.exec(t);
+    if (m && dbgSymAddr.has(m[1].toUpperCase())) {
+      const base = dbgSymAddr.get(m[1].toUpperCase()), d = parseInt(m[3], 16);
+      return { addr: (m[2] === '+' ? base + d : base - d) & 0xFFFF, phys: false };
+    }
     return null;
   }
 
@@ -3405,6 +3470,13 @@ registerProcessor('ep-output', EPOutput);
       (f & (0x80 >> i)) ? '<b>' + ch + '</b>' : (ch === '-' ? '-' : ch.toLowerCase())).join('') +
       '  (' + hex(f, 2) + ')';
     $('dbg-pages').textContent = 'Lapok: ' + [0, 1, 2, 3].map((i) => hex(r[17 + i], 2)).join(' ');
+    const sp = r[7], p = api.dbgMem(sp, 16, 0);
+    let st = 'Verem:';
+    for (let i = 0; i < 8; i++) {
+      const w = M.HEAPU8[p + 2 * i] | (M.HEAPU8[p + 2 * i + 1] << 8);
+      st += (i % 4 ? ' ' : '\n') + hex(w, 4);
+    }
+    $('dbg-stack').textContent = st;
     return r;
   }
 
@@ -3412,6 +3484,17 @@ registerProcessor('ep-output', EPOutput);
   function dbgDisasm(start, count) {
     return api.dbgDisasm(start & 0xFFFF, count).split('\n').filter((l) => l.trim())
       .map((text) => ({ addr: parseInt(text.trim().slice(0, 4), 16), text: text.replace(/\s+$/, '') }));
+  }
+
+  // operand addresses replaced by their symbols
+  function dbgSymText(text) {
+    if (!dbgSyms.size) return text;
+    let first = true;
+    return text.replace(/\b[0-9A-F]{4}\b/g, (h) => {
+      if (first) { first = false; return h; }
+      const l = dbgLabel(parseInt(h, 16));
+      return l || h;
+    });
   }
 
   // lines around the PC, starting at an address whose decoding reaches it
@@ -3427,17 +3510,24 @@ registerProcessor('ep-output', EPOutput);
   function dbgRenderDis(regs) {
     const r = regs || dbgRegs();
     const pc = r[0];
-    const lines = ($('dbg-follow').checked || dbgDisStart < 0) ? dbgDisasmAround(pc, 6, 22) : dbgDisasm(dbgDisStart, 22);
+    const lines = ($('dbg-follow').checked || dbgDisStart < 0) ? dbgDisasmAround(pc, 6, 24) : dbgDisasm(dbgDisStart, 24);
     const box = $('dbg-dis');
     box.textContent = '';
     for (const l of lines) {
+      const lbl = dbgLabel(l.addr);
+      if (lbl) {
+        const d = document.createElement('div');
+        d.className = 'lbl';
+        d.textContent = lbl + ':';
+        box.append(d);
+      }
       const d = document.createElement('div');
-      d.textContent = l.text;
+      d.textContent = dbgSymText(l.text);
       if (l.addr === pc) d.classList.add('pc');
       if (l.addr === dbgCursor) d.classList.add('cur');
-      if (dbgBps.some((b) => b.type === 'x' && b.addr === l.addr)) d.classList.add('bp');
+      if (dbgBps.some((b) => b.on && b.type === 'x' && b.addr === l.addr)) d.classList.add('bp');
       d.onclick = (e) => {
-        if (e.offsetX < 16) dbgToggleExecBp(l.addr);
+        if (e.offsetX < 14) dbgToggleExecBp(l.addr);
         else {
           dbgCursor = l.addr;
           dbgRenderDis();
@@ -3447,29 +3537,39 @@ registerProcessor('ep-output', EPOutput);
     }
   }
 
+  function dbgMemValid() {
+    return dbgMemSrc < 2 || !!api.dbgMemValid(dbgMemSrc);
+  }
+
   function dbgRenderMem() {
     const len = 256;
-    const p = api.dbgMem(dbgMemAddr, len, dbgMemPhys ? 1 : 0);
-    const bytes = M.HEAPU8.slice(p, p + len);
     const box = $('dbg-mem');
     box.textContent = '';
+    if (!dbgMemValid()) {
+      box.textContent = dbgMemSrc === 2 ? 'A 2dfx kártya nincs bekapcsolva.' : 'A TVC256k++ kártya nincs bent.';
+      return;
+    }
+    const p = api.dbgMem(dbgMemAddr, len, dbgMemSrc);
+    const bytes = M.HEAPU8.slice(p, p + len);
+    const aw = dbgMemSrc === 0 ? 4 : 6;
     for (let row = 0; row < len; row += 16) {
       const a = dbgMemAddr + row;
       const line = document.createElement('div');
-      line.append(dbgMemPhys ? hex(a >> 14, 2) + ':' + hex(a & 0x3FFF, 4) + ' ' : hex(a & 0xFFFF, 4) + ' ');
+      line.append(dbgMemSrc === 1 ? hex(a >> 14, 2) + ':' + hex(a & 0x3FFF, 4) : hex(dbgMemSrc === 0 ? a & 0xFFFF : a, aw));
       let ascii = '';
       for (let i = 0; i < 16; i++) {
         const v = bytes[row + i];
         const b = document.createElement('span');
         b.className = 'b';
-        if (dbgPrevMem && dbgPrevMem.addr === dbgMemAddr && dbgPrevMem.phys === dbgMemPhys &&
+        if (dbgPrevMem && dbgPrevMem.addr === dbgMemAddr && dbgPrevMem.src === dbgMemSrc &&
             dbgPrevMem.bytes[row + i] !== v) b.classList.add('chg');
-        b.textContent = ' ' + hex(v, 2);
+        b.textContent = (i === 8 ? '  ' : ' ') + hex(v, 2);
         b.ondblclick = () => {
-          const t = window.prompt('Új érték (hex): ' + (dbgMemPhys ? hex((a + i) >> 14, 2) + ':' + hex((a + i) & 0x3FFF, 4) : hex((a + i) & 0xFFFF, 4)), hex(v, 2));
+          if (dbgMemSrc === 2) { setMessage('A 2dfx RAM csak a kártya portjain át írható', true); return; }
+          const t = window.prompt('Új érték (hex): ' + hex(a + i, aw), hex(v, 2));
           if (t === null) return;
           const nv = parseInt(t, 16);
-          if (!isNaN(nv)) api.dbgPoke(a + i, nv & 0xFF, dbgMemPhys ? 1 : 0);
+          if (!isNaN(nv)) api.dbgPoke(a + i, nv & 0xFF, dbgMemSrc);
           dbgRenderMem();
         };
         line.append(b);
@@ -3478,7 +3578,7 @@ registerProcessor('ep-output', EPOutput);
       line.append('  ' + ascii);
       box.append(line);
     }
-    dbgPrevMem = { addr: dbgMemAddr, phys: dbgMemPhys, bytes };
+    dbgPrevMem = { addr: dbgMemAddr, src: dbgMemSrc, bytes };
   }
 
   const DBG_BP_NAMES = { x: 'végrehajtás', r: 'mem. olvasás', w: 'mem. írás', rw: 'mem. olv./írás',
@@ -3494,13 +3594,28 @@ registerProcessor('ep-output', EPOutput);
     }
     dbgBps.forEach((b, i) => {
       const li = document.createElement('li');
+      const on = document.createElement('input');
+      on.type = 'checkbox';
+      on.checked = b.on;
+      on.title = 'Bekapcsolva';
+      on.onchange = () => { b.on = on.checked; dbgApplyBps(); dbgRenderDis(); };
       const x = document.createElement('button');
       x.textContent = '✕';
       x.title = 'Törlés';
       x.onclick = () => { dbgBps.splice(i, 1); dbgApplyBps(); dbgRenderBps(); dbgRenderDis(); };
-      li.append(x, (b.type.startsWith('io') ? hex(b.addr, 2) : hex(b.addr, 4)) + '  ' + DBG_BP_NAMES[b.type]);
+      const a = b.type.startsWith('io') ? hex(b.addr, 2) : hex(b.addr, 4);
+      const lbl = b.type.startsWith('io') ? '' : dbgLabel(b.addr);
+      const t = document.createElement('span');
+      t.textContent = a + (lbl ? ' ' + lbl : '') + '  ' + DBG_BP_NAMES[b.type] +
+        (b.cond ? '  ha ' + b.cond : '') + (b.hits ? '  (' + b.hits + '×)' : '');
+      li.append(on, x, t);
       ul.append(li);
     });
+  }
+
+  function dbgInfo() {
+    const [why, pc, addr, value] = api.dbgInfo().split(' ').map(Number);
+    return { why, pc, addr, value };
   }
 
   function dbgStatus() {
@@ -3510,8 +3625,9 @@ registerProcessor('ep-output', EPOutput);
       st.classList.remove('stopped');
       return;
     }
-    const [why, pc, addr, value] = api.dbgInfo().split(' ').map(Number);
-    let t = DBG_REASONS[why] + ' – PC: ' + hex(pc, 4);
+    const { why, pc, addr, value } = dbgInfo();
+    const lbl = dbgLabel(pc);
+    let t = DBG_REASONS[why] + ' – PC: ' + hex(pc, 4) + (lbl ? ' (' + lbl + ')' : '');
     if (why >= 4 && why <= 5) t += ', cím: ' + hex(addr, 4) + ' = ' + hex(value, 2) + ' (a hozzáférő utasítás után)';
     if (why >= 6) t += ', port: ' + hex(addr & 0xFF, 2) + ' = ' + hex(value, 2) + ' (az utasítás után)';
     st.textContent = t;
@@ -3524,17 +3640,87 @@ registerProcessor('ep-output', EPOutput);
     dbgRenderDis(r);
     dbgRenderMem();
     dbgStatus();
-    for (const id of ['dbg-step', 'dbg-over', 'dbg-cursor', 'dbg-run']) $(id).disabled = !dbgStopped;
+    for (const id of ['dbg-step', 'dbg-over', 'dbg-out', 'dbg-cursor', 'dbg-run']) $(id).disabled = !dbgStopped;
     $('dbg-pause').disabled = dbgStopped;
+    $('dbg-machine').textContent = machine ? '– ' + machine.name : '';
+    // machine specific tabs
+    for (const b of $('dbg-tabs').querySelectorAll('button')) {
+      b.hidden = (b.dataset.ep && machine.type !== 0) || (b.dataset.tvc && machine.type !== 1);
+      if (b.hidden && b.dataset.tab === dbgTab) dbgSelectTab('mon');
+    }
+    dbgRenderTab();
     dbgPrevRegs = r;
   }
 
-  // called by the main loop when the emulator has stopped
+  // --- stops: conditions, hit counts and the script callback decide whether
+  // the page shows the stop or the machine continues at once ---
+  const dbgCondCache = new Map();
+  function dbgEvalCond(cond, info, hits) {
+    let f = dbgCondCache.get(cond);
+    if (!f) {
+      try {
+        f = new Function('R', 'mem', 'mem16', 'VALUE', 'ADDR', 'HITS',
+          'const {A,F,B,C,D,E,H,L,AF,BC,DE,HL,IX,IY,SP,PC,I,IM} = R; return (' + cond + ');');
+      } catch (e) {
+        f = () => { throw e; };
+      }
+      dbgCondCache.set(cond, f);
+    }
+    try {
+      return !!f(dbgRegObj(), (a) => dbgPeek(a & 0xFFFF), (a) => dbgPeek(a & 0xFFFF) | (dbgPeek((a + 1) & 0xFFFF) << 8),
+                 info.value, info.addr, hits);
+    } catch (e) {
+      setMessage('Hibás feltétel (' + cond + '): ' + e.message, true);
+      return true;
+    }
+  }
+
+  function dbgShouldStop() {
+    const info = dbgInfo();
+    if (info.why === 1 || info.why >= 4) {
+      const types = info.why === 1 ? ['x'] : info.why === 4 ? ['r', 'rw'] : info.why === 5 ? ['w', 'rw'] :
+                    info.why === 6 ? ['ior', 'iorw'] : ['iow', 'iorw'];
+      const at = info.why === 1 ? info.pc : (info.why >= 6 ? info.addr & 0xFF : info.addr);
+      const hit = dbgBps.filter((b) => b.on && types.includes(b.type) && b.addr === at);
+      let stop = !hit.length;
+      for (const b of hit) {
+        b.hits = (b.hits || 0) + 1;
+        if (!b.cond || dbgEvalCond(b.cond, info, b.hits)) stop = true;
+      }
+      if (!stop) return false;
+    }
+    if (dbgOnBreakFn && info.why !== 3) {
+      try {
+        if (dbgOnBreakFn(Object.assign(info, { reason: DBG_REASONS[info.why] })) === true) return false;
+      } catch (e) {
+        dbgScriptLog('onBreak hiba: ' + e.message);
+      }
+    }
+    return true;
+  }
+
+  // after running: handles a stop (shows it, or continues the machine if
+  // the condition / script says so)
+  function dbgHandleStops() {
+    let guard = 0;
+    while (api.dbgState() && !dbgStopped) {
+      if (dbgShouldStop()) {
+        dbgOnStop();
+        return;
+      }
+      api.dbgContinue();
+      check(api.run(0), 'emuláció');      // the rest of the time slice
+      if (++guard > 5000) return;          // the next frame continues
+    }
+  }
+
+  // called when the machine has stopped and the stop is to be shown
   function dbgOnStop() {
     dbgStopped = true;
     releaseAllKeys();
     if (!dbgOpen) dbgShow(true);
     dbgCursor = -1;
+    dbgRenderBps();
     dbgRefresh();
   }
 
@@ -3544,7 +3730,7 @@ registerProcessor('ep-output', EPOutput);
     dbgStopped = false;
     fn();
     dbgStatus();
-    for (const id of ['dbg-step', 'dbg-over', 'dbg-cursor', 'dbg-run']) $(id).disabled = true;
+    for (const id of ['dbg-step', 'dbg-over', 'dbg-out', 'dbg-cursor', 'dbg-run']) $(id).disabled = true;
     $('dbg-pause').disabled = false;
   }
 
@@ -3565,6 +3751,427 @@ registerProcessor('ep-output', EPOutput);
     else dbgResume(() => api.dbgStep());
   }
 
+  // step out: runs to the return address on the top of the stack
+  function dbgStepOut() {
+    const sp = dbgRegs()[7];
+    const ret = dbgPeek(sp) | (dbgPeek((sp + 1) & 0xFFFF) << 8);
+    dbgResume(() => api.dbgRunTo(ret));
+  }
+
+  // --- tabs ---
+  function dbgSelectTab(t) {
+    dbgTab = t;
+    for (const b of $('dbg-tabs').querySelectorAll('button')) b.classList.toggle('on', b.dataset.tab === t);
+    for (const p of document.querySelectorAll('#debugger .dbg-tab')) p.hidden = p.dataset.pane !== t;
+    try { localStorage.setItem('ep128web.dbgTab', t); } catch (e) { }
+    dbgRenderTab();
+    if (t === 'mon') $('dbg-mon-in').focus({ preventScroll: true });
+  }
+
+  function dbgDisLine(a) {
+    const l = dbgDisasm(a, 1)[0];
+    return l ? dbgSymText(l.text) : hex(a, 4);
+  }
+
+  function dbgRenderTab() {
+    if (!dbgOpen) return;
+    switch (dbgTab) {
+      case 'hist': {
+        $('dbg-hist-on').checked = dbgHistOn;
+        const pcs = api.dbgHistory(64).trim().split(/\s+/).filter(Boolean).map((h) => parseInt(h, 16));
+        $('dbg-hist').textContent = pcs.length ? pcs.map((a) => {
+          const l = dbgLabel(a);
+          return (l ? l + ':\n' : '') + dbgDisLine(a);
+        }).join('\n') : (dbgHistOn ? 'még nincs adat' : 'kapcsold be az előzmények gyűjtését');
+        break;
+      }
+      case 'prof': {
+        $('dbg-prof-on').checked = dbgProfOn;
+        const p = api.dbgProfile() >> 2;
+        const counts = M.HEAPU32.subarray(p, p + 65536);
+        let total = 0;
+        const top = [];
+        for (let a = 0; a < 65536; a++) {
+          const c = counts[a];
+          if (!c) continue;
+          total += c;
+          if (top.length < 40 || c > top[top.length - 1][1]) {
+            top.push([a, c]);
+            top.sort((x, y) => y[1] - x[1]);
+            if (top.length > 40) top.pop();
+          }
+        }
+        $('dbg-prof').textContent = total ? 'Összesen: ' + total + ' utasítás\n' + top.map(([a, c]) =>
+          String(c).padStart(10) + '  ' + (100 * c / total).toFixed(2).padStart(6) + '%  ' + dbgDisLine(a) +
+          (dbgLabel(a) ? '   ; ' + dbgLabel(a) : '')).join('\n') : (dbgProfOn ? 'még nincs adat' : 'kapcsold be a profilert');
+        break;
+      }
+      case 'iolog': {
+        $('dbg-iolog-on').checked = dbgIoLogOn;
+        const f = $('dbg-iolog-filter').value.split(/[\s,]+/).filter(Boolean).map((h) => parseInt(h, 16) & 0xFF);
+        let lines = api.dbgIoLog(4096).trim().split('\n').filter(Boolean).map((l) => l.split(' '));
+        if (f.length) lines = lines.filter((l) => f.includes(parseInt(l[1], 16)));
+        lines = lines.slice(-200).reverse();
+        $('dbg-iolog').textContent = lines.length ? 'PC    irány port érték\n' + lines.map(([pc, port, v, w]) => {
+          const l = dbgLabel(parseInt(pc, 16));
+          return pc + '  ' + (w === '1' ? 'OUT ' : 'IN  ') + '  ' + port + '   ' + v + (l ? '   ; ' + l : '');
+        }).join('\n') : (dbgIoLogOn ? 'még nincs adat' : 'kapcsold be az I/O naplót');
+        break;
+      }
+      case 'ioregs': $('dbg-ioregs').textContent = api.dbgIoRegs(); break;
+      case 'lpt': dbgRenderLpt(); break;
+      case 'sound': $('dbg-sound').textContent = api.dbgSound(); break;
+      case 'fx': $('dbg-fx').textContent = api.dbg2dfx(); break;
+      case 'c256': $('dbg-c256').textContent = api.dbgCard256(); break;
+      case 'sym': {
+        const flt = $('dbg-sym-filter').value.trim().toUpperCase();
+        const all = [...dbgSymAddr.entries()].filter(([n]) => !flt || n.includes(flt)).sort((x, y) => x[1] - y[1]);
+        $('dbg-sym-count').textContent = dbgSymAddr.size + ' címke';
+        $('dbg-sym').textContent = all.slice(0, 1000).map(([n, a]) => hex(a, 4) + '  ' + n).join('\n') +
+          (all.length > 1000 ? '\n… (' + (all.length - 1000) + ' további)' : '');
+        break;
+      }
+    }
+  }
+  let dbgHistOn = false, dbgProfOn = false, dbgIoLogOn = false;
+
+  // EP: NICK line parameter table (LPT) from the video RAM
+  const NICK_MODES = ['VSYNC', 'PIXEL', 'ATTRIB', 'CH256', 'CH128', 'CH64', 'érvénytelen', 'LPIXEL'];
+  const NICK_COLS = ['2', '4', '16', '256'];
+  function epColour(c) {
+    const r = ((c & 1) << 2 | (c & 8) >> 2 | (c & 64) >> 6) * 255 / 7;
+    const g = ((c & 2) << 1 | (c & 16) >> 3 | (c & 128) >> 7) * 255 / 7;
+    const b = ((c & 4) >> 1 | (c & 32) >> 5) * 255 / 3;
+    return 'rgb(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ')';
+  }
+  function dbgRenderLpt() {
+    const io = api.dbgIoRegs();
+    const m = /Nick\s+80:\s*([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/.exec(io);
+    const cur = /Nick\s+LPB:\s*([0-9A-F]{4})/.exec(io);
+    if (!m) { $('dbg-lpt').textContent = 'Csak Enterprise-on.'; return; }
+    const p82 = parseInt(m[3], 16), p83 = parseInt(m[4], 16);
+    const base = (p82 << 4) | ((p83 & 0x0F) << 12);
+    const curLpb = cur ? parseInt(cur[1], 16) & 0xFFF0 : -1;
+    let html = '<div>Border: ' + m[2] + '  LPT: ' + hex(base, 4) + '  (83h: ' + m[4] + ')</div>' +
+      '<table><tr><th>#</th><th>cím</th><th>sor</th><th>mód</th><th>szín</th><th>VRES</th><th>IRQ</th>' +
+      '<th>margó</th><th>LD1</th><th>LD2</th><th>paletta</th></tr>';
+    let a = base, lines = 0;
+    for (let n = 0; n < 64; n++) {
+      const p = api.dbgMem(0x3F0000 + a, 16, 1);
+      const b = M.HEAPU8.slice(p, p + 16);
+      const nl = 256 - b[0] || 256;
+      const mode = (b[1] >> 1) & 7;
+      html += '<tr' + (a === curLpb ? ' class="cur"' : '') + '><td>' + n + '</td><td>' + hex(a, 4) + '</td><td>' + nl +
+        '</td><td>' + NICK_MODES[mode] + '</td><td>' + NICK_COLS[(b[1] >> 5) & 3] + '</td><td>' + ((b[1] & 16) ? 'igen' : '') +
+        '</td><td>' + ((b[1] & 128) ? 'igen' : '') + '</td><td>' + hex(b[2] & 63, 2) + '-' + hex(b[3] & 63, 2) +
+        '</td><td>' + hex(b[4] | b[5] << 8, 4) + '</td><td>' + hex(b[6] | b[7] << 8, 4) + '</td><td>' +
+        [...b.slice(8, 16)].map((c) => '<i title="' + hex(c, 2) + '" style="background:' + epColour(c) + '"></i>').join('') + '</td></tr>';
+      lines += nl;
+      if (b[1] & 1) break;                  // reload: the end of the LPT
+      a = (a + 16) & 0xFFFF;
+    }
+    html += '</table><div>Összesen ' + lines + ' sor</div>';
+    $('dbg-lpt').innerHTML = html;
+  }
+
+  // --- monitor (the commands of ep128emu's monitor) ---
+  let monNextD = -1, monNextM = -1;
+  const monHist = [];
+  let monHistPos = 0;
+  function monPrint(t) {
+    const out = $('dbg-mon-out');
+    out.textContent += t + '\n';
+    if (out.textContent.length > 60000) out.textContent = out.textContent.slice(-50000);
+    out.scrollTop = out.scrollHeight;
+  }
+  function monAddr(t, what) {
+    const a = dbgParseAddr(t);
+    if (!a) throw new Error('hibás ' + (what || 'cím') + ': ' + t);
+    return a;
+  }
+  function monBytes(args) {
+    const out = [];
+    for (const t of args) {
+      const m = /^"(.*)"$/.exec(t);
+      if (m) { for (const ch of m[1]) out.push(ch.charCodeAt(0) & 0xFF); continue; }
+      const v = parseInt(t.replace(/^(0x|\$|#)/i, ''), 16);
+      if (isNaN(v) || v > 255) throw new Error('hibás bájt: ' + t);
+      out.push(v);
+    }
+    return out;
+  }
+  function monTokens(line) {
+    return (line.match(/"[^"]*"|[^\s,]+/g) || []);
+  }
+  // read / write by address object (CPU or physical)
+  const monRead = (a, i) => dbgPeek(a.addr + i, a.phys ? 1 : 0);
+  const monWrite = (a, i, v) => api.dbgPoke(a.addr + i, v, a.phys ? 1 : 0);
+  function monFmt(a, i) {
+    const x = a.addr + i;
+    return a.phys ? hex(x >> 14, 2) + ':' + hex(x & 0x3FFF, 4) : hex(x & 0xFFFF, 4);
+  }
+
+  const MON_HELP = [
+    '.  A <cím> <utasítás>   assembler (pl. A 4000 LD A,5); utána a következő cím jön',
+    'D [kezdet [vég]]        disassembly',
+    'M [kezdet [vég]]        memória dump',
+    '> <cím> <bájtok…>       memória írása (hex vagy "szöveg")',
+    'F <kezdet> <vég> <minta…>  feltöltés mintával',
+    'C <kezdet> <vég> <cél>  összehasonlítás',
+    'H <kezdet> <vég> <minta…>  keresés (hex vagy "szöveg")',
+    'SR <kezdet> <vég> <minta…> , <csere…>  keresés és csere',
+    'T <kezdet> <vég> <cél>  másolás',
+    'R                       regiszterek',
+    '; <pc> [af [bc [de [hl [sp [ix [iy]]]]]]]   regiszterek beállítása',
+    ';; <af\'> [bc\' [de\' [hl\' [im [i [r]]]]]]',
+    'G [cím]                 folytatás (cím: onnan)',
+    'X / Z / Y               folytatás / lépés / átlépés',
+    'IO                      I/O regiszterek',
+    'O <port> <érték>        port írása',
+    'L <cím>                 fájl betöltése a címre (fájlválasztó)',
+    'S <kezdet> <vég> [név]  memória mentése fájlba (letöltés)',
+    'V <cím>                 összehasonlítás egy fájllal (fájlválasztó)',
+    'I                       beállítások, állapot',
+    'CLS                     a kimenet törlése',
+    'Címek: hex (C000), szegmens:offset (FC:0000), címke, címke+10'
+  ];
+
+  function monExec(line) {
+    line = line.trim();
+    if (!line) return;
+    monPrint('> ' + line);
+    let m;
+    if ((m = /^(;;|;|>|\.)(.*)$/.exec(line))) line = m[1] + ' ' + m[2];
+    const tok = monTokens(line);
+    const cmd = tok[0].toUpperCase();
+    const args = tok.slice(1);
+    const stopped = () => { if (!dbgStopped) throw new Error('előbb állítsd meg a gépet'); };
+    switch (cmd) {
+      case '?': case 'HELP': MON_HELP.forEach(monPrint); break;
+      case 'CLS': $('dbg-mon-out').textContent = ''; break;
+      case 'A': case '.': {
+        if (!args.length) throw new Error('A <cím> <utasítás>');
+        const a = monAddr(args[0]);
+        if (a.phys) throw new Error('az assembler CPU címet vár');
+        if (args.length < 2) { $('dbg-mon-in').value = 'A ' + hex(a.addr, 4) + ' '; return; }
+        // symbols in the operands -> hex
+        const src = line.replace(/^\S+\s+\S+\s*/, '').replace(/[A-Za-z_.@?][\w.@?$]*/g, (w) => {
+          const v = dbgSymAddr.get(w.toUpperCase());
+          return v === undefined ? w : hex(v, 4);
+        });
+        const next = api.dbgAssemble('A ' + hex(a.addr, 4) + ' ' + src.toUpperCase());
+        if (next < 0) throw new Error(lastError() || 'szintaxis hiba');
+        monPrint(dbgDisLine(a.addr));
+        $('dbg-mon-in').value = 'A ' + hex(next, 4) + ' ';
+        dbgRefresh();
+        return 'keep';
+      }
+      case 'D': {
+        let a = args.length ? monAddr(args[0]).addr : (monNextD >= 0 ? monNextD : dbgRegs()[0]);
+        const end = args.length > 1 ? monAddr(args[1]).addr : -1;
+        let n = end >= 0 ? 4096 : 20;
+        while (n-- > 0) {
+          const l = dbgDisasm(a, 1)[0];
+          const lbl = dbgLabel(a);
+          if (lbl) monPrint(lbl + ':');
+          monPrint(dbgSymText(l.text));
+          const nx = dbgDisasm(a, 2)[1].addr;
+          if (end >= 0 && (a >= end || nx > end || nx < a)) { a = nx; break; }
+          a = nx;
+        }
+        monNextD = a;
+        break;
+      }
+      case 'M': {
+        let a = args.length ? monAddr(args[0]) : { addr: monNextM >= 0 ? monNextM : 0, phys: false };
+        let len = args.length > 1 ? monAddr(args[1]).addr - a.addr + 1 : 128;
+        if (len <= 0 || len > 65536) throw new Error('hibás tartomány');
+        for (let i = 0; i < len; i += 16) {
+          let s = monFmt(a, i) + ' ', asc = '';
+          for (let j = 0; j < 16 && i + j < len; j++) {
+            const v = monRead(a, i + j);
+            s += ' ' + hex(v, 2);
+            asc += (v >= 32 && v < 127) ? String.fromCharCode(v) : '.';
+          }
+          monPrint(s.padEnd(a.phys ? 56 : 54) + '  ' + asc);
+        }
+        monNextM = a.addr + len;
+        break;
+      }
+      case '>': {
+        const a = monAddr(args[0]);
+        monBytes(args.slice(1)).forEach((v, i) => monWrite(a, i, v));
+        dbgRefresh();
+        break;
+      }
+      case 'F': {
+        const a = monAddr(args[0]), e = monAddr(args[1]).addr, pat = monBytes(args.slice(2));
+        if (!pat.length) throw new Error('nincs minta');
+        for (let i = 0; a.addr + i <= e; i++) monWrite(a, i, pat[i % pat.length]);
+        dbgRefresh();
+        break;
+      }
+      case 'T': {
+        const a = monAddr(args[0]), e = monAddr(args[1]).addr, d = monAddr(args[2]);
+        const buf = [];
+        for (let i = 0; a.addr + i <= e; i++) buf.push(monRead(a, i));
+        buf.forEach((v, i) => monWrite(d, i, v));
+        monPrint(buf.length + ' bájt másolva');
+        dbgRefresh();
+        break;
+      }
+      case 'C': {
+        const a = monAddr(args[0]), e = monAddr(args[1]).addr, d = monAddr(args[2]);
+        let n = 0;
+        for (let i = 0; a.addr + i <= e; i++) {
+          const x = monRead(a, i), y = monRead(d, i);
+          if (x !== y && n++ < 200) monPrint(monFmt(a, i) + ' ' + hex(x, 2) + '  ' + monFmt(d, i) + ' ' + hex(y, 2));
+        }
+        monPrint(n ? n + ' eltérés' : 'egyezik');
+        break;
+      }
+      case 'H': case 'SR': {
+        // SR: the replacement follows a comma
+        const parts = line.split(',');
+        const lt = monTokens(parts[0]).slice(1);
+        if (lt.length < 3) throw new Error(cmd + ' <kezdet> <vég> <minta…>' + (cmd === 'SR' ? ' , <csere…>' : ''));
+        const a = monAddr(lt[0]), e = monAddr(lt[1]).addr;
+        const pat = monBytes(lt.slice(2));
+        const rep = cmd === 'SR' ? monBytes(monTokens(parts.slice(1).join(','))) : null;
+        if (cmd === 'SR' && !rep.length) throw new Error('SR <kezdet> <vég> <minta…> , <csere…>');
+        let n = 0;
+        for (let i = 0; a.addr + i + pat.length - 1 <= e; i++) {
+          if (pat.every((v, k) => monRead(a, i + k) === v)) {
+            n++;
+            if (n <= 200) monPrint(monFmt(a, i) + (dbgLabel(a.addr + i) && !a.phys ? '  ' + dbgLabel(a.addr + i) : ''));
+            if (rep) rep.forEach((v, k) => monWrite(a, i + k, v));
+          }
+        }
+        monPrint(n + (rep ? ' csere' : ' találat'));
+        if (rep) dbgRefresh();
+        break;
+      }
+      case 'R': {
+        const r = dbgRegObj();
+        monPrint('  PC   AF   BC   DE   HL   SP   IX   IY');
+        monPrint('; ' + [r.PC, r.AF, r.BC, r.DE, r.HL, r.SP, r.IX, r.IY].map((v) => hex(v, 4)).join(' '));
+        monPrint("       AF'  BC'  DE'  HL'  IM   I    R");
+        monPrint(';; ' + [r.AF_, r.BC_, r.DE_, r.HL_].map((v) => hex(v, 4)).join(' ') + '  ' + hex(r.IM, 2) + '   ' + hex(r.I, 2) + '   ' + hex(r.R, 2));
+        break;
+      }
+      case ';': case ';;': {
+        stopped();
+        const order = cmd === ';' ? [0, 1, 2, 3, 4, 7, 5, 6] : [8, 9, 10, 11, 14, 12, 13];
+        args.forEach((t, i) => {
+          if (i >= order.length) return;
+          const v = parseInt(t, 16);
+          if (isNaN(v)) throw new Error('hibás érték: ' + t);
+          api.dbgSetReg(order[i], v);
+        });
+        dbgRefresh();
+        break;
+      }
+      case 'G': {
+        stopped();
+        if (args.length) api.dbgSetReg(0, monAddr(args[0]).addr);
+        dbgResume(() => api.dbgContinue());
+        break;
+      }
+      case 'X': stopped(); dbgResume(() => api.dbgContinue()); break;
+      case 'Z': stopped(); dbgResume(() => api.dbgStep()); break;
+      case 'Y': stopped(); dbgStepOver(); break;
+      case 'IO': api.dbgIoRegs().split('\n').forEach(monPrint); break;
+      case 'O': {
+        const p = parseInt(args[0], 16), v = parseInt(args[1], 16);
+        if (isNaN(p) || isNaN(v)) throw new Error('O <port> <érték>');
+        api.dbgOut(p, v);
+        break;
+      }
+      case 'L': case 'V': {
+        const a = monAddr(args[0]);
+        const inp = document.createElement('input');
+        inp.type = 'file';
+        inp.onchange = async () => {
+          const f = inp.files[0];
+          if (!f) return;
+          const b = new Uint8Array(await f.arrayBuffer());
+          if (cmd === 'L') {
+            b.forEach((v, i) => monWrite(a, i, v));
+            monPrint(f.name + ': ' + b.length + ' bájt betöltve ' + monFmt(a, 0) + '-' + monFmt(a, b.length - 1));
+            dbgRefresh();
+          } else {
+            let n = 0;
+            b.forEach((v, i) => { const x = monRead(a, i); if (x !== v && n++ < 200) monPrint(monFmt(a, i) + ' ' + hex(x, 2) + '  fájl: ' + hex(v, 2)); });
+            monPrint(n ? n + ' eltérés' : 'egyezik (' + b.length + ' bájt)');
+          }
+        };
+        inp.click();
+        break;
+      }
+      case 'S': {
+        const a = monAddr(args[0]), e = monAddr(args[1]).addr;
+        const name = (args[2] || '').replace(/"/g, '') || ('mem-' + monFmt(a, 0).replace(':', '') + '.bin');
+        const buf = new Uint8Array(Math.max(0, e - a.addr + 1));
+        for (let i = 0; i < buf.length; i++) buf[i] = monRead(a, i);
+        download(buf, name);
+        monPrint(buf.length + ' bájt: ' + name);
+        break;
+      }
+      case 'I': {
+        monPrint('Gép: ' + machine.name + (dbgStopped ? ' (megállítva)' : ' (fut)'));
+        monPrint('Címkék: ' + dbgSymAddr.size + '  Töréspontok: ' + dbgBps.length);
+        monPrint('Előzmények: ' + (dbgHistOn ? 'be' : 'ki') + '  Profiler: ' + (dbgProfOn ? 'be' : 'ki') + '  I/O napló: ' + (dbgIoLogOn ? 'be' : 'ki'));
+        break;
+      }
+      default: throw new Error('ismeretlen parancs: ' + tok[0] + ' (? = súgó)');
+    }
+  }
+
+  // --- script API ---
+  function dbgScriptLog(t) {
+    const out = $('dbg-script-out');
+    out.textContent += t + '\n';
+    if (out.textContent.length > 40000) out.textContent = out.textContent.slice(-30000);
+  }
+  const ep = {
+    hex,
+    regs: () => dbgRegObj(),
+    setReg: (name, v) => {
+      const i = DBG_REGS.indexOf(String(name).toUpperCase().replace('_', "'"));
+      if (i < 0) throw new Error('ismeretlen regiszter: ' + name);
+      api.dbgSetReg(i, v);
+    },
+    peek: (a) => dbgPeek(a & 0xFFFF),
+    peek16: (a) => dbgPeek(a & 0xFFFF) | (dbgPeek((a + 1) & 0xFFFF) << 8),
+    poke: (a, v) => api.dbgPoke(a & 0xFFFF, v & 0xFF, 0),
+    read: (a, n, src) => { const p = api.dbgMem(a, n, src || 0); return Array.from(M.HEAPU8.slice(p, p + n)); },
+    out: (port, v) => api.dbgOut(port, v),
+    disasm: (a, n) => dbgDisasm(a, n || 1).map((l) => dbgSymText(l.text)),
+    assemble: (a, text) => api.dbgAssemble('A ' + hex(a, 4) + ' ' + String(text).toUpperCase()),
+    bp: (a, cond) => { dbgBps.push({ type: 'x', addr: a & 0xFFFF, cond: cond || '', on: true, hits: 0 }); dbgApplyBps(); dbgRenderBps(); },
+    watch: (type, a, cond) => {
+      if (!DBG_BP_NAMES[type]) throw new Error('típus: r w rw ior iow iorw');
+      dbgBps.push({ type, addr: type.startsWith('io') ? a & 0xFF : a & 0xFFFF, cond: cond || '', on: true, hits: 0 });
+      dbgApplyBps(); dbgRenderBps();
+    },
+    clearBps: () => { dbgBps = []; dbgApplyBps(); dbgRenderBps(); },
+    onBreak: (fn) => { dbgOnBreakFn = typeof fn === 'function' ? fn : null; },
+    pause: () => api.dbgPause(),
+    cont: () => dbgResume(() => api.dbgContinue()),
+    step: () => dbgResume(() => api.dbgStep()),
+    stepOver: () => dbgStepOver(),
+    runTo: (a) => dbgResume(() => api.dbgRunTo(a & 0xFFFF)),
+    stopped: () => dbgStopped,
+    info: () => dbgInfo(),
+    ioRegs: () => api.dbgIoRegs(),
+    sym: (name) => dbgSymAddr.get(String(name).toUpperCase()),
+    label: (a) => dbgLabel(a),
+    history: (n) => api.dbgHistory(n || 64).trim().split(/\s+/).filter(Boolean).map((h) => parseInt(h, 16)),
+    monitor: (cmd) => monExec(cmd),
+    log: (...a) => dbgScriptLog(a.map((x) => typeof x === 'string' ? x : JSON.stringify(x)).join(' '))
+  };
+  window.ep = ep;
+
   let dbgTimer = 0;
   function dbgShow(on) {
     dbgOpen = on;
@@ -3574,7 +4181,7 @@ registerProcessor('ep-output', EPOutput);
     clearInterval(dbgTimer);
     if (on) {
       // while running, the views follow the machine a few times a second
-      dbgTimer = setInterval(() => { if (!dbgStopped) dbgRefresh(); }, 300);
+      dbgTimer = setInterval(() => { if (!dbgStopped) dbgRefresh(); }, 400);
       dbgRenderBps();
       dbgRefresh();
     }
@@ -3586,35 +4193,96 @@ registerProcessor('ep-output', EPOutput);
     $('dbg-pause').onclick = () => { if (!dbgStopped) api.dbgPause(); };
     $('dbg-step').onclick = () => dbgResume(() => api.dbgStep());
     $('dbg-over').onclick = dbgStepOver;
+    $('dbg-out').onclick = dbgStepOut;
     $('dbg-cursor').onclick = () => { if (dbgCursor >= 0) dbgResume(() => api.dbgRunTo(dbgCursor)); };
     $('dbg-follow').onchange = () => dbgRefresh();
     $('dbg-dis-addr').addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
       const a = dbgParseAddr(e.target.value);
       if (!a || a.phys) return;
-      dbgDisStart = a.addr;
+      dbgDisStart = a.addr & 0xFFFF;
       $('dbg-follow').checked = false;
       dbgRefresh();
     });
-    $('dbg-mem-addr').addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter') return;
-      const a = dbgParseAddr(e.target.value);
+    const setMem = () => {
+      dbgMemSrc = Number($('dbg-mem-src').value);
+      const a = dbgParseAddr($('dbg-mem-addr').value);
       if (!a) return;
       dbgMemAddr = a.addr;
-      dbgMemPhys = a.phys;
+      if (a.phys && dbgMemSrc !== 1) { dbgMemSrc = 1; $('dbg-mem-src').value = '1'; }
       dbgPrevMem = null;
       dbgRefresh();
-    });
+    };
+    $('dbg-mem-addr').addEventListener('keydown', (e) => { if (e.key === 'Enter') setMem(); });
+    $('dbg-mem-src').onchange = setMem;
     $('dbg-bp-add').onclick = () => {
-      const a = dbgParseAddr($('dbg-bp-addr').value);
-      if (!a || a.phys) { setMessage('A töréspont címe hexadecimális CPU cím (pl. C000)', true); return; }
       const type = $('dbg-bp-type').value;
-      const addr = type.startsWith('io') ? a.addr & 0xFF : a.addr;
-      if (!dbgBps.some((b) => b.type === type && b.addr === addr)) dbgBps.push({ type, addr });
+      const a = dbgParseAddr($('dbg-bp-addr').value);
+      if (!a || a.phys) { setMessage('A töréspont címe hexadecimális CPU cím (pl. C000) vagy címke', true); return; }
+      const addr = type.startsWith('io') ? a.addr & 0xFF : a.addr & 0xFFFF;
+      const cond = $('dbg-bp-cond').value.trim();
+      if (cond) {
+        try { new Function('return (' + cond + ');'); } catch (e) { setMessage('Hibás feltétel: ' + e.message, true); return; }
+      }
+      dbgBps.push({ type, addr, cond, on: true, hits: 0 });
       dbgApplyBps();
       dbgRenderBps();
       dbgRenderDis();
     };
+    for (const b of $('dbg-tabs').querySelectorAll('button')) b.onclick = () => dbgSelectTab(b.dataset.tab);
+    $('dbg-hist-on').onchange = (e) => { dbgHistOn = e.target.checked; api.dbgHistoryEnable(dbgHistOn ? 1 : 0); dbgRenderTab(); };
+    $('dbg-prof-on').onchange = (e) => { dbgProfOn = e.target.checked; api.dbgProfileEnable(dbgProfOn ? 1 : 0); dbgRenderTab(); };
+    $('dbg-prof-clear').onclick = () => { api.dbgProfileClear(); dbgRenderTab(); };
+    $('dbg-iolog-on').onchange = (e) => { dbgIoLogOn = e.target.checked; api.dbgIoLogEnable(dbgIoLogOn ? 1 : 0); dbgRenderTab(); };
+    $('dbg-iolog-filter').oninput = () => dbgRenderTab();
+    $('dbg-sym-filter').oninput = () => dbgRenderTab();
+    $('dbg-sym-file').onchange = async (e) => {
+      const f = e.target.files[0];
+      e.target.value = '';
+      if (!f) return;
+      const text = await f.text();
+      const n = dbgLoadSymbols(text);
+      try { localStorage.setItem('ep128web.dbgSyms', text.length < 2000000 ? text : ''); } catch (er) { }
+      setMessage(f.name + ': ' + n + ' címke');
+      dbgRefresh();
+    };
+    $('dbg-sym-clear').onclick = () => {
+      dbgLoadSymbols('');
+      try { localStorage.removeItem('ep128web.dbgSyms'); } catch (e) { }
+      dbgRefresh();
+    };
+    const monIn = $('dbg-mon-in');
+    monIn.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        monHistPos = Math.max(0, Math.min(monHist.length, monHistPos + (e.key === 'ArrowUp' ? -1 : 1)));
+        monIn.value = monHist[monHistPos] || '';
+        return;
+      }
+      if (e.key !== 'Enter') return;
+      const line = monIn.value;
+      if (line.trim()) { monHist.push(line); if (monHist.length > 100) monHist.shift(); }
+      monHistPos = monHist.length;
+      monIn.value = '';
+      try {
+        if (monExec(line) === 'keep') return;
+      } catch (er) {
+        monPrint('Hiba: ' + er.message);
+      }
+    });
+    $('dbg-script-run').onclick = () => {
+      const code = $('dbg-script').value;
+      try { localStorage.setItem('ep128web.dbgScript', code); } catch (e) { }
+      try {
+        const r = new Function('ep', code)(ep);
+        if (r !== undefined) dbgScriptLog(String(r));
+      } catch (e) {
+        dbgScriptLog('Hiba: ' + e.message);
+      }
+      dbgRefresh();
+    };
+    $('dbg-script-stop').onclick = () => { dbgOnBreakFn = null; dbgScriptLog('onBreak kikapcsolva'); };
+    try { $('dbg-script').value = localStorage.getItem('ep128web.dbgScript') || ''; } catch (e) { }
     // shortcuts while the focus is in the debugger
     $('debugger').addEventListener('keydown', (e) => {
       if (isTextInput(e.target)) return;
@@ -3630,6 +4298,10 @@ registerProcessor('ep-output', EPOutput);
       }
     });
     dbgApplyBps();
+    let t = 'mon';
+    try { t = localStorage.getItem('ep128web.dbgTab') || 'mon'; } catch (e) { }
+    dbgSelectTab(t);
+    monPrint('ep128emu monitor – ? = súgó');
     let on = false;
     try { on = localStorage.getItem('ep128web.debugger') === '1'; } catch (e) { }
     if (on) dbgShow(true);
@@ -3656,6 +4328,9 @@ registerProcessor('ep-output', EPOutput);
       if (api.dbgState()) return;
       dbgStopped = false;
       dbgRefresh();
+    } else if (api.dbgState()) {
+      dbgHandleStops();                 // a stop left from the last frame
+      if (dbgStopped) return;
     }
     pollGamepads();
 
@@ -3705,7 +4380,7 @@ registerProcessor('ep-output', EPOutput);
       return;
     }
     emulatedUs += us;
-    if (api.dbgState()) dbgOnStop();
+    dbgHandleStops();
     // ep128emu runs the floppy drives' motor-off timer (and writes the
     // buffered track to the image) when it is asked for the LED state, once
     // per 2 ms timeslice, like its own VM thread does
@@ -3834,7 +4509,21 @@ registerProcessor('ep-output', EPOutput);
       dbgSetReg: c('ep_dbg_set_reg', null, ['number', 'number']),
       dbgDisasm: c('ep_dbg_disasm', 'string', ['number', 'number']),
       dbgMem: c('ep_dbg_mem', 'number', ['number', 'number', 'number']),
-      dbgPoke: c('ep_dbg_poke', null, ['number', 'number', 'number'])
+      dbgPoke: c('ep_dbg_poke', null, ['number', 'number', 'number']),
+      dbgMemValid: c('ep_dbg_mem_valid', 'number', ['number']),
+      dbgAssemble: c('ep_dbg_assemble', 'number', ['string']),
+      dbgIoRegs: c('ep_dbg_io_regs', 'string', []),
+      dbgOut: c('ep_dbg_out', null, ['number', 'number']),
+      dbgHistoryEnable: c('ep_dbg_history_enable', null, ['number']),
+      dbgHistory: c('ep_dbg_history', 'string', ['number']),
+      dbgProfileEnable: c('ep_dbg_profile_enable', null, ['number']),
+      dbgProfileClear: c('ep_dbg_profile_clear', null, []),
+      dbgProfile: c('ep_dbg_profile', 'number', []),
+      dbgIoLogEnable: c('ep_dbg_iolog_enable', null, ['number']),
+      dbgIoLog: c('ep_dbg_iolog', 'string', ['number']),
+      dbg2dfx: c('ep_dbg_2dfx', 'string', []),
+      dbgCard256: c('ep_dbg_card256', 'string', []),
+      dbgSound: c('ep_dbg_sound', 'string', [])
     };
     for (const d of ['/roms', '/files', '/tmp', '/disk', '/diskb', '/tape']) ensureDir(d);
 

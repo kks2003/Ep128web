@@ -6,13 +6,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610241422-0a9eb18">
-<meta name="build" content="202610241422-0a9eb18">
+<link rel="stylesheet" href="style.css?v=202610241436-b359bf5">
+<meta name="build" content="202610241436-b359bf5">
 </head>
 <body>
-<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #27 előnézete, nem az éles oldal · fordítva: 2026.10.24 16:22 · 0a9eb18 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #27 előnézete, nem az éles oldal · fordítva: 2026.10.24 16:36 · b359bf5 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.24 16:22 · 0a9eb18</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.24 16:36 · b359bf5</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -117,6 +117,7 @@
       <button id="dbg-pause" title="Megállítás a következő utasításnál">⏸ Megállítás</button>
       <button id="dbg-step" title="Egy utasítás (F11)">Lépés</button>
       <button id="dbg-over" title="Egy utasítás, a CALL, RST, DJNZ és LDIR egészben fut le (F10)">Átlépés</button>
+      <button id="dbg-out" title="Futás a visszatérésig (RET a jelenlegi szinten)">Kilépés</button>
       <button id="dbg-cursor" title="Futás a disassemblyben kijelölt sorig (F4)">Futás a kurzorig</button>
       <span id="dbg-status"></span>
     </div>
@@ -127,11 +128,12 @@
           <div id="dbg-regs"></div>
           <div id="dbg-flags" class="dbg-mono"></div>
           <div id="dbg-pages" class="dbg-mono small"></div>
+          <div id="dbg-stack" class="dbg-mono small" title="A verem teteje (SP-től)"></div>
         </div>
         <div class="dbg-box">
           <h4>Töréspontok</h4>
           <div class="dbg-bp-add">
-            <input id="dbg-bp-addr" class="dbg-addr" placeholder="cím" title="Cím vagy port (hex)">
+            <input id="dbg-bp-addr" class="dbg-addr" placeholder="cím" title="Cím vagy port (hex), vagy címke">
             <select id="dbg-bp-type" title="A töréspont fajtája">
               <option value="x">végrehajtás</option>
               <option value="r">memória olvasás</option>
@@ -141,6 +143,7 @@
               <option value="iow">port írás (OUT)</option>
               <option value="iorw">port IN/OUT</option>
             </select>
+            <input id="dbg-bp-cond" placeholder="feltétel (nem kötelező)" title="JavaScript kifejezés, pl.: A == 3 &amp;&amp; HL > 0x4000, vagy mem(0x1234) == 0. Csak akkor áll meg, ha igaz. Változók: A F B C D E H L AF BC DE HL IX IY SP PC, VALUE, ADDR (figyelésnél), HITS">
             <button id="dbg-bp-add">Hozzáadás</button>
           </div>
           <ul id="dbg-bp-list"></ul>
@@ -148,18 +151,81 @@
       </div>
       <div class="dbg-box dbg-wide">
         <h4>Disassembly
-          <input id="dbg-dis-addr" class="dbg-addr" placeholder="cím" title="Kezdőcím (hex), Enter">
+          <input id="dbg-dis-addr" class="dbg-addr" placeholder="cím" title="Kezdőcím (hex) vagy címke, Enter">
           <label class="small"><input type="checkbox" id="dbg-follow" checked> PC követése</label>
         </h4>
         <div id="dbg-dis" class="dbg-mono" title="Kattintás: kurzor; a bal szélen: töréspont be/ki (F9)"></div>
       </div>
       <div class="dbg-box dbg-wide">
         <h4>Memória
-          <input id="dbg-mem-addr" class="dbg-addr" value="0000" title="Cím (hex): CPU cím, vagy szegmens:offset (pl. FC:0000), Enter">
+          <select id="dbg-mem-src" title="Melyik memória">
+            <option value="0">CPU cím</option>
+            <option value="1">szegmens:offset</option>
+            <option value="2">2dfx resource RAM</option>
+            <option value="3">TVC256k++ PSRAM</option>
+          </select>
+          <input id="dbg-mem-addr" class="dbg-addr" value="0000" title="Cím (hex) vagy címke; szegmensnél pl. FC:0000; Enter">
           <span class="small">dupla kattintás: írás</span>
         </h4>
         <div id="dbg-mem" class="dbg-mono"></div>
       </div>
+    </div>
+    <div class="dbg-tabs" id="dbg-tabs">
+      <button data-tab="mon" class="on">Monitor</button>
+      <button data-tab="hist">Előzmények</button>
+      <button data-tab="prof">Profiler</button>
+      <button data-tab="iolog">I/O napló</button>
+      <button data-tab="ioregs">I/O regiszterek</button>
+      <button data-tab="lpt" data-ep="1">NICK LPT</button>
+      <button data-tab="sound" data-tvc="1">Hangkártyák</button>
+      <button data-tab="fx">2dfx</button>
+      <button data-tab="c256" data-tvc="1">TVC256k++</button>
+      <button data-tab="sym">Szimbólumok</button>
+      <button data-tab="script">Szkript</button>
+    </div>
+    <div class="dbg-box dbg-tab" data-pane="mon">
+      <div id="dbg-mon-out" class="dbg-mono"></div>
+      <input id="dbg-mon-in" class="dbg-mono" spellcheck="false" autocomplete="off" placeholder="parancs (? = súgó), pl. D 0038, M C000, A 4000 LD A,5, R">
+    </div>
+    <div class="dbg-box dbg-tab" data-pane="hist" hidden>
+      <div class="dbg-tool"><label><input type="checkbox" id="dbg-hist-on"> Előzmények gyűjtése</label>
+        <span class="small">az utolsó 16384 utasítás címe; itt az utolsó 64 látszik</span></div>
+      <div id="dbg-hist" class="dbg-mono"></div>
+    </div>
+    <div class="dbg-box dbg-tab" data-pane="prof" hidden>
+      <div class="dbg-tool"><label><input type="checkbox" id="dbg-prof-on"> Profiler</label>
+        <button id="dbg-prof-clear">Nullázás</button>
+        <span class="small">címenként a lefutott utasítások száma; a 40 leggyakoribb</span></div>
+      <div id="dbg-prof" class="dbg-mono"></div>
+    </div>
+    <div class="dbg-box dbg-tab" data-pane="iolog" hidden>
+      <div class="dbg-tool"><label><input type="checkbox" id="dbg-iolog-on"> I/O napló</label>
+        <input id="dbg-iolog-filter" class="dbg-addr" placeholder="port szűrő" title="Csak ezek a portok (hex, vesszővel), üres: mind">
+        <span class="small">minden IN/OUT; a legutóbbi 200, a legújabb felül</span></div>
+      <div id="dbg-iolog" class="dbg-mono"></div>
+    </div>
+    <div class="dbg-box dbg-tab" data-pane="ioregs" hidden><div id="dbg-ioregs" class="dbg-mono"></div></div>
+    <div class="dbg-box dbg-tab" data-pane="lpt" hidden><div id="dbg-lpt" class="dbg-mono"></div></div>
+    <div class="dbg-box dbg-tab" data-pane="sound" hidden><div id="dbg-sound" class="dbg-mono"></div></div>
+    <div class="dbg-box dbg-tab" data-pane="fx" hidden><div id="dbg-fx" class="dbg-mono"></div></div>
+    <div class="dbg-box dbg-tab" data-pane="c256" hidden><div id="dbg-c256" class="dbg-mono"></div></div>
+    <div class="dbg-box dbg-tab" data-pane="sym" hidden>
+      <div class="dbg-tool">
+        <label class="file">Szimbólumfájl betöltése…<input type="file" id="dbg-sym-file" accept=".sym,.lst,.txt,.map,.lbl,.asm,.inc,.equ"></label>
+        <button id="dbg-sym-clear">Törlés</button>
+        <input id="dbg-sym-filter" class="dbg-addr" placeholder="keresés">
+        <span class="small" id="dbg-sym-count"></span>
+      </div>
+      <div class="small">Formátumok: <code>címke EQU 1234h</code>, <code>címke: equ $1234</code>, <code>címke = 0x1234</code> (sjasmplus, pasmo, tniASM…), <code>1234 címke</code> vagy <code>címke 1234</code> soronként. A címkék a disassemblyben, a címmezőkben és a monitorban is használhatók.</div>
+      <div id="dbg-sym" class="dbg-mono"></div>
+    </div>
+    <div class="dbg-box dbg-tab" data-pane="script" hidden>
+      <textarea id="dbg-script" class="dbg-mono" rows="9" spellcheck="false" placeholder="// JavaScript az ep objektummal, pl.:
+// ep.onBreak(info => { ep.log(ep.hex(ep.regs().HL, 4)); return true; })  // true: fut tovább
+// ep.bp(0x0038)   ep.watch('w', 0xBFF0)   ep.poke(0x4000, 0xC9)   ep.step()"></textarea>
+      <div class="dbg-tool"><button id="dbg-script-run">Futtatás</button><button id="dbg-script-stop">onBreak kikapcsolása</button>
+        <span class="small">Az <code>ep</code> objektum a böngésző konzolából is elérhető (<code>window.ep</code>).</span></div>
+      <div id="dbg-script-out" class="dbg-mono"></div>
     </div>
   </section>
 
@@ -302,7 +368,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610241422-0a9eb18"></script>
-<script src="ep128.js?v=202610241422-0a9eb18"></script>
+<script src="ep128emu.js?v=202610241436-b359bf5"></script>
+<script src="ep128.js?v=202610241436-b359bf5"></script>
 </body>
 </html>
