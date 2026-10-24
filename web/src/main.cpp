@@ -21,6 +21,8 @@
 #include "tvc64vm.hpp"
 #include "tvc_soundcards.hpp"
 #include "tvc256kpp.hpp"
+#include "tvc256kpp_fs.hpp"
+#include "card/sprite.h"
 #include "twodfx_bridge.hpp"
 #include "webdebug.hpp"
 #include "webscript.hpp"
@@ -946,6 +948,42 @@ EMSCRIPTEN_KEEPALIVE int ep_usb_delete(const char *path)
 
 extern uint32_t card_usb_writes;        // card/diskio-emu.c
 
+// the overlay graphics of the TVC256k++ card (card/tvc-graphics.c,
+// card/tvc-io-regs.c)
+extern sprite_t sprites[SPRITES_NUM];
+extern volatile int8_t videoMode;
+extern uint8_t registerSpriteBaseAddress, registerScreenBaseAddr;
+extern uint8_t registerScreenColorBaseAddr, registerFontBaseAddr;
+extern volatile uint8_t registerBitmapBaseAddr;
+
+// the card's overlay: "mode spriteBase bitmapBase screenBase colorBase
+// fontBase" (card RAM addresses), then a line per sprite: "x y enabled
+// foreground colour phase fullColour"
+EMSCRIPTEN_KEEPALIVE const char *ep_dbg_card256_gfx()
+{
+  static std::string out;
+  out.clear();
+  if (machineType != 1 || !TVC256kpp::current)
+    return out.c_str();
+  char    tmp[96];
+  std::snprintf(tmp, sizeof(tmp), "%d %u %u %u %u %u\n", int(videoMode),
+                unsigned(registerSpriteBaseAddress & 0x07) * 0x4000U,
+                unsigned(registerBitmapBaseAddr & 0x03) * 0x8000U,
+                unsigned(registerScreenBaseAddr & 0x7F) * 0x0400U,
+                unsigned(registerScreenColorBaseAddr & 0x7F) * 0x0400U,
+                unsigned(registerFontBaseAddr & 0x3F) * 0x0800U);
+  out += tmp;
+  for (int i = 0; i < SPRITES_NUM; i++) {
+    const sprite_t& sp = sprites[i];
+    std::snprintf(tmp, sizeof(tmp), "%u %u %d %d %u %u %d\n",
+                  unsigned(sp.x), unsigned(sp.y), int(sp.enabled),
+                  int(sp.foreground), unsigned(sp.color), unsigned(sp.phase),
+                  int(sp.fullColor));
+    out += tmp;
+  }
+  return out.c_str();
+}
+
 // 0: size in kB, 1: free space in kB, 2: number of sector writes so far
 EMSCRIPTEN_KEEPALIVE double ep_usb_info(int which)
 {
@@ -1137,6 +1175,10 @@ static int debugMemRead(int src, uint32_t a)
     if (TVC256kpp::current && a < TVC256kpp::current->psramSize())
       return TVC256kpp::current->psram()[a];
     return -1;
+  case 4:                               // TVC256k++: the card's fast RAM
+    if (TVC256kpp::current && a < 0x48000U)   // TVC_RAM_SIZE (card_shim.h)
+      return TVC256kppFS::fastRam()[a];
+    return -1;
   }
   return -1;
 }
@@ -1170,6 +1212,9 @@ EMSCRIPTEN_KEEPALIVE void ep_dbg_poke(int addr, int value, int src)
   else if (src == 3 && TVC256kpp::current &&
            a < TVC256kpp::current->psramSize()) {
     TVC256kpp::current->psram()[a] = uint8_t(value);
+  }
+  else if (src == 4 && TVC256kpp::current && a < 0x48000U) {
+    TVC256kppFS::fastRam()[a] = uint8_t(value);
   }
 }
 
