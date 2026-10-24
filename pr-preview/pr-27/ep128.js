@@ -3888,9 +3888,66 @@ registerProcessor('ep-output', EPOutput);
                      'interlace', 'max. raszter cím', 'kurzor kezdet', 'kurzor vég', 'kezdőcím felső',
                      'kezdőcím alsó', 'kurzor cím felső', 'kurzor cím alsó', 'fénytoll felső', 'fénytoll alsó'];
 
+  // 2dfx commands (port F8h), from web/src/twodfx/docs/COMMAND_REFERENCE.md
+  const FX_2DPT = ['NOP', 'SET_COLOR', 'PLOT', 'LINE', 'ERASE_LINE', 'BUCKET_FILL', 'RECT', 'FILL_RECT',
+    'ROUND_RECT', 'FILL_ROUND_RECT', 'ELLIPSE', 'FILL_ELLIPSE', 'ARC', 'PIE', 'SET_XY_OFFSET', 'SKIP_NEXT',
+    'DRAW_TEXT', 'BLIT', 'PATTERN_FILL', 'TILEMAP', 'PATTERN_BUCKET_FILL', 'TRIANGLE', 'FILL_TRIANGLE',
+    'CROP_BLIT', 'STRETCH_BLIT', 'SET_CLIP_RECT', 'DRAW_MESH_WIREFRAME', 'DRAW_MESH_FILLED', 'DRAW_MESH_FWE',
+    '7Dh', 'RESERVED', 'RET'];
+  const FX_CMDS = { 0x50: 'SET_ENGINE_MODE', 0x51: 'SET_FPS', 0x52: 'SET_RENDER_OVERRUN_VISUAL',
+    0x53: 'CLEAR_RENDER_OVERRUN', 0x54: 'SET_RASTER_INT1', 0x55: 'SET_RASTER_INT2', 0x56: 'SET_RASTER_INT3',
+    0x57: 'SET_RASTER_INT4', 0x58: 'CLEAR_RASTER_INT', 0x5B: 'DEFINE_FONT', 0x5C: 'DEFINE_BITMAP',
+    0x5D: 'DEFINE_PATTERN', 0x5E: 'DEFINE_TILESET', 0x5F: 'DEFINE_TILEMAP', 0x80: 'UPLOAD_RAW',
+    0x81: 'UPLOAD_NICK', 0x82: 'UPLOAD_TVC', 0x83: 'UNZX1_RAW', 0x84: 'UNZX1_NICK', 0x85: 'UNZX1_TVC',
+    0x86: 'DEFINE_MESH', 0x87: 'SET_3D_PROJECTION', 0x88: 'SET_CAMERA_POSE', 0x8E: 'SHOW_FW',
+    0x8F: 'SYS_RESET', 0x90: 'SHOW_BUILTIN_LOGO', 0x91: 'HIDE_BUILTIN_LOGO' };
+  const FX_EGGS = ['animált logó', 'sprite benchmark', '2D primitívek', 'szöveg/font', 'BLIT', 'PATTERN_FILL',
+    'TILEMAP', 'Pong', 'WOW Pong', 'Wriggler', 'Boulder', 'ARC/PIE benchmark', 'diagnosztika', 'BLIT benchmark',
+    'két réteg', 'EC időzítés (TVC)', 'CRISP tearing (TVC)', 'koordináta-próba', 'C2 + SET_XY_OFFSET',
+    'Elite hajó', 'alagút (speciális)', 'alagút (3D parancsok)'];
+  function dbgFxCommand(v) {
+    if (v < 0x40) return 'sprite #' + v + ' (SPB írás)';
+    if (v < 0x50) return 'átlátszó szín ' + (v & 15);
+    if ((v & 0x60) === 0x60) return (v & 0x80 ? 'előtér' : 'háttér') + ' 2DPT ' + FX_2DPT[v & 31];
+    if (v >= 0xC0) return 'demó ' + hex(v, 2) + 'h' + (FX_EGGS[v - 0xC0] ? ': ' + FX_EGGS[v - 0xC0] : '');
+    return FX_CMDS[v] || '?';
+  }
+  // the F8h status byte (bits 7..1 are active low on the wire, as the
+  // card's emulation returns them: twodfx_emu_read_f8)
+  function dbgFxStatus(v) {
+    const b = [];
+    if (!(v & 0x80)) b.push('ütközés');
+    b.push(v & 0x40 ? 'nem kész (alszik)' : 'kész');
+    if (!(v & 0x20)) b.push('túlfutás');
+    for (let i = 0; i < 4; i++) if (!(v & (2 << i))) b.push('raszter IRQ ' + (i + 1));
+    return b.join(', ');
+  }
+
+  // the 2dfx commands of the I/O log: the F8h writes with the F9h bytes after them
+  function dbgFxLog() {
+    if (!fxOn) return '';
+    if (!dbgIoLogOn) return '\nParancsnapló: kapcsold be az I/O naplót (I/O napló fül), és a 2dfx parancsai itt jelennek meg.\n';
+    const log = api.dbgIoLog(4096).trim().split('\n').filter(Boolean).map((l) => l.split(' '));
+    const cmds = [];
+    let cur = null;
+    for (const [pc, port, v, w] of log) {
+      if (w !== '1') continue;
+      const p = parseInt(port, 16), b = parseInt(v, 16);
+      if (p === 0xF8) {
+        cur = { pc, cmd: b, data: [] };
+        cmds.push(cur);
+      } else if (p === 0xF9 && cur) cur.data.push(b);
+    }
+    if (!cmds.length) return '\nParancsnapló: még nincs 2dfx parancs az I/O naplóban.\n';
+    return '\nParancsnapló (az utolsó ' + Math.min(100, cmds.length) + ', legújabb elöl):\n' +
+      cmds.slice(-100).reverse().map((c) => c.pc + '  ' + hex(c.cmd, 2) + ' ' + dbgFxCommand(c.cmd) +
+        (c.data.length ? '  ' + c.data.slice(0, 16).map((x) => hex(x, 2)).join(' ') + (c.data.length > 16 ? ' … (' + c.data.length + ' bájt)' : '') : '')).join('\n') + '\n';
+  }
+
   // what writing 'v' to 'port' does (paging, video mode, colours decoded)
   function dbgPortWriteNote(port, v) {
     port &= 0xFF;
+    if (port === 0xF8 && fxOn) return dbgFxCommand(v);
     if (machine && machine.type === 1) {
       const p = port & 0x7F;
       if (p >= 0x60 && p < 0x70) return dbgTvcColour(v);
@@ -4257,6 +4314,7 @@ registerProcessor('ep-output', EPOutput);
   // called when the machine has stopped and the stop is to be shown
   function dbgOnStop() {
     dbgStopped = true;
+    dbgLuaPoll();                       // what the script printed before the stop
     releaseAllKeys();
     if (!dbgOpen) dbgShow(true);
     dbgCursor = -1;
@@ -4485,7 +4543,8 @@ registerProcessor('ep-output', EPOutput);
         $('dbg-iolog').textContent = lines.length ? 'PC    irány port érték\n' + lines.map(([pc, port, v, w]) => {
           const l = dbgLabel(parseInt(pc, 16));
           const pn = dbgPortName(parseInt(port, 16), w === '1');
-          const wn = w === '1' ? dbgPortWriteNote(parseInt(port, 16), parseInt(v, 16)) : '';
+          const wn = w === '1' ? dbgPortWriteNote(parseInt(port, 16), parseInt(v, 16)) :
+                     (parseInt(port, 16) === 0xF8 && fxOn ? dbgFxStatus(parseInt(v, 16)) : '');
           const c = [l, pn, wn].filter(Boolean).join(', ');
           return pc + '  ' + (w === '1' ? 'OUT ' : 'IN  ') + '  ' + port + '   ' + v + (c ? '   ; ' + c : '');
         }).join('\n') : (dbgIoLogOn ? 'még nincs adat' : 'kapcsold be az I/O naplót');
@@ -4496,7 +4555,7 @@ registerProcessor('ep-output', EPOutput);
       case 'sound': $('dbg-sound').textContent = api.dbgSound(); break;
       case 'basic': dbgRenderBasic(); break;
       case 'gfx': dbgRenderGfx(); break;
-      case 'fx': $('dbg-fx').textContent = api.dbg2dfx(); break;
+      case 'fx': $('dbg-fx').textContent = api.dbg2dfx() + dbgFxLog(); break;
       case 'c256': {
         const t = api.dbgCard256();
         $('dbg-c256').textContent = t + (t.startsWith('A TVC256k++') ? '' :
@@ -5307,9 +5366,10 @@ registerProcessor('ep-output', EPOutput);
   }
   // the text printed by the Lua script (mprint, errors)
   function dbgLuaPoll() {
-    if (!api || !api.luaOutput) return;
+    if (!api || !api.luaOutput) return '';
     const t = api.luaOutput();
     if (t) dbgScriptLog(t.replace(/\n$/, ''));
+    return t;
   }
   let dbgScriptLang = 'js';
   try { if (localStorage.getItem('ep128web.dbgScriptLang') === 'lua') dbgScriptLang = 'lua'; } catch (e) { }
@@ -5527,8 +5587,10 @@ ep.log('CTRL+ESC megnyomva');`
         // the Lua scripting of ep128emu: runs the script, its
         // breakPointCallback stays active until Stop
         const r = api.luaRun(code);
-        dbgLuaPoll();
-        dbgScriptLog(r === 1 ? '(breakPointCallback aktív)' : r === 0 ? '(kész)' : 'Hiba: ' + lastError());
+        const out = dbgLuaPoll();
+        if (r === 1) dbgScriptLog('(breakPointCallback aktív)');
+        else if (r < 0) dbgScriptLog('Hiba: ' + lastError());
+        else if (!/^Hiba:/m.test(out)) dbgScriptLog('(kész)');
         dbgRenderBps();
         dbgRefresh();
         return;
