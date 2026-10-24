@@ -1,3 +1,5 @@
+diff --git a/src/ep128vm.cpp b/src/ep128vm.cpp
+index 4727ec4..5ef8381 100644
 --- a/src/ep128vm.cpp
 +++ b/src/ep128vm.cpp
 @@ -41,6 +41,7 @@
@@ -8,7 +10,49 @@
  
  // 2dfx card (Ep128web): its raster IRQ is wired-OR with DAVE's interrupt
  static bool twoDfxDaveInt = false;
-@@ -1788,12 +1789,19 @@
+@@ -701,6 +702,7 @@ namespace Ep128 {
+           vm.z80.clearInterrupt();
+       }
+     }
++    WebDebug::videoLine();
+     if (vm.getIsDisplayEnabled())
+       vm.display.drawLine(buf, nBytes);
+     TwoDfx::clearOverlay();
+@@ -713,6 +715,8 @@ namespace Ep128 {
+   {
+     if (newState)
+       TwoDfx::vsync(0);
++    if (newState)
++      WebDebug::videoFrame();
+     if (vm.getIsDisplayEnabled())
+       vm.display.vsyncStateChange(newState, currentSlot_);
+     if (vm.videoCapture)
+@@ -849,6 +853,7 @@ namespace Ep128 {
+         } while (EP128EMU_UNLIKELY(daveCyclesRemaining >= 0L));
+       }
+       cpuCyclesRemaining += cpuCyclesPerNickCycle;
++      WebDebug::epCycleUnits += cpuCyclesPerNickCycle;
+     } while (cpuCyclesRemaining < -cpuCyclesPerNickCycle);
+   }
+ 
+@@ -1655,6 +1660,7 @@ namespace Ep128 {
+       midiSavedStatus(0x00)
+ #endif
+   {
++    WebDebug::epCycleRemaining = &cpuCyclesRemaining;
+ #ifdef ENABLE_SDEXT
+     memory.setSDExtPtr(&sdext);
+ #endif
+@@ -1745,6 +1751,8 @@ namespace Ep128 {
+ 
+   Ep128VM::~Ep128VM()
+   {
++    if (WebDebug::epCycleRemaining == &cpuCyclesRemaining)
++      WebDebug::epCycleRemaining = (int64_t *) 0;
+     if (videoCapture) {
+       delete videoCapture;
+       videoCapture = (Ep128Emu::VideoCapture *) 0;
+@@ -1788,12 +1796,19 @@ namespace Ep128 {
      }
      if (EP128EMU_UNLIKELY(nickCyclesRemainingH < 1))
        return;
@@ -33,11 +77,12 @@
        }
        daveCyclesRemaining += daveCyclesPerNickCycle;
        if (daveCyclesRemaining >= 0L) {
-@@ -1804,8 +1812,15 @@
+@@ -1804,8 +1819,16 @@ namespace Ep128 {
          } while (EP128EMU_UNLIKELY(daveCyclesRemaining >= 0L));
        }
        cpuCyclesRemaining += cpuCyclesPerNickCycle;
 -      while (cpuCyclesRemaining >= 0L)
++      WebDebug::epCycleUnits += cpuCyclesPerNickCycle;
 +    resumeCPU:
 +      while (cpuCyclesRemaining >= 0L) {
 +        if (EP128EMU_UNLIKELY(WebDebug::active) &&
@@ -50,9 +95,11 @@
        nick.runOneSlot();
      } while (EP128EMU_EXPECT(--nickCyclesRemainingH > 0));
    }
+diff --git a/src/tvc64vm.cpp b/src/tvc64vm.cpp
+index 12e54e4..75eb9c2 100644
 --- a/src/tvc64vm.cpp
 +++ b/src/tvc64vm.cpp
-@@ -74,6 +74,7 @@
+@@ -74,6 +74,7 @@ static const uint16_t audioOutputLevelTable[16] = {
  };
  
  #include "twodfx_bridge.hpp"
@@ -60,7 +107,38 @@
  
  // 2dfx card (Ep128web) on ports F8h, F9h
  static uint8_t twoDfxPortReadCallback(void *userData, uint16_t addr)
-@@ -1543,6 +1544,10 @@
+@@ -99,11 +100,13 @@ namespace TVC64 {
+ 
+   EP128EMU_INLINE void TVC64VM::updateCPUCycles(int cycles)
+   {
++    WebDebug::halfCycles += uint64_t(cycles << 1);
+     z80HalfCycleCnt = uint8_t((z80HalfCycleCnt + (cycles << 1)) & 0xFF);
+   }
+ 
+   EP128EMU_INLINE void TVC64VM::updateCPUHalfCycles(int halfCycles)
+   {
++    WebDebug::halfCycles += uint64_t(halfCycles);
+     z80HalfCycleCnt = uint8_t((z80HalfCycleCnt + halfCycles) & 0xFF);
+   }
+ 
+@@ -710,6 +713,7 @@ namespace TVC64 {
+       // lines 24..263) is raw X 126..637, Y 49..288, as in the firmware
+       TwoDfx::line(twoDfxTVCPalette, -2,
+                    paperStartPos * 8, paperEndPos * 8, (videoMode ? 2 : 1));
++    WebDebug::videoLine();
+     if (vm.getIsDisplayEnabled())
+       vm.display.drawLine(buf, nBytes);
+     TVC256kpp::clearOverlay();
+@@ -725,6 +729,8 @@ namespace TVC64 {
+       vm.card256->videoVSync();
+     if (newState)
+       TwoDfx::vsync(4);
++    if (newState)
++      WebDebug::videoFrame();
+     if (vm.getIsDisplayEnabled())
+       vm.display.vsyncStateChange(newState, currentSlot_);
+     if (vm.videoCapture)
+@@ -1543,6 +1549,10 @@ namespace TVC64 {
      crtcCyclesRemainingH = int32_t(crtcCyclesRemaining >> 32);
      z80.triggerInterrupt();
      while (EP128EMU_EXPECT(crtcCyclesRemainingH > 0)) {

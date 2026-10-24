@@ -96,6 +96,7 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
 **Regiszterek**
 - Megállítva szerkeszthetők (hex, Enter); a PC módosítása azonnal érvényes. A legutóbbi megállás óta változottak pirosak.
 - Alattuk a jelzőbitek, a 4 lap szegmense névvel és a verem teteje.
+- Időzítés: az aktuális képsor (a függőleges szinkrontól), a képkocka, a Z80 ciklusszámláló (T-ciklusok várakozással); az előző megállás óta eltelt idő T-ben, µs-ban és képsorban (pl. egy átlépett rutin ideje); stopper nullázó gombbal.
 - Szegmensnevek: TVC-n SYS, CART, EXT, SDEXT, U0–U3, VID0–VID3. Enterprise-on a ROM-ok neve (EXOS0, BASIC, EXDOS0…), RAM, VID (FC–FE) és SYS (FF, az EXOS rendszerszegmense, egyben videó-RAM).
 
 **Disassembly**
@@ -120,7 +121,7 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
 - A változott bájtok pirosak, dupla kattintással felülírhatók.
 
 **Töréspontok**
-- Fajták: végrehajtás, memória-olvasás/-írás, port-IN/-OUT.
+- Fajták: végrehajtás, memória-olvasás/-írás, port-IN/-OUT, raszter (megáll a megadott képsor elején; a sor decimálisan, a függőleges szinkrontól számolva; egyszerre egy).
 - Végrehajtási töréspontnál a gép az utasítás előtt áll meg, figyelésnél a hozzáférő utasítás után. A panel kiírja a címet és az értéket.
 - Feltétel: JavaScript-kifejezés, pl. `A == 3 && HL > 0x4000`, `VALUE == 0xA8`, `mem(0x1234) == 0`, `HITS == 10`. Hamis feltételnél a gép azonnal fut tovább.
 - A töréspontok találatszámot mutatnak, ki-be kapcsolhatók, és a böngésző megjegyzi őket.
@@ -129,6 +130,10 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
 
 | Fül | Tartalom |
 |---|---|
+| Figyelő | Címek (a bájt és a szó, a cím nevével), címkék és kifejezések (`HL`, `mem16(0x1722)`, `A & 0x0F`) élő értéke; a változások az előző megálláshoz képest kiemelve. A böngésző megjegyzi a listát. |
+| Hívások | Valószínű hívási lánc: a veremben lévő visszatérési címek, amelyek előtt CALL, RST vagy rendszerhívás áll, a cél nevével. |
+| Nyomkövetés | Az utolsó 65536 utasítás a regiszterekkel (AF BC DE HL IX IY SP, az utasítás előtt); mentés szövegfájlba disassemblyvel. Két futás így összevethető. |
+| Forrás | Assembler listafájl betöltése (sjasmplus `--lst`, pasmo, tniASM: sorszám, cím, bájtok, forrássor): a disassemblyben a forrássor is látszik, a fülön a lista a PC-nél, kattintásra töréspont. |
 | Monitor | Az ep128emu monitorának parancsai, `?` a súgó. `A`/`.` assembler, `D` disassembly, `M` dump (a `D` és az `M` fájlba is: `D 0000 0100 "lista.txt"`), `>` írás, `F` feltöltés, `C` összehasonlítás, `H` keresés, `SR` keresés és csere, `T` másolás, `R`/`;`/`;;` regiszterek, `G`/`X`/`Z`/`Y` futtatás, `IO`/`O` portok, `L`/`S`/`V` fájlbetöltés, -mentés és -összevetés, `I` állapot. |
 | Előzmények | Az utolsó 16384 lefutott utasítás címe, a legutóbbi 64 disassemblyvel. |
 | Profiler | Címenkénti utasításszámláló, a 40 leggyakoribb címmel. |

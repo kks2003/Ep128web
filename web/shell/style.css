@@ -479,3 +479,8 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 #dbg-basic div.pc { background: color-mix(in srgb, var(--accent) 25%, transparent); }
 #dbg-basic div.small { cursor: default; color: var(--muted); }
 #dbg-gfx-canvas { image-rendering: pixelated; display: block; margin-top: 4px; background: #000; cursor: crosshair; max-width: 100%; }
+#dbg-dis span.src { color: var(--accent); }
+#dbg-src div.pc { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+#dbg-src div.bp::before { content: '● '; color: #d00; }
+#dbg-watch-list .chg { color: var(--accent); font-weight: 700; }
+#dbg-sw-reset { margin-top: 2px; font-size: 10px; }

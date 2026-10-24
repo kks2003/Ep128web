@@ -2,6 +2,7 @@
 
 #include "webdebug.hpp"
 #include "vm.hpp"
+#include "z80.hpp"
 
 #include <cstring>
 #include <vector>
@@ -38,6 +39,18 @@ namespace WebDebug {
   static IOLogEntry ioLog[ioLogSize];
   static uint32_t ioLogPos = 0, ioLogCount = 0;
   static bool     ioLogOn = false;
+  // cycles, video lines, raster breakpoint
+  uint64_t halfCycles = 0;
+  int64_t  epCycleUnits = 0;
+  int64_t  *epCycleRemaining = 0;
+  static int      vLine = 0;
+  static uint32_t vFrame = 0;
+  static int      rasterLine = -1;
+  // trace
+  static const int  traceSize = 65536;
+  static std::vector< uint16_t >  trace;
+  static uint32_t tracePos = 0, traceCount = 0;
+  static bool     traceOn = false;
   // script breakpoints
   bool (*scriptCallback)(int type, uint16_t addr, uint8_t value) = 0;
   static Ep128Emu::VirtualMachine *vmp = 0;
@@ -52,7 +65,7 @@ namespace WebDebug {
   static void updateActive()
   {
     active = (reason != RUNNING || bpCount > 0 || scrExecCount > 0 || pending != RUNNING ||
-              skipOnce || stepInto || tempBreak >= 0 || histOn || profOn);
+              skipOnce || stepInto || tempBreak >= 0 || histOn || profOn || traceOn);
   }
 
   static bool stopAt(uint16_t pc, int why, uint16_t addr, uint8_t value)
@@ -84,6 +97,22 @@ namespace WebDebug {
     }
     if (profOn)
       prof[pc]++;
+    if (traceOn && vmp) {
+      const Ep128::Z80_REGISTERS& r =
+          static_cast< const Ep128Emu::VirtualMachine * >(vmp)->getZ80Registers();
+      uint16_t  *e = &(trace[size_t(tracePos) * 8U]);
+      e[0] = pc;
+      e[1] = uint16_t(r.AF.W);
+      e[2] = uint16_t(r.BC.W);
+      e[3] = uint16_t(r.DE.W);
+      e[4] = uint16_t(r.HL.W);
+      e[5] = uint16_t(r.IX.W);
+      e[6] = uint16_t(r.IY.W);
+      e[7] = uint16_t(r.SP.W);
+      tracePos = (tracePos + 1) & (traceSize - 1);
+      if (traceCount < uint32_t(traceSize))
+        traceCount++;
+    }
     return false;
   }
 
@@ -246,6 +275,76 @@ namespace WebDebug {
     std::memset(memW, 0, sizeof(memW));
     std::memset(ioR, 0, sizeof(ioR));
     std::memset(ioW, 0, sizeof(ioW));
+  }
+
+  uint64_t getCycles()
+  {
+    if (epCycleRemaining)
+      return uint64_t((epCycleUnits - *epCycleRemaining) >> 32);
+    return halfCycles >> 1;
+  }
+
+  void videoLine()
+  {
+    vLine++;
+    if (vLine == rasterLine && reason == RUNNING && pending == RUNNING) {
+      pending = RASTER;
+      pendingAddr = uint16_t(vLine);
+      pendingValue = 0;
+      updateActive();
+    }
+  }
+
+  void videoFrame()
+  {
+    vLine = 0;
+    vFrame++;
+    if (rasterLine == 0 && reason == RUNNING && pending == RUNNING) {
+      pending = RASTER;
+      pendingAddr = 0;
+      pendingValue = 0;
+      updateActive();
+    }
+  }
+
+  int videoLineNumber()
+  {
+    return vLine;
+  }
+
+  uint32_t videoFrameNumber()
+  {
+    return vFrame;
+  }
+
+  void setRasterBreak(int n)
+  {
+    rasterLine = n;
+  }
+
+  void enableTrace(bool on)
+  {
+    if (on && trace.size() != size_t(traceSize) * 8U)
+      trace.assign(size_t(traceSize) * 8U, 0);
+    if (on && !traceOn) {
+      tracePos = 0;
+      traceCount = 0;
+    }
+    traceOn = on;
+    updateActive();
+  }
+
+  int getTrace(uint16_t *buf, int n)
+  {
+    if (n > int(traceCount))
+      n = int(traceCount);
+    for (int i = 0; i < n; i++) {
+      const uint16_t  *e =
+          &(trace[size_t((tracePos - uint32_t(n) + uint32_t(i)) & (traceSize - 1)) * 8U]);
+      for (int j = 0; j < 8; j++)
+        buf[i * 8 + j] = e[j];
+    }
+    return n;
   }
 
   void setVM(void *vm)

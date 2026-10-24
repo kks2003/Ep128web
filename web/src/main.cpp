@@ -1332,6 +1332,51 @@ EMSCRIPTEN_KEEPALIVE const char *ep_lua_output()
   return s.c_str();
 }
 
+// CPU cycles (T-states, with wait states) since power on
+EMSCRIPTEN_KEEPALIVE double ep_dbg_cycles()
+{
+  return double(WebDebug::getCycles());
+}
+
+// the video line counted from the vertical sync, and the frame number
+EMSCRIPTEN_KEEPALIVE int ep_dbg_video_line()
+{
+  return WebDebug::videoLineNumber();
+}
+
+EMSCRIPTEN_KEEPALIVE double ep_dbg_video_frame()
+{
+  return double(WebDebug::videoFrameNumber());
+}
+
+// raster breakpoint at video line 'n' (-1: off)
+EMSCRIPTEN_KEEPALIVE void ep_dbg_raster(int n)
+{
+  WebDebug::setRasterBreak(n);
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_trace_enable(int on)
+{
+  WebDebug::enableTrace(on != 0);
+}
+
+// the last 'n' trace entries (8 words each: PC AF BC DE HL IX IY SP) into
+// the buffer returned by ep_dbg_trace_buf(); returns their number
+static std::vector< uint16_t >  traceBuf;
+
+EMSCRIPTEN_KEEPALIVE int ep_dbg_trace(int n)
+{
+  if (n < 0)
+    n = 0;
+  traceBuf.resize(size_t(n) * 8U + 8U);
+  return WebDebug::getTrace(&(traceBuf[0]), n);
+}
+
+EMSCRIPTEN_KEEPALIVE const uint16_t *ep_dbg_trace_buf()
+{
+  return &(traceBuf[0]);
+}
+
 EMSCRIPTEN_KEEPALIVE void ep_dbg_iolog_enable(int on)
 {
   WebDebug::enableIOLog(on != 0);

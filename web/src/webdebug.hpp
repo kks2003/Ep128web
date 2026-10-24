@@ -27,7 +27,8 @@ namespace WebDebug {
     MEM_READ = 4,               // watchpoints
     MEM_WRITE = 5,
     IO_READ = 6,
-    IO_WRITE = 7
+    IO_WRITE = 7,
+    RASTER = 8                  // raster breakpoint (video line)
   };
 
   // something to check at instruction boundaries
@@ -71,6 +72,28 @@ namespace WebDebug {
   bool profilerEnabled();
   void clearProfiler();
   const uint32_t *profilerCounts();     // 65536 counters
+
+  // CPU cycles (T-states with the wait states), counted by the VMs
+  // (patches/zzzzz-webdebug.patch): the TVC adds its half cycles; the
+  // Enterprise adds the cycles given to the CPU (2^-32 units), of which
+  // *epCycleRemaining are not used yet
+  extern uint64_t halfCycles;
+  extern int64_t  epCycleUnits;
+  extern int64_t  *epCycleRemaining;
+  uint64_t getCycles();
+  // video lines: called by the VMs for each line and at the vertical sync
+  void videoLine();
+  void videoFrame();
+  // the current line counted from the vertical sync, frames so far
+  int videoLineNumber();
+  uint32_t videoFrameNumber();
+  // raster breakpoint: stop at the start of video line 'n' (-1: none)
+  void setRasterBreak(int n);
+
+  // trace: the registers before each instruction (PC AF BC DE HL IX IY SP,
+  // 8 words per entry), the last 'n' (oldest first) into 'buf'
+  void enableTrace(bool on);
+  int getTrace(uint16_t *buf, int n);
 
   // debugger scripts (the Lua scripts of ep128emu, web/src/webscript.cpp)
   // the breakpoint callback of the running script (type: 0 execution,
