@@ -243,8 +243,19 @@
     <div class="dbg-box dbg-tab" data-pane="script" hidden>
       <textarea id="dbg-script" class="dbg-mono" rows="9" spellcheck="false" placeholder="// JavaScript az ep objektummal, pl.:
 // ep.onBreak(info => { ep.log(ep.hex(ep.regs().HL, 4)); return true; })  // true: fut tovább
-// ep.bp(0x0038)   ep.watch('w', 0xBFF0)   ep.poke(0x4000, 0xC9)   ep.step()"></textarea>
-      <div class="dbg-tool"><button id="dbg-script-run">Futtatás</button><button id="dbg-script-stop">onBreak kikapcsolása</button>
+// ep.bp(0x0038)   ep.watch('w', 0xBFF0)   ep.poke(0x4000, 0xC9)   ep.step()
+// await ep.type('LIST\n');  await ep.wait(1000);  ep.onFrame(() => ep.poke(0x1234, 5))"></textarea>
+      <div class="dbg-tool"><button id="dbg-script-run">Futtatás</button><button id="dbg-script-stop" title="onBreak, onFrame és a várakozások leállítása">Leállítás</button>
+        <select id="dbg-script-example" title="Példaszkriptek">
+          <option value="">Példák…</option>
+          <option value="calls">Rendszerhívások naplózása</option>
+          <option value="type">Gépelés és várakozás</option>
+          <option value="watch">Memóriaírások naplózása</option>
+          <option value="cheat">Érték rögzítése (végtelen élet)</option>
+          <option value="until">Futás egy feltételig</option>
+        </select>
+        <button id="dbg-script-load" title="Szkript betöltése fájlból">Megnyitás</button><button id="dbg-script-save" title="Szkript mentése fájlba">Mentés</button>
+        <input type="file" id="dbg-script-file" accept=".js,.txt,text/*" hidden>
         <span class="small">Az <code>ep</code> objektum a böngésző konzolából is elérhető (<code>window.ep</code>).</span></div>
       <div id="dbg-script-out" class="dbg-mono"></div>
     </div>

@@ -111,6 +111,8 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
   - CALL/JP másik lapra: a cél szegmense.
 - Rendszerhívás átlépése (F10) után a megállási üzenet kiírja az A-ban visszaadott eredményt, TVC-n a hibakód jelentésével (pl. `F5 STOP`, `EA CRC hiba`).
 - A TVC funkciók, rendszerváltozók és hibakódok forrása a „TV-Computer Operációs rendszer” kézikönyv ([tvcdoc](https://github.com/kks2003/tvcdoc)).
+- További kibontott portírások: TVC keretszín és paletta (színnévvel), CRTC regiszterválasztás (a 6845 regiszter neve), hangport 05; EP keretszín, billentyűsor.
+- A memórianézetben (CPU-cím) az ismert címek pontozottan aláhúzottak; az egér alatt a cím neve, lapja és értéke látszik.
 - Ugyanezek a megjegyzések a monitor `D` parancsában, az előzményekben, az I/O naplóban és a megállási üzenetben is megjelennek.
 
 **Memória**
@@ -138,7 +140,16 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
 | TVC256k++ | Port, lapozás, PSRAM, firmware, meghajtó, USB és a 256 regiszter. A PSRAM a memórianézetben látható. |
 | Kereső | Memóriaérték-kereső („cheat finder”): pillanatkép, majd szűrés (= érték, változott, nőtt, eggyel csökkent…). Egy jelöltre kattintva írásfigyelés kerül rá. |
 | Szimbólumok | Címkék betöltése (sjasmplus, pasmo, tniASM: `címke EQU 1234h`, `címke = $1234`, `1234 címke`). A disassemblyben, a címmezőkben és a monitorban is használhatók. |
-| Szkript | JavaScript a `ep` objektummal, a böngésző konzolából is (`window.ep`): `regs`, `setReg`, `peek`/`poke`, `read`, `out`, `disasm`, `assemble`, `bp`, `watch`, `step`, `cont`, `runTo`, `monitor`, `onBreak(fn)`. Az `onBreak` `true` értékkel visszatérve továbbengedi a gépet. |
+| Szkript | JavaScript az `ep` objektummal, a böngésző konzolából is (`window.ep`). Lásd lent. |
+
+**Szkript**
+- Gép: `regs`, `setReg`, `peek`/`peek16`/`poke`, `read`, `out`, `disasm`, `assemble`, `reset`, `time`.
+- Töréspontok és futás: `bp`, `watch`, `clearBps`, `pause`, `step`, `stepOver`, `cont`, `runTo`, `monitor`.
+- `onBreak(fn)`: minden megálláskor fut; `true` visszatérési értékkel továbbengedi a gépet (naplózás megállás nélkül).
+- `onFrame(fn)`: minden képkocka után fut, pl. érték rögzítése (`ep.onFrame(() => ep.poke(cím, 5))`).
+- Várakozás (`await`): `ep.type('LIST\n')` gépel, `ep.wait(ms)` emulált időt vár, `ep.until(() => feltétel)` a feltételig fut.
+- Nevek: `callName(kód)`, `addrName(cím)`, `portName(port)`.
+- Példák a legördülő listában (rendszerhívások naplózása, gépelés, memóriaírások naplózása, végtelen élet, futás feltételig). A szkript fájlba menthető és onnan betölthető; a Leállítás gomb az onBreak-et, az onFrame-et és a várakozásokat is leállítja.
 
 **Működés:** a böngészőben minden egy szálon fut, ezért a gép az utasításhatárokon áll meg (`web/src/webdebug.cpp`, `patches/zzzzz-webdebug.patch`). Töréspontok, előzmények és profiler nélkül ez nem lassítja az emulációt.
 
