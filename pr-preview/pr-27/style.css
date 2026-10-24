@@ -474,3 +474,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 #dbg-lpt th { color: var(--muted); }
 #dbg-lpt tr.cur { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 #dbg-lpt i { display: inline-block; width: 10px; height: 10px; border: 1px solid var(--border); vertical-align: -1px; }
+#dbg-basic div { cursor: pointer; }
+#dbg-basic div:hover { background: var(--button-hover); }
+#dbg-basic div.pc { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+#dbg-basic div.small { cursor: default; color: var(--muted); }
