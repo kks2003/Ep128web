@@ -3211,6 +3211,164 @@ registerProcessor('ep-output', EPOutput);
     $('btn-turbo').classList.toggle('on', turbo);
   }
 
+  // --- speed ---
+  let speed = 1;
+  function setupSpeed() {
+    const sel = $('speed');
+    try { const v = Number(localStorage.getItem('ep128web.speed')); if ([0.25, 0.5, 1, 2, 4].includes(v)) speed = v; } catch (e) { }
+    sel.value = String(speed);
+    sel.onchange = () => {
+      speed = Number(sel.value);
+      try { localStorage.setItem('ep128web.speed', String(speed)); } catch (e) { }
+      sel.classList.toggle('on', speed !== 1);
+      canvas.focus({ preventScroll: true });
+    };
+    sel.classList.toggle('on', speed !== 1);
+  }
+
+  // --- quick saves: 4 slots with a picture (IndexedDB 'qs:n') ---
+  const QS_SLOTS = 4;
+  const quickSaves = new Array(QS_SLOTS).fill(null);   // { machine, slots, time, bytes, pic }
+  function qsPicture() {
+    const c = document.createElement('canvas');
+    c.width = 160; c.height = 120;
+    const x = c.getContext('2d');
+    x.imageSmoothingEnabled = true;
+    x.drawImage(canvas, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.8);
+  }
+  function qsSave(i) {
+    if (!ready) return;
+    check(api.saveSnapshot('/tmp/qs.ep128s'), 'mentés');
+    quickSaves[i] = { machine: machine.id, slots: tvcSlots.slice(), fx: fxOn, time: Date.now(),
+                      bytes: M.FS.readFile('/tmp/qs.ep128s'), pic: qsPicture() };
+    db.put('qs:' + i, quickSaves[i]);
+    renderQuickSaves();
+    setMessage((i + 1) + '. gyorsmentés kész');
+  }
+  // the machine of a saved state (and the TVC cards), then the state
+  function loadSavedState(st) {
+    const m = MACHINES.find((x) => x.id === st.machine);
+    if (!m) throw new Error('ismeretlen gép: ' + st.machine);
+    const slotsDiffer = m.type === 1 && st.slots && st.slots.join() !== tvcSlots.join();
+    if (m.id !== machine.id || slotsDiffer) {
+      if (slotsDiffer) {
+        tvcSlots = st.slots.slice();
+        try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots)); } catch (e) { }
+        refreshTvcSlotsUI();
+      }
+      autoTask = null;
+      applyMachine(m);
+      $('machine').value = m.id;
+    }
+    M.FS.writeFile('/tmp/qs.ep128s', st.bytes);
+    check(api.loadSnapshot('/tmp/qs.ep128s'), 'pillanatkép');
+    releaseAllKeys();
+  }
+  function qsLoad(i) {
+    const st = quickSaves[i];
+    if (!st || !ready) return;
+    try {
+      loadSavedState(st);
+      rewindClear();
+      setMessage((i + 1) + '. gyorsmentés betöltve');
+    } catch (e) {
+      setMessage('A betöltés nem sikerült: ' + (e.message || e), true);
+    }
+    canvas.focus({ preventScroll: true });
+  }
+  function renderQuickSaves() {
+    const box = $('qs-slots');
+    box.textContent = '';
+    quickSaves.forEach((st, i) => {
+      const d = document.createElement('div');
+      d.className = 'qs-slot';
+      let pic;
+      if (st) {
+        pic = document.createElement('img');
+        pic.src = st.pic;
+        pic.alt = '';
+        pic.title = 'Betöltés';
+        pic.onclick = () => qsLoad(i);
+      } else {
+        pic = document.createElement('div');
+        pic.className = 'qs-empty';
+        pic.textContent = 'üres';
+      }
+      const lab = document.createElement('div');
+      lab.className = 'qs-label';
+      const m = st && MACHINES.find((x) => x.id === st.machine);
+      lab.textContent = (i + 1) + '. ' + (st ? new Date(st.time).toLocaleString('hu-HU', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) + ' · ' + (m ? m.name.split(' · ')[0] : st.machine) : '');
+      lab.title = st ? (m ? m.name : st.machine) : '';
+      const btns = document.createElement('div');
+      btns.className = 'qs-btns';
+      const b = (t, title, fn, dis) => { const e = document.createElement('button'); e.textContent = t; e.title = title; e.onclick = () => { fn(); canvas.focus({ preventScroll: true }); }; e.disabled = !!dis; btns.append(e); };
+      b('💾', 'A mostani állapot mentése ide', () => {
+        if (st && !window.confirm((i + 1) + '. hely felülírása?')) return;
+        qsSave(i);
+      });
+      b('▶', 'Ennek az állapotnak a betöltése', () => qsLoad(i), !st);
+      b('✕', 'Törlés', () => { quickSaves[i] = null; db.del('qs:' + i); renderQuickSaves(); }, !st);
+      d.append(pic, lab, btns);
+      box.append(d);
+    });
+  }
+
+  // --- rewind: a snapshot each second of the last ~30 s ---
+  const RW_MAX = 32, RW_MAX_BYTES = 96 << 20;
+  let rwOn = false, rwBuf = [], rwBytes = 0, rwAcc = 0;
+  function rewindClear() {
+    rwBuf = [];
+    rwBytes = 0;
+    rwAcc = 0;
+    rewindNote();
+  }
+  function rewindNote() {
+    $('rw-note').textContent = rwOn ? (rwBuf.length ? rwBuf.length + ' mp visszatekerhető' : '') : '';
+    $('rw-back').disabled = !rwOn || rwBuf.length < 2;
+  }
+  function rewindTick(us) {
+    if (!rwOn || paused || dbgStopped) return;
+    rwAcc += us;
+    if (rwAcc < 1e6) return;
+    rwAcc = 0;
+    if (api.saveSnapshot('/tmp/rw.ep128s') !== 0) return;
+    const bytes = M.FS.readFile('/tmp/rw.ep128s');
+    rwBuf.push({ machine: machine.id, slots: tvcSlots.slice(), bytes });
+    rwBytes += bytes.length;
+    while (rwBuf.length > RW_MAX || (rwBytes > RW_MAX_BYTES && rwBuf.length > 1)) rwBytes -= rwBuf.shift().bytes.length;
+    rewindNote();
+  }
+  function rewindBack() {
+    if (rwBuf.length < 2) return;
+    const idx = Math.max(0, rwBuf.length - 1 - 5);
+    const st = rwBuf[idx];
+    while (rwBuf.length > idx + 1) rwBytes -= rwBuf.pop().bytes.length;
+    try {
+      loadSavedState(st);
+    } catch (e) {
+      setMessage('A visszatekerés nem sikerült: ' + (e.message || e), true);
+      rewindClear();
+      return;
+    }
+    rwAcc = 0;
+    rewindNote();
+    canvas.focus({ preventScroll: true });
+  }
+  function setupQuickSaves() {
+    renderQuickSaves();
+    try { rwOn = localStorage.getItem('ep128web.rewind') === '1'; } catch (e) { }
+    $('rw-on').checked = rwOn;
+    $('rw-on').onchange = (e) => {
+      rwOn = e.target.checked;
+      try { localStorage.setItem('ep128web.rewind', rwOn ? '1' : '0'); } catch (er) { }
+      if (!rwOn) rewindClear();
+      rewindNote();
+    };
+    $('rw-back').onclick = rewindBack;
+    rewindNote();
+  }
+
   // ========== CATALOG SECTION ==========
   const catalogState = {
     items: [],
@@ -3658,6 +3816,8 @@ registerProcessor('ep-output', EPOutput);
     setup2dfx();
     setupDebugger();
     setupDiskManager();
+    setupSpeed();
+    setupQuickSaves();
 
     const wrap = $('screen-wrap');
     wrap.addEventListener('dragover', (e) => { e.preventDefault(); wrap.classList.add('drag'); });
@@ -6471,7 +6631,9 @@ ep.log('CTRL+ESC megnyomva');`
     pollGamepads();
 
     let us = dt * 1000;
-    if (audioRunning && !turbo) {
+    if (speed !== 1 && !turbo) {
+      us *= speed;                      // the sound is off at other speeds
+    } else if (audioRunning && !turbo) {
       // keep about 60 ms of audio buffered. The speed is only nudged (at most
       // 0.5 %, from a smoothed buffer level): bigger steps change the pitch
       // audibly, like a dragging tape. Only an almost empty buffer (e.g.
@@ -6504,6 +6666,7 @@ ep.log('CTRL+ESC megnyomva');`
         } while (performance.now() - t0 < 14 && !api.dbgState());
       } else {
         check(api.run(us), 'emuláció');
+        if (speed !== 1) api.audioClear();
       }
     } catch (e) {
       // a WebAssembly error stops the emulator for good: say so
@@ -6517,6 +6680,7 @@ ep.log('CTRL+ESC megnyomva');`
     }
     emulatedUs += us;
     tvcDefDevTick();
+    rewindTick(us);
     dbgFrameTick(us);
     dbgHandleStops();
     if (!dbgStopped) dbgScriptFrame(us);
@@ -6705,6 +6869,7 @@ ep.log('CTRL+ESC megnyomva');`
         else if (key.startsWith('rom:')) M.FS.writeFile('/roms/' + key.slice(4), value);
         else if (key === 'usbfiles') usbSaved = value;
         else if (key.startsWith('disk:')) restoreDisk(key, value);
+        else if (key.startsWith('qs:') && +key.slice(3) < QS_SLOTS) quickSaves[+key.slice(3)] = value;
         else if (key === 'cardflash') {
           try { M.FS.mkdir('/card'); } catch (e) { }
           M.FS.writeFile('/card/flash.bin', value);
@@ -6712,6 +6877,7 @@ ep.log('CTRL+ESC megnyomva');`
         }
       } catch (e) { console.warn(e); }
     }
+    renderQuickSaves();
     if (!fileExists('/roms/exos21.rom')) {
       const romUrls = [
         'https://tvc.homeserver.hu/dl.php?file=ep128emu_roms-2.0.11.bin',

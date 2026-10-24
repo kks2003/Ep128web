@@ -35,6 +35,18 @@ letöltését külön kell betölteni.
 | `.ep128s` / `.ep128d` | ep128emu pillanatkép / demó |
 | `.bin` (ROM-csomag), `.rom` | ROM-ok telepítése |
 
+### Gyorsmentés, visszatekerés, sebesség
+
+- **Gyorsmentés**: 4 hely, mindegyik egy kis képpel. 💾 elmenti a gép mostani
+  állapotát, ▶ (vagy a képre kattintás) visszatölti, ✕ törli. A mentések a
+  böngészőben maradnak (IndexedDB). Ha a mentés másik gépen (vagy TVC-n más
+  bővítőkártyákkal) készült, betöltéskor átvált arra.
+- **Visszatekerés**: bekapcsolva másodpercenként pillanatképet tesz el az utolsó
+  ~30 másodpercről; a „⏪ 5 mp” gomb 5 másodpercet ugrik vissza (többször is
+  megnyomható). A beállítást az oldal megjegyzi.
+- **Sebesség**: a Turbó gomb melletti választóval 25%–400%. 100%-tól eltérő
+  sebességen nincs hang.
+
 ### Lemezmeghajtók (A:, B:)
 
 Mindkét meghajtónak 3 helye van, egymás alatt. Egy hely sora:

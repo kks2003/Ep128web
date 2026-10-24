@@ -20,6 +20,10 @@
     <button id="btn-pause" title="Szünet (Pause)">Szünet</button>
     <button id="btn-debug" title="Debugger: regiszterek, disassembly, memória, töréspontok">🐞 Debugger</button>
     <button id="btn-turbo" title="Gyorsítás (F12)">Turbó</button>
+    <select id="speed" title="Sebesség (a hang csak 100%-on szól)" aria-label="Sebesség">
+      <option value="0.25">25%</option><option value="0.5">50%</option><option value="1" selected>100%</option>
+      <option value="2">200%</option><option value="4">400%</option>
+    </select>
     <label class="file">Fájl betöltése…
       <input type="file" id="file-any" multiple>
     </label>
@@ -353,6 +357,15 @@
   </section>
 
   <section id="media">
+    <div class="group" id="qs-group">
+      <h3>Gyorsmentés</h3>
+      <div id="qs-slots"></div>
+      <div class="qs-rw">
+        <label title="Az utolsó ~30 másodperc megőrzése másodpercenként egy pillanatképben"><input type="checkbox" id="rw-on"> Visszatekerés</label>
+        <button id="rw-back" title="Vissza 5 másodpercet (többször is nyomható)">⏪ 5 mp</button>
+        <span class="name" id="rw-note"></span>
+      </div>
+    </div>
     <div class="group">
       <h3>Magnó</h3>
       <span id="tape-name" class="name">nincs kazetta</span>
