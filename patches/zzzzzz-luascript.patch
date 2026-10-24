@@ -1,0 +1,53 @@
+diff --git a/src/script.cpp b/src/script.cpp
+index 9519511..903f901 100644
+--- a/src/script.cpp
++++ b/src/script.cpp
+@@ -236,7 +236,7 @@ namespace Ep128Emu {
+       BreakPoint  bp(ioFlag, addr22BitFlag, bool(bpType & 1), bool(bpType & 2),
+                      bool(bpType & 4), bool(bpType & 16),
+                      bpSegment, uint16_t(bpAddr), bpPriority);
+-      this_.vm.setBreakPoint(bp, (bpPriority >= 0));
++      this_.scriptSetBreakPoint(bp, (bpPriority >= 0));
+     }
+     catch (std::exception& e) {
+       this_.luaError(e.what());
+@@ -254,7 +254,7 @@ namespace Ep128Emu {
+       this_.luaError("invalid number of arguments for clearBreakPoints()");
+       return 0;
+     }
+-    this_.vm.clearBreakPoints();
++    this_.scriptClearBreakPoints();
+     return 0;
+   }
+ 
+@@ -1703,6 +1703,16 @@ namespace Ep128Emu {
+ #endif  // HAVE_LUA_H
+   }
+ 
++  void LuaScript::scriptSetBreakPoint(const BreakPoint& bp, bool isEnabled)
++  {
++    vm.setBreakPoint(bp, isEnabled);
++  }
++
++  void LuaScript::scriptClearBreakPoints()
++  {
++    vm.clearBreakPoints();
++  }
++
+   void LuaScript::errorCallback(const char *msg)
+   {
+     if (msg == (char *) 0 || msg[0] == '\0')
+diff --git a/src/script.hpp b/src/script.hpp
+index b9e2ab2..9aa9665 100644
+--- a/src/script.hpp
++++ b/src/script.hpp
+@@ -145,6 +145,9 @@ namespace Ep128Emu {
+     }
+     virtual void errorCallback(const char *msg);
+     virtual void messageCallback(const char *msg);
++    // Ep128web: setBreakPoint() and clearBreakPoints() of the scripts
++    virtual void scriptSetBreakPoint(const BreakPoint& bp, bool isEnabled);
++    virtual void scriptClearBreakPoints();
+   };
+ 
+ }       // namespace Ep128Emu

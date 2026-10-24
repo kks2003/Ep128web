@@ -23,6 +23,7 @@
 #include "tvc256kpp.hpp"
 #include "twodfx_bridge.hpp"
 #include "webdebug.hpp"
+#include "webscript.hpp"
 #include "bplist.hpp"
 #include "debuglib.hpp"
 extern "C" {
@@ -311,12 +312,17 @@ extern "C" {
 // debugger: memory and I/O watchpoints, set on each new machine
 static Ep128Emu::BreakPointList debugWatchPoints;
 
+// the Lua script of the debugger (made for the current machine)
+static WebLuaScript *luaScript = (WebLuaScript *) 0;
+
 static void applyDebugWatchPoints()
 {
   if (!vm)
     return;
   vm->clearBreakPoints();
   Ep128Emu::BreakPointList  bpl(debugWatchPoints);
+  if (luaScript)
+    luaScript->addBreakPoints(bpl);
   if (WebDebug::ioLogEnabled()) {
     // the I/O log sees the accesses through breakpoints on every port
     for (int i = 0; i < 256; i++)
@@ -347,6 +353,10 @@ EMSCRIPTEN_KEEPALIVE int ep_set_machine_type(int type)
   try {
     if (type == machineType && vm)
       return 0;
+    if (luaScript) {
+      delete luaScript;                 // it belongs to the old machine
+      luaScript = (WebLuaScript *) 0;
+    }
     if (vm) {
       delete vm;
       vm = (Ep128Emu::VirtualMachine *) 0;
@@ -371,6 +381,7 @@ EMSCRIPTEN_KEEPALIVE int ep_set_machine_type(int type)
       vm->setSoundClockFrequency(500000);
     }
     machineType = (type == 1 ? 1 : 0);
+    WebDebug::setVM(vm);
     WebDebug::clearStop();              // a new machine runs
     applyDebugWatchPoints();
     TwoDfx::configure(twoDfxWanted, machineType);
@@ -1231,6 +1242,44 @@ EMSCRIPTEN_KEEPALIVE void ep_dbg_profile_clear()
 EMSCRIPTEN_KEEPALIVE const uint32_t *ep_dbg_profile()
 {
   return WebDebug::profilerCounts();
+}
+
+// Lua debugger script (the scripting of ep128emu): runs 'code'; the text
+// printed is returned by ep_lua_output()
+EMSCRIPTEN_KEEPALIVE int ep_lua_run(const char *code)
+{
+  if (!vm)
+    return -1;
+  try {
+    if (!luaScript) {
+      luaScript = new WebLuaScript(*vm);
+      WebLuaScript::breakPointsChanged = &applyDebugWatchPoints;
+    }
+    luaScript->run(code);
+    return (luaScript->hasCallback() ? 1 : 0);
+  }
+  catch (...) {
+    return handleException();
+  }
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_lua_stop()
+{
+  if (luaScript)
+    luaScript->stop();
+}
+
+// 1: a breakpoint callback is active
+EMSCRIPTEN_KEEPALIVE int ep_lua_active()
+{
+  return (luaScript && luaScript->hasCallback() ? 1 : 0);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *ep_lua_output()
+{
+  static std::string  s;
+  s = (luaScript ? luaScript->takeOutput() : std::string());
+  return s.c_str();
 }
 
 EMSCRIPTEN_KEEPALIVE void ep_dbg_iolog_enable(int on)

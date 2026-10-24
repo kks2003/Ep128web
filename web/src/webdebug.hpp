@@ -72,6 +72,17 @@ namespace WebDebug {
   void clearProfiler();
   const uint32_t *profilerCounts();     // 65536 counters
 
+  // debugger scripts (the Lua scripts of ep128emu, web/src/webscript.cpp)
+  // the breakpoint callback of the running script (type: 0 execution,
+  // 1 / 2 memory read / write, 3 step, 5 / 6 I/O read / write); false: no stop
+  extern bool (*scriptCallback)(int type, uint16_t addr, uint8_t value);
+  // the machine, for reading the opcode passed to the callback
+  void setVM(void *vm);
+  // execution breakpoints (CPU address) and I/O watchpoints of the script
+  void scriptSetExec(uint16_t addr, bool enabled);
+  void scriptSetIO(uint8_t port, bool r, bool w);
+  void scriptClearBreakPoints();
+
   // I/O log: every IN / OUT with the PC (all ports are watched for it)
   struct IOLogEntry {
     uint16_t  pc;

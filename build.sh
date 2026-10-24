@@ -28,6 +28,8 @@ mkdir -p "$OBJDIR" dist
 
 CFLAGS="-O3 -fexceptions -DHAVE_STDINT_H -DZ80_ENABLE_CMOS -DCPC_LSB_FIRST=1 -DENABLE_SDEXT -Iweb/stubs -Iweb/src -Iweb/src/twodfx/include -I$E/src -I$E/z80 -I$E"
 CFLAGS="$CFLAGS -Wno-deprecated-declarations -Wno-unused-parameter"
+# the debugger scripts use Lua (web/src/lua)
+CFLAGS="$CFLAGS -DHAVE_LUA_H -Iweb/src/lua"
 
 SOURCES="
   $E/src/bplist.cpp
@@ -90,6 +92,9 @@ SOURCES="
   $(ls web/src/twodfx/firmware_eggs/egg_*.c)
   web/src/twodfx_bridge.cpp
   web/src/webdebug.cpp
+  web/src/webscript.cpp
+  $E/src/script.cpp
+  $(ls web/src/lua/*.c)
   web/src/soundio_web.cpp
   web/src/sndfile_wav.cpp
   web/src/main.cpp
@@ -113,6 +118,7 @@ for src in $SOURCES; do
     echo "CXX $src"
     case "$src" in
       web/src/card/*.c|web/src/card/*/*.c) emcc -O3 -w -DHAVE_STDINT_H -DLFS_NO_ASSERT -Iweb/src -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;  # vendored C code
+      web/src/lua/*.c) emcc -O2 -w -DLUA_COMPAT_5_2 -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;  # Lua 5.3 (MIT)
       web/src/twodfx/*/*.c) emcc -O3 -std=c99 -w -Iweb/src/twodfx/include -Iweb/src/twodfx/core -Iweb/src/twodfx/assets -Iweb/src/twodfx/firmware_eggs -Iweb/src/twodfx/firmware_eggs/portable -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;  # 2dfx module (MIT)
       *) em++ $CFLAGS -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;
     esac

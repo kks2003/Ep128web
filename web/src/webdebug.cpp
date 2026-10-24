@@ -38,6 +38,11 @@ namespace WebDebug {
   static IOLogEntry ioLog[ioLogSize];
   static uint32_t ioLogPos = 0, ioLogCount = 0;
   static bool     ioLogOn = false;
+  // script breakpoints
+  bool (*scriptCallback)(int type, uint16_t addr, uint8_t value) = 0;
+  static Ep128Emu::VirtualMachine *vmp = 0;
+  static uint8_t  scrExec[8192], scrIoR[32], scrIoW[32];
+  static int      scrExecCount = 0;
 
   static inline bool bit(const uint8_t *m, uint16_t a)
   {
@@ -46,7 +51,7 @@ namespace WebDebug {
 
   static void updateActive()
   {
-    active = (reason != RUNNING || bpCount > 0 || pending != RUNNING ||
+    active = (reason != RUNNING || bpCount > 0 || scrExecCount > 0 || pending != RUNNING ||
               skipOnce || stepInto || tempBreak >= 0 || histOn || profOn);
   }
 
@@ -61,6 +66,11 @@ namespace WebDebug {
     tempBreak = -1;
     updateActive();
     return true;
+  }
+
+  static uint8_t opcode(uint16_t pc)
+  {
+    return (vmp ? vmp->readMemory(pc, true) : 0);
   }
 
   // the instruction at 'pc' runs
@@ -88,20 +98,33 @@ namespace WebDebug {
       updateActive();
       return run(pc);
     }
-    if (stepInto || int32_t(pc) == tempBreak)
+    if (stepInto || int32_t(pc) == tempBreak) {
+      // a script returning false keeps stepping (as in ep128emu)
+      if (scriptCallback && !scriptCallback(3, pc, opcode(pc))) {
+        stepInto = true;
+        tempBreak = -1;
+        return run(pc);
+      }
       return stopAt(pc, STEP, 0, 0);
-    if (bit(bpBits, pc))
+    }
+    if (bit(bpBits, pc) || (scrExecCount && bit(scrExec, pc))) {
+      if (scriptCallback && !scriptCallback(0, pc, opcode(pc)))
+        return run(pc);
       return stopAt(pc, BREAKPOINT, 0, 0);
+    }
     return run(pc);
   }
 
   void breakPointCallback(void *userData, int type, uint16_t addr,
                           uint8_t value)
   {
+    // the breakpoint list of the machine has the watchpoints of the
+    // debugger and of the script, and every port while the I/O log is on
     int     why = RUNNING;
     switch (type) {
-    case 1: if (bit(memR, addr)) why = MEM_READ; break;
-    case 2: if (bit(memW, addr)) why = MEM_WRITE; break;
+    case 0: why = BREAKPOINT; break;    // script, segment:offset address
+    case 1: why = MEM_READ; break;
+    case 2: why = MEM_WRITE; break;
     case 5:
     case 6:
       if (ioLogOn) {
@@ -115,7 +138,8 @@ namespace WebDebug {
         if (ioLogCount < uint32_t(ioLogSize))
           ioLogCount++;
       }
-      if (bit(type == 5 ? ioR : ioW, addr & 0xFF))
+      if (bit(type == 5 ? ioR : ioW, addr & 0xFF) ||
+          bit(type == 5 ? scrIoR : scrIoW, addr & 0xFF))
         why = (type == 5 ? IO_READ : IO_WRITE);
       break;
     default: return;                    // execution is checked here
@@ -123,6 +147,8 @@ namespace WebDebug {
     if (why == RUNNING)
       return;
     if (reason != RUNNING || pending != RUNNING)
+      return;
+    if (scriptCallback && !scriptCallback(type, addr, value))
       return;
     pending = why;
     pendingAddr = addr;
@@ -220,6 +246,41 @@ namespace WebDebug {
     std::memset(memW, 0, sizeof(memW));
     std::memset(ioR, 0, sizeof(ioR));
     std::memset(ioW, 0, sizeof(ioW));
+  }
+
+  void setVM(void *vm)
+  {
+    vmp = reinterpret_cast< Ep128Emu::VirtualMachine * >(vm);
+  }
+
+  void scriptSetExec(uint16_t addr, bool enabled)
+  {
+    uint8_t m = uint8_t(1 << (addr & 7));
+    bool    was = bool(scrExec[addr >> 3] & m);
+    if (enabled == was)
+      return;
+    if (enabled)
+      scrExec[addr >> 3] |= m;
+    else
+      scrExec[addr >> 3] &= uint8_t(~m);
+    scrExecCount += (enabled ? 1 : -1);
+    updateActive();
+  }
+
+  void scriptSetIO(uint8_t port, bool r, bool w)
+  {
+    uint8_t m = uint8_t(1 << (port & 7));
+    scrIoR[port >> 3] = uint8_t(r ? (scrIoR[port >> 3] | m) : (scrIoR[port >> 3] & ~m));
+    scrIoW[port >> 3] = uint8_t(w ? (scrIoW[port >> 3] | m) : (scrIoW[port >> 3] & ~m));
+  }
+
+  void scriptClearBreakPoints()
+  {
+    std::memset(scrExec, 0, sizeof(scrExec));
+    std::memset(scrIoR, 0, sizeof(scrIoR));
+    std::memset(scrIoW, 0, sizeof(scrIoW));
+    scrExecCount = 0;
+    updateActive();
   }
 
   void enableHistory(bool on)

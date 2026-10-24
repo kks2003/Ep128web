@@ -88,7 +88,7 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
 - Megállítás, Folytatás (F5), Lépés (F11).
 - Átlépés (F10): a CALL, az RST (az EXOS-/TVC-rendszerhívás paraméterbájtjával együtt), a DJNZ, az LDIR-féle és a HALT egyben fut le.
 - Kilépés: a verem tetején lévő visszatérési címig fut.
-- ⟲ Vissza: visszalépés az előző debugger-lépés (lépés, átlépés, folytatás…) előtti állapotra. Az utolsó 40 állapotot pillanatképből tölti vissza; a lemezek és a kártyák (2dfx, hangkártyák) állapota nem lép vissza.
+- ⟲ Vissza: visszalépés az előző debugger-lépés (lépés, átlépés, folytatás…) előtti állapotra, a képpel együtt. Az utolsó 40 állapotot pillanatképből tölti vissza; a lemezek és a kártyák (2dfx, hangkártyák) állapota nem lép vissza. Újraindítás, gépváltás vagy pillanatkép betöltése törli az előzményt (egy korábbi programba nem lehet visszalépni).
 - Futás a kurzorig (F4).
 - Képkocka: 20 ms-nyi futás, utána megáll.
 - A billentyűk akkor működnek, ha a fókusz a panelen van.
@@ -144,7 +144,13 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
 | Szimbólumok | Címkék betöltése (sjasmplus, pasmo, tniASM: `címke EQU 1234h`, `címke = $1234`, `1234 címke`). A disassemblyben, a címmezőkben és a monitorban is használhatók. |
 | Szkript | JavaScript az `ep` objektummal, a böngésző konzolából is (`window.ep`). Lásd lent. |
 
-**Szkript**
+**Szkript (Lua)**
+- A nyelvválasztóban „Lua (ep128emu)”: az eredeti ep128emu Lua-szkriptelése, ugyanazzal az API-val (a desktop README-je szerint): `breakPointCallback(típus, cím, érték)`, `setBreakPoint`, `clearBreakPoints`, `readMemory`/`writeMemory`, `readMemoryRaw`, `readWord`, `getPC`/`getA`… `setPC`/`setA`…, `readIOPort`/`writeIOPort`, `getMemoryPage`, `getNextOpcodeAddr`, `getVideoPosition`, `getRawAddress`, `loadMemory`/`saveMemory`, `mprint`. A desktop szkriptek változtatás nélkül futnak.
+- A `breakPointCallback` `false` értékkel továbbengedi a gépet; léptetéskor 3-as típussal hívódik (amíg `true`-t nem ad, a léptetés folytatódik).
+- A szkript töréspontjai a debugger saját töréspontjai mellett élnek (nem jelennek meg a listában); a végrehajtási töréspontok (CPU-cím) az utasítás előtt állnak meg.
+- Lua 5.3.6 (`web/src/lua`, MIT), a szkriptmotor az ep128emu `script.cpp`-je (`patches/zzzzzz-luascript.patch`, `web/src/webscript.cpp`).
+
+**Szkript (JavaScript)**
 - Gép: `regs`, `setReg`, `peek`/`peek16`/`poke`, `read`, `out`, `disasm`, `assemble`, `reset`, `time`.
 - Töréspontok és futás: `bp`, `watch`, `clearBps`, `pause`, `step`, `stepOver`, `cont`, `runTo`, `monitor`.
 - `onBreak(fn)`: minden megálláskor fut; `true` visszatérési értékkel továbbengedi a gépet (naplózás megállás nélkül).
