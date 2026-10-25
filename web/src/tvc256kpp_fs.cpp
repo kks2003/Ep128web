@@ -120,6 +120,9 @@ void setupConfig(lfs_config &cfg, bool flash, uint32_t blocks)
 namespace TVC256kppFS {
 
 uint8_t *fastRam() { return TVC_RAM; }
+size_t fastRamSize() { return sizeof(TVC_RAM); }
+uint8_t *ioArea() { return TVC_ROM; }
+size_t ioAreaSize() { return sizeof(TVC_ROM); }
 
 void attachPsram(uint8_t *psram, uint32_t sizeMB)
 {
@@ -174,6 +177,27 @@ void resetPsramDrive()
   free_psram_start = 0;
   std::strcpy(psramDrive.wd, "/");
   TVC_ROM[0x1824] = 0;
+}
+
+uint32_t psramDriveBlocks()
+{
+  return psramDrive.ok ? uint32_t(psramDrive.cfg.block_count) : 0U;
+}
+
+void remountPsramDrive(uint32_t numBlocks)
+{
+  resetPsramDrive();
+  if (!psram_array || numBlocks < 2 || size_t(numBlocks) * kBlockSize > size_t(psram_size_mb) * 1024 * 1024)
+    return;
+  setupConfig(psramDrive.cfg, false, numBlocks);
+  psramDrive.ok = (lfs_mount(&lfs_psram, &psramDrive.cfg) >= 0);
+  std::strcpy(psramDrive.wd, "/");
+  TVC_ROM[0x1824] = psramDrive.ok ? 1 : 0;
+  psram_drive_initialized = psramDrive.ok;
+  if (psramDrive.ok) {
+    free_psram_start = (size_t(numBlocks) * kBlockSize < size_t(psram_size_mb) * 1024 * 1024
+                        ? numBlocks * kBlockSize : 0x00FFFFFFU);
+  }
 }
 
 void powerOn()

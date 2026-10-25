@@ -69,10 +69,14 @@ pendrive és a TVC256k++ flash tartalma is bekerül (a ROM-ok nem). Az
 
 ### Gyorsmentés, visszatekerés, sebesség
 
+A panelt a kép alatti sor végén lévő 💾 gomb nyitja/csukja (alapból csukva).
+
 - **Gyorsmentés**: 4 hely, mindegyik egy kis képpel. 💾 elmenti a gép mostani
   állapotát, ▶ (vagy a képre kattintás) visszatölti, ✕ törli. A mentések a
   böngészőben maradnak (IndexedDB). Ha a mentés másik gépen (vagy TVC-n más
-  bővítőkártyákkal) készült, betöltéskor átvált arra.
+  bővítőkártyákkal, 2dfx-szel) készült, betöltéskor átvált arra. A TVC256k++
+  és a 2dfx kártya állapota (regiszterek, RAM, PSRAM, sprite-ok, a 2dfx
+  videomemóriája) is a mentés része.
 - **Visszatekerés**: bekapcsolva másodpercenként pillanatképet tesz el az utolsó
   ~30 másodpercről; a „⏪ 5 mp” gomb 5 másodpercet ugrik vissza (többször is
   megnyomható). A beállítást az oldal megjegyzi.

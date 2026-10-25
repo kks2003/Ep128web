@@ -3247,12 +3247,26 @@ registerProcessor('ep-output', EPOutput);
   }
   function qsSave(i) {
     if (!ready) return;
+    try {
+      qsSaveTo(i);
+    } catch (e) {
+      setMessage('A mentés nem sikerült: ' + (e.message || e), true);
+    }
+  }
+  function qsSaveTo(i) {
     check(api.saveSnapshot('/tmp/qs.ep128s'), 'mentés');
     quickSaves[i] = { machine: machine.id, slots: tvcSlots.slice(), fx: fxOn, time: Date.now(),
-                      bytes: M.FS.readFile('/tmp/qs.ep128s'), pic: qsPicture() };
+                      bytes: M.FS.readFile('/tmp/qs.ep128s'), card: saveCardState(), pic: qsPicture() };
     db.put('qs:' + i, quickSaves[i]);
     renderQuickSaves();
     setMessage((i + 1) + '. gyorsmentés kész');
+  }
+  // the state of the TVC256k++ and 2dfx cards, which ep128emu's snapshots
+  // do not have (null: no such card)
+  function saveCardState() {
+    const r = api.saveCardState('/tmp/card.st');
+    if (r < 0) throw new Error('a kártyák állapota nem menthető');
+    return r === 1 ? M.FS.readFile('/tmp/card.st') : null;
   }
   // the machine of a saved state (and the TVC cards), then the state
   function loadSavedState(st) {
@@ -3269,8 +3283,18 @@ registerProcessor('ep-output', EPOutput);
       applyMachine(m);
       $('machine').value = m.id;
     }
+    if (st.fx !== undefined && !!st.fx !== fxOn) {
+      fxOn = !!st.fx;
+      try { localStorage.setItem('ep128web.2dfx', fxOn ? '1' : '0'); } catch (e) { }
+      apply2dfx();
+    }
     M.FS.writeFile('/tmp/qs.ep128s', st.bytes);
     check(api.loadSnapshot('/tmp/qs.ep128s'), 'pillanatkép');
+    if (st.card) {
+      M.FS.writeFile('/tmp/card.st', st.card);
+      if (api.loadCardState('/tmp/card.st') !== 0)
+        setMessage('A bővítőkártyák állapota nem tölthető vissza (más változattal készült mentés?)', true);
+    }
     releaseAllKeys();
   }
   function qsLoad(i) {
@@ -3342,16 +3366,18 @@ registerProcessor('ep-output', EPOutput);
     rwAcc = 0;
     if (api.saveSnapshot('/tmp/rw.ep128s') !== 0) return;
     const bytes = M.FS.readFile('/tmp/rw.ep128s');
-    rwBuf.push({ machine: machine.id, slots: tvcSlots.slice(), bytes });
-    rwBytes += bytes.length;
-    while (rwBuf.length > RW_MAX || (rwBytes > RW_MAX_BYTES && rwBuf.length > 1)) rwBytes -= rwBuf.shift().bytes.length;
+    let card = null;
+    try { card = saveCardState(); } catch (e) { return; }
+    rwBuf.push({ machine: machine.id, slots: tvcSlots.slice(), fx: fxOn, bytes, card });
+    rwBytes += bytes.length + (card ? card.length : 0);
+    while (rwBuf.length > RW_MAX || (rwBytes > RW_MAX_BYTES && rwBuf.length > 1)) { const e = rwBuf.shift(); rwBytes -= e.bytes.length + (e.card ? e.card.length : 0); }
     rewindNote();
   }
   function rewindBack() {
     if (rwBuf.length < 2) return;
     const idx = Math.max(0, rwBuf.length - 1 - 5);
     const st = rwBuf[idx];
-    while (rwBuf.length > idx + 1) rwBytes -= rwBuf.pop().bytes.length;
+    while (rwBuf.length > idx + 1) { const e = rwBuf.pop(); rwBytes -= e.bytes.length + (e.card ? e.card.length : 0); }
     try {
       loadSavedState(st);
     } catch (e) {
@@ -3365,6 +3391,21 @@ registerProcessor('ep-output', EPOutput);
   }
   function setupQuickSaves() {
     renderQuickSaves();
+    // the panel opens with the 💾 button under the screen; closed by default
+    const showQs = (on) => {
+      $('qs-group').hidden = !on;
+      $('tb-qs').setAttribute('aria-pressed', on ? 'true' : 'false');
+    };
+    let qsOpen = false;
+    try { qsOpen = localStorage.getItem('ep128web.qsOpen') === '1'; } catch (e) { }
+    showQs(qsOpen);
+    $('tb-qs').onclick = () => {
+      qsOpen = $('qs-group').hidden;
+      showQs(qsOpen);
+      try { localStorage.setItem('ep128web.qsOpen', qsOpen ? '1' : '0'); } catch (e) { }
+      if (qsOpen) $('qs-group').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      canvas.focus({ preventScroll: true });
+    };
     try { rwOn = localStorage.getItem('ep128web.rewind') === '1'; } catch (e) { }
     $('rw-on').checked = rwOn;
     $('rw-on').onchange = (e) => {
@@ -6826,6 +6867,8 @@ ep.log('CTRL+ESC megnyomva');`
       audioClear: c('ep_audio_clear', null, []),
       setVolume: c('ep_set_volume', null, ['number']),
       loadSnapshot: newState(c('ep_load_snapshot', 'number', ['string'])),
+      saveCardState: c('ep_save_card_state', 'number', ['string']),
+      loadCardState: newState(c('ep_load_card_state', 'number', ['string'])),
       loadSnapshotKeepUndo: c('ep_load_snapshot', 'number', ['string']),
       saveSnapshot: c('ep_save_snapshot', 'number', ['string']),
       setDisk: c('ep_set_disk', 'number', ['number', 'string']),

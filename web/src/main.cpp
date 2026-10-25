@@ -609,6 +609,148 @@ EMSCRIPTEN_KEEPALIVE int ep_save_snapshot(const char *fileName)
   }
 }
 
+namespace {
+
+  // card state files: zero runs are packed (most of the cards' memory is
+  // empty): repeated [literal count, literal bytes, zero count], all 32 bit
+  void packZeros(const std::vector<uint8_t>& in, std::vector<uint8_t>& out)
+  {
+    size_t i = 0, n = in.size();
+    auto put32 = [&out](uint32_t v) {
+      for (int k = 0; k < 4; k++) out.push_back(uint8_t(v >> (k * 8)));
+    };
+    put32(0x5A575045U);                 // "EPWZ"
+    put32(uint32_t(n));
+    while (i < n) {
+      size_t lit = i;
+      // a literal ends at a run of at least 16 zero bytes
+      while (lit < n) {
+        if (in[lit] == 0) {
+          size_t z = lit;
+          while (z < n && in[z] == 0 && z - lit < 16) z++;
+          if (z - lit >= 16 || z == n) break;
+          lit = z;
+        }
+        else {
+          lit++;
+        }
+      }
+      size_t z = lit;
+      while (z < n && in[z] == 0) z++;
+      put32(uint32_t(lit - i));
+      out.insert(out.end(), in.begin() + i, in.begin() + lit);
+      put32(uint32_t(z - lit));
+      i = z;
+    }
+  }
+
+  bool unpackZeros(const std::vector<uint8_t>& in, std::vector<uint8_t>& out)
+  {
+    size_t pos = 0;
+    auto get32 = [&in, &pos](uint32_t& v) {
+      if (in.size() - pos < 4) return false;
+      v = uint32_t(in[pos]) | (uint32_t(in[pos + 1]) << 8) | (uint32_t(in[pos + 2]) << 16) | (uint32_t(in[pos + 3]) << 24);
+      pos += 4;
+      return true;
+    };
+    uint32_t magic = 0, n = 0;
+    if (!get32(magic) || magic != 0x5A575045U || !get32(n))
+      return false;
+    out.clear();
+    out.reserve(n);
+    while (out.size() < n) {
+      uint32_t lit = 0, z = 0;
+      if (!get32(lit) || in.size() - pos < lit) return false;
+      out.insert(out.end(), in.begin() + pos, in.begin() + pos + lit);
+      pos += lit;
+      if (!get32(z) || out.size() + z > n) return false;
+      out.insert(out.end(), z, uint8_t(0));
+    }
+    return out.size() == n;
+  }
+
+  void putChunk(std::vector<uint8_t>& out, uint32_t tag, const std::vector<uint8_t>& data)
+  {
+    for (int k = 0; k < 4; k++) out.push_back(uint8_t(tag >> (k * 8)));
+    uint32_t n = uint32_t(data.size());
+    for (int k = 0; k < 4; k++) out.push_back(uint8_t(n >> (k * 8)));
+    out.insert(out.end(), data.begin(), data.end());
+  }
+
+  const uint32_t kChunkCard256 = 1U, kChunk2dfx = 2U;
+
+}       // namespace
+
+// The state of the expansion cards that ep128emu's snapshots do not have
+// (TVC256k++, 2dfx), for the quick saves. Returns 1 if a file was written,
+// 0 if there is no such card in the machine, -1 on error.
+EMSCRIPTEN_KEEPALIVE int ep_save_card_state(const char *fileName)
+{
+  std::vector<uint8_t> raw, data;
+  if (machineType == 1 && TVC256kpp::current && TVC256kpp::current->isEnabled()) {
+    data.clear();
+    TVC256kpp::current->saveState(data);
+    putChunk(raw, kChunkCard256, data);
+  }
+  twodfx_emu *d = (twodfx_emu *) TwoDfx::device();
+  if (d && TwoDfx::isEnabled()) {
+    data.assign(twodfx_emu_snapshot_size(), 0);
+    if (data.empty() || !twodfx_emu_save_snapshot(d, &data[0], data.size()))
+      return -1;
+    putChunk(raw, kChunk2dfx, data);
+  }
+  if (raw.empty())
+    return 0;
+  std::vector<uint8_t> packed;
+  packZeros(raw, packed);
+  std::FILE *f = std::fopen(fileName, "wb");
+  if (!f)
+    return -1;
+  bool ok = std::fwrite(&packed[0], 1, packed.size(), f) == packed.size();
+  ok = (std::fclose(f) == 0) && ok;
+  return ok ? 1 : -1;
+}
+
+// Loads a file of ep_save_card_state() into the cards of the machine (after
+// the snapshot). Returns 0 if every saved card was restored, -1 if not.
+EMSCRIPTEN_KEEPALIVE int ep_load_card_state(const char *fileName)
+{
+  std::vector<uint8_t> packed, raw;
+  std::FILE *f = std::fopen(fileName, "rb");
+  if (!f)
+    return -1;
+  std::vector<uint8_t> buf(65536);
+  size_t k;
+  while ((k = std::fread(&buf[0], 1, buf.size(), f)) > 0)
+    packed.insert(packed.end(), buf.begin(), buf.begin() + k);
+  std::fclose(f);
+  if (!unpackZeros(packed, raw))
+    return -1;
+  bool ok = true;
+  size_t pos = 0;
+  while (raw.size() - pos >= 8) {
+    uint32_t tag = uint32_t(raw[pos]) | (uint32_t(raw[pos + 1]) << 8) | (uint32_t(raw[pos + 2]) << 16) | (uint32_t(raw[pos + 3]) << 24);
+    uint32_t n = uint32_t(raw[pos + 4]) | (uint32_t(raw[pos + 5]) << 8) | (uint32_t(raw[pos + 6]) << 16) | (uint32_t(raw[pos + 7]) << 24);
+    pos += 8;
+    if (raw.size() - pos < n)
+      return -1;
+    const uint8_t *p = &raw[pos];
+    if (tag == kChunkCard256) {
+      if (!(machineType == 1 && TVC256kpp::current && TVC256kpp::current->isEnabled() &&
+            TVC256kpp::current->loadState(p, n)))
+        ok = false;
+    }
+    else if (tag == kChunk2dfx) {
+      twodfx_emu *d = (twodfx_emu *) TwoDfx::device();
+      if (!(d && TwoDfx::isEnabled() && twodfx_emu_load_snapshot(d, p, n)))
+        ok = false;
+      TwoDfx::clearOverlay();
+    }
+    pos += n;
+  }
+  return ok ? 0 : -1;
+}
+
 EMSCRIPTEN_KEEPALIVE int ep_set_disk(int n, const char *fileName)
 {
   try {
