@@ -55,7 +55,15 @@
 
   // the translation of a Hungarian text (exact, or with its outer spaces
   // kept and the inner whitespace normalised)
-  function T(s) {
+  // a captured part of a pattern: a word of the table (e.g. igen / nem), or
+  // words one by one (e.g. sprite flags)
+  function part(c) {
+    const t = dict.get(c);
+    if (t !== undefined) return t;
+    return c.split(/( +)/).map((w) => (dict.has(w) ? dict.get(w) : w)).join('');
+  }
+  // quiet: the text is not noted in 'missing' (e.g. lines of register dumps)
+  function T(s, quiet) {
     if (lang === 'hu' || typeof s !== 'string') return s;
     let t = dict.get(s);
     if (t !== undefined) return t;
@@ -64,10 +72,15 @@
     if (t !== undefined) return m[1] + t + m[3];
     for (const p of patterns) {
       const r = p.re.exec(s);
-      if (r) return p.t.replace(/\{(\d)\}/g, (all, d) => { const i = p.order.indexOf(+d); return i >= 0 ? r[i + 1] : all; });
+      if (r) return p.t.replace(/\{(\d)\}/g, (all, d) => { const i = p.order.indexOf(+d); return i >= 0 ? part(r[i + 1]) : all; });
     }
-    if (/[A-Za-zÁ-ű]{2,}/.test(s)) missing.add(s);
+    if (!quiet && /[A-Za-zÁ-ű]{2,}/.test(s)) missing.add(s);
     return s;
+  }
+  // a text of several lines (e.g. the debugger views made by the C++ code)
+  function Tlines(s) {
+    if (lang === 'hu' || typeof s !== 'string') return s;
+    return s.split('\n').map((l) => T(l, true)).join('\n');
   }
   // T() with {0}, {1}… replaced by the arguments
   function F(s, ...args) {
@@ -113,6 +126,6 @@
     if (md) md.content = T(md.content);
   }
 
-  window.I18N = { lang, LANGS, T, F, apply, missing };
+  window.I18N = { lang, LANGS, T, F, Tlines, apply, missing };
   apply(document.documentElement);
 })();
