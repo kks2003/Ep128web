@@ -57,6 +57,23 @@ is megnyithatók (Chrome/Edge asztali változatban).
   magnóra ír (fejblokk a névvel, adatblokk 256 bájtos szektorokkal,
   szektoronkénti CRC).
 
+### Képernyő-effekt (CRT)
+
+A felső sor „Kép:” választójával: **éles** (alap), **scanline** (minden
+emulált sor után sötét sáv, mint egy tévén), **CRT** (scanline, enyhe
+izzás/elmosás, RGB árnyékmaszk, sötétebb sarkok, lekerekített képcső). A
+beállítást az oldal megjegyzi; a képernyőkép és a videofelvétel effekt nélkül
+készül.
+
+### Megosztható link
+
+A „🔗 Link” gomb a vágólapra másol egy linket, amely megnyitva ugyanazt a gépet
+(TVC-n ugyanazokkal a bővítőkártyákkal, 2dfx-szel) indítja, és betölti a
+legutóbb betöltött programot: katalógusprogramnál a nevét teszi a linkbe, kisebb
+saját fájlnál (tömörítve kb. 45 KB-ig) magát a fájlt. Kézzel is írható link:
+`#m=tvc64-12&url=https://…/jatek.cas` – a megadott címről tölti le a programot
+(ha a szerver engedi a letöltést más oldalról).
+
 ### Beállítások exportálása / importálása
 
 A „Beállítások” panel „Exportálás” gombja egy `.json` fájlba menti az oldal
@@ -69,10 +86,16 @@ pendrive és a TVC256k++ flash tartalma is bekerül (a ROM-ok nem). Az
 
 ### Gyorsmentés, visszatekerés, sebesség
 
+A panelt a kép alatti sor végén lévő 💾 gomb nyitja/csukja (alapból csukva).
+
 - **Gyorsmentés**: 4 hely, mindegyik egy kis képpel. 💾 elmenti a gép mostani
   állapotát, ▶ (vagy a képre kattintás) visszatölti, ✕ törli. A mentések a
   böngészőben maradnak (IndexedDB). Ha a mentés másik gépen (vagy TVC-n más
-  bővítőkártyákkal) készült, betöltéskor átvált arra.
+  bővítőkártyákkal, 2dfx-szel) készült, betöltéskor átvált arra. A TVC256k++
+  és a 2dfx kártya állapota (regiszterek, RAM, PSRAM, sprite-ok, a 2dfx
+  videomemóriája) is a mentés része.
+  Minden hely alatt látszik, mennyi helyet foglal (a fejlécben az összes), a
+  visszatekerésnél pedig, mennyi memóriát használ a puffer.
 - **Visszatekerés**: bekapcsolva másodpercenként pillanatképet tesz el az utolsó
   ~30 másodpercről; a „⏪ 5 mp” gomb 5 másodpercet ugrik vissza (többször is
   megnyomható). A beállítást az oldal megjegyzi.

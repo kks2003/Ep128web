@@ -23,6 +23,7 @@
     <button id="btn-cold" title="Hideg reset / bekapcsolás (Shift+F11)">Hideg reset</button>
     <button id="btn-pause" title="Szünet (Pause)">Szünet</button>
     <button id="btn-debug" title="Debugger: regiszterek, disassembly, memória, töréspontok">🐞 Debugger</button>
+    <button id="btn-share" title="Megosztható link másolása: a gép, a kártyák és a betöltött program (kis programnál magában a linkben)">🔗 Link</button>
     <button id="btn-install" hidden title="Telepítés alkalmazásként (offline is működik)">Telepítés</button>
     <button id="btn-turbo" title="Gyorsítás (F12)">Turbó</button>
     <select id="speed" title="Sebesség (a hang csak 100%-on szól)" aria-label="Sebesség">
@@ -34,6 +35,11 @@
     </label>
     <button id="btn-snap" title="Pillanatkép mentése (.ep128s)">Állapot mentése</button>
     <button id="btn-shot" title="A képernyő mentése képként (.png)">📷 Kép</button>
+    <select id="crt" title="Képernyő-effekt: régi tévé / monitor hatás" aria-label="Képernyő-effekt">
+      <option value="off">Kép: éles</option>
+      <option value="scan">Kép: scanline</option>
+      <option value="crt">Kép: CRT</option>
+    </select>
     <button id="btn-video" title="Videó felvétele hanggal; újra megnyomva leáll és letöltődik">● Videó</button>
     <select id="video-fmt" title="A videó formátuma" aria-label="A videó formátuma" hidden>
       <option value="mp4">MP4</option>
@@ -51,6 +57,7 @@
  <div id="play">
   <div id="screen-wrap">
     <canvas id="screen" width="768" height="288" tabindex="0"></canvas>
+    <div id="crt-fx" aria-hidden="true"></div>
     <div id="overlay" hidden>
       <div class="box">
         <h2>Hiányzó ROM-ok</h2>
@@ -120,6 +127,7 @@
     <button id="btn-run" title='RUN + Enter'>Run</button>
     <button id="btn-mouse" title="Egér a TVC256k++ kártyának (kilépés: Esc)" hidden>🖱</button>
     <button id="tb-full" title="Teljes képernyő">⛶</button>
+    <button id="tb-qs" aria-pressed="false" title="Gyorsmentés és visszatekerés panel">💾</button>
   </div>
 
   <form id="typer" hidden autocomplete="off">
@@ -362,8 +370,8 @@
   </section>
 
   <section id="media">
-    <div class="group" id="qs-group">
-      <h3>Gyorsmentés</h3>
+    <div class="group" id="qs-group" hidden>
+      <h3>Gyorsmentés <span id="qs-total" class="small" title="A gyorsmentések helye a böngésző tárhelyén"></span></h3>
       <div id="qs-slots"></div>
       <div class="qs-rw">
         <label title="Az utolsó ~30 másodperc megőrzése másodpercenként egy pillanatképben"><input type="checkbox" id="rw-on"> Visszatekerés</label>

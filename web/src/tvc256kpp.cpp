@@ -568,3 +568,127 @@ void TVC256kpp::renderAudio(int32_t &outLeft, int32_t &outRight)
   outLeft += x;
   outRight += x;
 }
+
+// ---------------------------------------------------------------------------
+// state saving (quick saves)
+
+// the firmware's global variables, listed by build.sh from the card objects
+// (build/obj/cardstate_regions.c)
+extern "C" {
+  struct card_state_region { void *p; unsigned n; };
+  extern const struct card_state_region card_state_regions[];
+  extern const unsigned card_state_region_count;
+}
+
+namespace {
+
+  const uint32_t kCardStateMagic = 0x32354B43U;      // "CK52"
+
+  void put32(std::vector<uint8_t>& out, uint32_t v)
+  {
+    for (int i = 0; i < 4; i++)
+      out.push_back(uint8_t(v >> (i * 8)));
+  }
+
+  void putBytes(std::vector<uint8_t>& out, const void *p, size_t n)
+  {
+    const uint8_t *b = (const uint8_t *) p;
+    out.insert(out.end(), b, b + n);
+  }
+
+  struct Reader {
+    const uint8_t *p;
+    size_t  n;
+    bool    bad;
+    Reader(const uint8_t *p_, size_t n_) : p(p_), n(n_), bad(false) { }
+    uint32_t get32()
+    {
+      if (n < 4) { bad = true; return 0U; }
+      uint32_t v = uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
+      p += 4; n -= 4;
+      return v;
+    }
+    const uint8_t *bytes(size_t k)
+    {
+      if (n < k) { bad = true; return (const uint8_t *) 0; }
+      const uint8_t *r = p;
+      p += k; n -= k;
+      return r;
+    }
+  };
+
+}       // namespace
+
+void TVC256kpp::saveState(std::vector<uint8_t>& out)
+{
+  flushPsramBuffers();
+  put32(out, kCardStateMagic);
+  put32(out, uint32_t(TVC256kppFS::fastRamSize()));
+  put32(out, uint32_t(TVC256kppFS::ioAreaSize()));
+  put32(out, uint32_t(psram_.size()));
+  put32(out, card_state_region_count);
+  for (unsigned i = 0; i < card_state_region_count; i++)
+    put32(out, card_state_regions[i].n);
+  out.push_back(border_);
+  putBytes(out, regs_, sizeof(regs_));
+  putBytes(out, sel_, 2);
+  putBytes(out, inc_, 2);
+  out.push_back(romPage_);
+  putBytes(out, pageSel_, 2);
+  putBytes(out, psramHi_, 2);
+  put32(out, uint32_t(psramCached_[0]));
+  put32(out, uint32_t(psramCached_[1]));
+  put32(out, TVC256kppFS::psramDriveBlocks());
+  putBytes(out, TVC256kppFS::fastRam(), TVC256kppFS::fastRamSize());
+  putBytes(out, TVC256kppFS::ioArea(), TVC256kppFS::ioAreaSize());
+  putBytes(out, &psram_[0], psram_.size());
+  for (unsigned i = 0; i < card_state_region_count; i++)
+    putBytes(out, card_state_regions[i].p, card_state_regions[i].n);
+}
+
+bool TVC256kpp::loadState(const uint8_t *p, size_t n)
+{
+  Reader r(p, n);
+  // a state of another build (other sizes) is not loaded
+  if (r.get32() != kCardStateMagic ||
+      r.get32() != uint32_t(TVC256kppFS::fastRamSize()) ||
+      r.get32() != uint32_t(TVC256kppFS::ioAreaSize()) ||
+      r.get32() != uint32_t(psram_.size()) ||
+      r.get32() != card_state_region_count || r.bad)
+    return false;
+  for (unsigned i = 0; i < card_state_region_count; i++) {
+    if (r.get32() != card_state_regions[i].n)
+      return false;
+  }
+  size_t need = 1 + sizeof(regs_) + 2 + 2 + 1 + 2 + 2 + 12
+                + TVC256kppFS::fastRamSize() + TVC256kppFS::ioAreaSize() + psram_.size();
+  for (unsigned i = 0; i < card_state_region_count; i++)
+    need += card_state_regions[i].n;
+  if (r.bad || r.n != need)
+    return false;
+  border_ = *r.bytes(1);
+  std::memcpy(regs_, r.bytes(sizeof(regs_)), sizeof(regs_));
+  std::memcpy(sel_, r.bytes(2), 2);
+  std::memcpy(inc_, r.bytes(2), 2);
+  romPage_ = *r.bytes(1);
+  std::memcpy(pageSel_, r.bytes(2), 2);
+  std::memcpy(psramHi_, r.bytes(2), 2);
+  psramCached_[0] = int(int32_t(r.get32()));
+  psramCached_[1] = int(int32_t(r.get32()));
+  uint32_t driveBlocks = r.get32();
+  // the PSRAM window buffers are in the fast RAM area, so they come back
+  // together with psramCached_[]
+  std::memcpy(TVC256kppFS::fastRam(), r.bytes(TVC256kppFS::fastRamSize()), TVC256kppFS::fastRamSize());
+  std::memcpy(TVC256kppFS::ioArea(), r.bytes(TVC256kppFS::ioAreaSize()), TVC256kppFS::ioAreaSize());
+  std::memcpy(&psram_[0], r.bytes(psram_.size()), psram_.size());
+  for (unsigned i = 0; i < card_state_region_count; i++)
+    std::memcpy(card_state_regions[i].p, r.bytes(card_state_regions[i].n), card_state_regions[i].n);
+  // the PSRAM drive as it is in the loaded PSRAM
+  uint8_t driveSel = TVC256kppFS::ioArea()[kDriveSelectOffset];
+  TVC256kppFS::remountPsramDrive(driveBlocks);
+  TVC256kppFS::ioArea()[kDriveSelectOffset] = driveSel;
+  updateParamPages();
+  currentOverlay_ = (const uint8_t *) 0;
+  notifyPaging();
+  return true;
+}

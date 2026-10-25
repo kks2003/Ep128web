@@ -2535,6 +2535,10 @@ registerProcessor('ep-output', EPOutput);
 
   async function loadFiles(fileList) {
     resumeAudio();
+    {
+      const list = Array.from(fileList);
+      shareSrc = list.length === 1 && !['rom', 'bin'].includes(extOf(list[0].name)) ? { file: list[0] } : null;
+    }
     try {
       // read everything, expanding ZIP archives
       const files = [];
@@ -2722,6 +2726,25 @@ registerProcessor('ep-output', EPOutput);
       if (t) r[k] = t;
     }
     return r;
+  }
+
+  // CRT effect: scanlines / scanlines + glow, shadow mask and vignette
+  function setupCrt() {
+    const sel = $('crt');
+    let v = 'off';
+    try { v = localStorage.getItem('ep128web.crt') || 'off'; } catch (e) { }
+    const apply = () => {
+      const wrap = $('screen-wrap');
+      wrap.classList.toggle('fx-scan', sel.value === 'scan');
+      wrap.classList.toggle('fx-crt', sel.value === 'crt');
+    };
+    sel.value = ['off', 'scan', 'crt'].includes(v) ? v : 'off';
+    apply();
+    sel.onchange = () => {
+      apply();
+      try { localStorage.setItem('ep128web.crt', sel.value); } catch (e) { }
+      canvas.focus({ preventScroll: true });
+    };
   }
 
   // the format selector: shown when the browser can record both, MP4 by default
@@ -3247,12 +3270,26 @@ registerProcessor('ep-output', EPOutput);
   }
   function qsSave(i) {
     if (!ready) return;
+    try {
+      qsSaveTo(i);
+    } catch (e) {
+      setMessage('A mentés nem sikerült: ' + (e.message || e), true);
+    }
+  }
+  function qsSaveTo(i) {
     check(api.saveSnapshot('/tmp/qs.ep128s'), 'mentés');
     quickSaves[i] = { machine: machine.id, slots: tvcSlots.slice(), fx: fxOn, time: Date.now(),
-                      bytes: M.FS.readFile('/tmp/qs.ep128s'), pic: qsPicture() };
+                      bytes: M.FS.readFile('/tmp/qs.ep128s'), card: saveCardState(), pic: qsPicture() };
     db.put('qs:' + i, quickSaves[i]);
     renderQuickSaves();
     setMessage((i + 1) + '. gyorsmentés kész');
+  }
+  // the state of the TVC256k++ and 2dfx cards, which ep128emu's snapshots
+  // do not have (null: no such card)
+  function saveCardState() {
+    const r = api.saveCardState('/tmp/card.st');
+    if (r < 0) throw new Error('a kártyák állapota nem menthető');
+    return r === 1 ? M.FS.readFile('/tmp/card.st') : null;
   }
   // the machine of a saved state (and the TVC cards), then the state
   function loadSavedState(st) {
@@ -3269,8 +3306,18 @@ registerProcessor('ep-output', EPOutput);
       applyMachine(m);
       $('machine').value = m.id;
     }
+    if (st.fx !== undefined && !!st.fx !== fxOn) {
+      fxOn = !!st.fx;
+      try { localStorage.setItem('ep128web.2dfx', fxOn ? '1' : '0'); } catch (e) { }
+      apply2dfx();
+    }
     M.FS.writeFile('/tmp/qs.ep128s', st.bytes);
     check(api.loadSnapshot('/tmp/qs.ep128s'), 'pillanatkép');
+    if (st.card) {
+      M.FS.writeFile('/tmp/card.st', st.card);
+      if (api.loadCardState('/tmp/card.st') !== 0)
+        setMessage('A bővítőkártyák állapota nem tölthető vissza (más változattal készült mentés?)', true);
+    }
     releaseAllKeys();
   }
   function qsLoad(i) {
@@ -3285,7 +3332,13 @@ registerProcessor('ep-output', EPOutput);
     }
     canvas.focus({ preventScroll: true });
   }
+  // the space a quick save takes in the browser's storage
+  function qsBytes(st) {
+    return st.bytes.length + (st.card ? st.card.length : 0) + (st.pic ? st.pic.length : 0);
+  }
   function renderQuickSaves() {
+    const used = quickSaves.reduce((a, st) => a + (st ? qsBytes(st) : 0), 0);
+    $('qs-total').textContent = used ? 'összesen ' + fmtSize(used) : '';
     const box = $('qs-slots');
     box.textContent = '';
     quickSaves.forEach((st, i) => {
@@ -3317,7 +3370,12 @@ registerProcessor('ep-output', EPOutput);
       });
       b('▶', 'Ennek az állapotnak a betöltése', () => qsLoad(i), !st);
       b('✕', 'Törlés', () => { quickSaves[i] = null; db.del('qs:' + i); renderQuickSaves(); }, !st);
-      d.append(pic, lab, btns);
+      const size = document.createElement('div');
+      size.className = 'qs-size';
+      size.textContent = st ? fmtSize(qsBytes(st)) : '';
+      size.title = st ? 'Gép: ' + fmtSize(st.bytes.length) + (st.card ? ', bővítőkártyák: ' + fmtSize(st.card.length) : '') +
+                        ', kép: ' + fmtSize(st.pic ? st.pic.length : 0) : '';
+      d.append(pic, lab, size, btns);
       box.append(d);
     });
   }
@@ -3332,7 +3390,7 @@ registerProcessor('ep-output', EPOutput);
     rewindNote();
   }
   function rewindNote() {
-    $('rw-note').textContent = rwOn ? (rwBuf.length ? rwBuf.length + ' mp visszatekerhető' : '') : '';
+    $('rw-note').textContent = rwOn ? (rwBuf.length ? rwBuf.length + ' mp visszatekerhető · ' + fmtSize(rwBytes) + ' memória' : '') : '';
     $('rw-back').disabled = !rwOn || rwBuf.length < 2;
   }
   function rewindTick(us) {
@@ -3342,16 +3400,18 @@ registerProcessor('ep-output', EPOutput);
     rwAcc = 0;
     if (api.saveSnapshot('/tmp/rw.ep128s') !== 0) return;
     const bytes = M.FS.readFile('/tmp/rw.ep128s');
-    rwBuf.push({ machine: machine.id, slots: tvcSlots.slice(), bytes });
-    rwBytes += bytes.length;
-    while (rwBuf.length > RW_MAX || (rwBytes > RW_MAX_BYTES && rwBuf.length > 1)) rwBytes -= rwBuf.shift().bytes.length;
+    let card = null;
+    try { card = saveCardState(); } catch (e) { return; }
+    rwBuf.push({ machine: machine.id, slots: tvcSlots.slice(), fx: fxOn, bytes, card });
+    rwBytes += bytes.length + (card ? card.length : 0);
+    while (rwBuf.length > RW_MAX || (rwBytes > RW_MAX_BYTES && rwBuf.length > 1)) { const e = rwBuf.shift(); rwBytes -= e.bytes.length + (e.card ? e.card.length : 0); }
     rewindNote();
   }
   function rewindBack() {
     if (rwBuf.length < 2) return;
     const idx = Math.max(0, rwBuf.length - 1 - 5);
     const st = rwBuf[idx];
-    while (rwBuf.length > idx + 1) rwBytes -= rwBuf.pop().bytes.length;
+    while (rwBuf.length > idx + 1) { const e = rwBuf.pop(); rwBytes -= e.bytes.length + (e.card ? e.card.length : 0); }
     try {
       loadSavedState(st);
     } catch (e) {
@@ -3365,6 +3425,21 @@ registerProcessor('ep-output', EPOutput);
   }
   function setupQuickSaves() {
     renderQuickSaves();
+    // the panel opens with the 💾 button under the screen; closed by default
+    const showQs = (on) => {
+      $('qs-group').hidden = !on;
+      $('tb-qs').setAttribute('aria-pressed', on ? 'true' : 'false');
+    };
+    let qsOpen = false;
+    try { qsOpen = localStorage.getItem('ep128web.qsOpen') === '1'; } catch (e) { }
+    showQs(qsOpen);
+    $('tb-qs').onclick = () => {
+      qsOpen = $('qs-group').hidden;
+      showQs(qsOpen);
+      try { localStorage.setItem('ep128web.qsOpen', qsOpen ? '1' : '0'); } catch (e) { }
+      if (qsOpen) $('qs-group').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      canvas.focus({ preventScroll: true });
+    };
     try { rwOn = localStorage.getItem('ep128web.rewind') === '1'; } catch (e) { }
     $('rw-on').checked = rwOn;
     $('rw-on').onchange = (e) => {
@@ -3642,6 +3717,7 @@ registerProcessor('ep-output', EPOutput);
       });
 
       await loadFiles([file]);
+      shareSrc = { cat: item.file_name || fileName };
       setMessage('Program betöltve: ' + (item.title || fileName));
     } catch (e) {
       console.error(e);
@@ -3869,6 +3945,8 @@ registerProcessor('ep-output', EPOutput);
     setupSpeed();
     setupQuickSaves();
     setupSettingsIO();
+    setupCrt();
+    $('btn-share').onclick = () => shareLink().catch((e) => setMessage('Link: ' + (e.message || e), true));
 
     const wrap = $('screen-wrap');
     wrap.addEventListener('dragover', (e) => { e.preventDefault(); wrap.classList.add('drag'); });
@@ -6826,6 +6904,8 @@ ep.log('CTRL+ESC megnyomva');`
       audioClear: c('ep_audio_clear', null, []),
       setVolume: c('ep_set_volume', null, ['number']),
       loadSnapshot: newState(c('ep_load_snapshot', 'number', ['string'])),
+      saveCardState: c('ep_save_card_state', 'number', ['string']),
+      loadCardState: newState(c('ep_load_card_state', 'number', ['string'])),
       loadSnapshotKeepUndo: c('ep_load_snapshot', 'number', ['string']),
       saveSnapshot: c('ep_save_snapshot', 'number', ['string']),
       setDisk: c('ep_set_disk', 'number', ['number', 'string']),
@@ -6903,6 +6983,7 @@ ep.log('CTRL+ESC megnyomva');`
     canvas.width = w;
     canvas.height = h;
     imageData = ctx.createImageData(w, h);
+    $('screen-wrap').style.setProperty('--lines', String(h));
     updateScreenCrop();
 
     // ROMs: epfileio.rom ships with ep128emu (GPL); the rest come from the
@@ -6950,6 +7031,7 @@ ep.log('CTRL+ESC megnyomva');`
     restoreDiskActive();
     renderDrives();
 
+    const share = readShareHash();
     let id = null;
     try { id = localStorage.getItem('ep128web.machine'); } catch (e) { }
     id = MACHINE_ALIASES[id] || id;
@@ -6963,6 +7045,7 @@ ep.log('CTRL+ESC megnyomva');`
     canvas.focus({ preventScroll: true });
     requestAnimationFrame(frame);
     setupPwa();
+    if (share) runShare(share);
   }
 
   // --- settings export / import ---
@@ -7028,6 +7111,91 @@ ep.log('CTRL+ESC megnyomva');`
       e.target.value = '';
       if (f) cfgImport(f).catch((err) => setMessage('Importálás: ' + (err.message || err), true));
     };
+  }
+
+  // --- shareable link: #m=machine&s=TVC slots&fx=1, and the program:
+  // p=catalog file name, url=address of a file, or f=the file itself
+  // (deflate-raw, base64url) with n=its name
+  let shareSrc = null;
+  const SHARE_MAX = 60000;          // characters of an embedded file
+  async function zipStream(u8, how) {
+    const s = new Blob([u8]).stream().pipeThrough(how === 'in' ? new DecompressionStream('deflate-raw') : new CompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(s).arrayBuffer());
+  }
+  const b64url = (u8) => b64(u8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const unb64url = (str) => unb64(str.replace(/-/g, '+').replace(/_/g, '/'));
+  // the parameters of the link the page was opened with (removed from the
+  // address, so that a reload does not start the program again)
+  function readShareHash() {
+    if (location.hash.length < 3) return null;
+    const q = new URLSearchParams(location.hash.slice(1));
+    if (!['m', 'p', 'f', 'url'].some((k) => q.has(k))) return null;
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { }
+    const m = q.get('m');
+    if (m && MACHINES.some((x) => x.id === m)) {
+      try { localStorage.setItem('ep128web.machine', m); } catch (e) { }
+    }
+    if (q.has('s')) {
+      const v = q.get('s').split(',').map(Number);
+      if (validTvcSlots(v)) {
+        tvcSlots = v;
+        try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(v)); } catch (e) { }
+      }
+    }
+    if (q.has('fx')) {
+      fxOn = q.get('fx') === '1';
+      try { localStorage.setItem('ep128web.2dfx', fxOn ? '1' : '0'); } catch (e) { }
+    }
+    return q;
+  }
+  async function runShare(q) {
+    try {
+      if (q.get('p')) {
+        const name = q.get('p');
+        for (let i = 0; i < 50 && !catalogState.items.length; i++) await new Promise((r) => setTimeout(r, 200));
+        await launchCatalogItem(catalogState.items.find((x) => x.file_name === name) || { file_name: name, title: name });
+      } else if (q.get('f')) {
+        const name = q.get('n') || 'program';
+        await loadFiles([new File([await zipStream(unb64url(q.get('f')), 'in')], name)]);
+      } else if (q.get('url')) {
+        const url = q.get('url');
+        setMessage('Program letöltése…');
+        const r = await fetch(url);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const name = q.get('n') || decodeURIComponent(new URL(url, location.href).pathname.split('/').pop()) || 'program';
+        await loadFiles([new File([await r.blob()], name)]);
+        shareSrc = { url, name };
+      }
+    } catch (e) {
+      setMessage('A link programja nem tölthető be: ' + (e.message || e), true);
+    }
+  }
+  async function shareLink() {
+    const q = new URLSearchParams();
+    q.set('m', machine.id);
+    if (machine.type === 1) q.set('s', tvcSlots.join(','));
+    if (fxOn) q.set('fx', '1');
+    let note = '';
+    if (shareSrc && shareSrc.cat) q.set('p', shareSrc.cat);
+    else if (shareSrc && shareSrc.url) { q.set('url', shareSrc.url); q.set('n', shareSrc.name); }
+    else if (shareSrc && shareSrc.file) {
+      const z = b64url(await zipStream(new Uint8Array(await shareSrc.file.arrayBuffer())));
+      if (z.length <= SHARE_MAX) {
+        q.set('n', shareSrc.file.name);
+        q.set('f', z);
+      } else {
+        note = ' (a program túl nagy a linkhez, csak a gép beállításai vannak benne)';
+      }
+    } else {
+      note = ' (program nélkül: tölts be egyet, és az is belekerül)';
+    }
+    const link = location.origin + location.pathname + '#' + q.toString();
+    try {
+      await navigator.clipboard.writeText(link);
+      setMessage('A link a vágólapon' + note);
+    } catch (e) {
+      window.prompt('A megosztható link' + note + ':', link);
+    }
   }
 
   // --- installable app (PWA): offline worker, install button, files opened from the OS ---

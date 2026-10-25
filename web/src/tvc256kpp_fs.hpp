@@ -18,6 +18,9 @@
 namespace TVC256kppFS {
   // the card's 256 kB fast RAM (shared with the vendored firmware code)
   uint8_t *fastRam();
+  size_t fastRamSize();               // with the PSRAM window buffers
+  uint8_t *ioArea();                  // TVC_ROM: IO ROM area and its RAM
+  size_t ioAreaSize();
   // PSRAM buffer used by the PSRAM drive and the card (sizeMB megabytes)
   void attachPsram(uint8_t *psram, uint32_t sizeMB);
 
@@ -28,6 +31,10 @@ namespace TVC256kppFS {
   // PSRAM drive: (re)formats the first numBlocks x 4 kB blocks of the PSRAM
   bool formatPsramDrive(uint32_t numBlocks);
   void resetPsramDrive();             // power-on state: no PSRAM drive
+  // state loading: the size of the PSRAM drive (0: none), and mounting the
+  // drive found in the PSRAM again after its contents changed
+  uint32_t psramDriveBlocks();
+  void remountPsramDrive(uint32_t numBlocks);
   // the card (re)boots: no PSRAM drive, no open files or directories, the
   // flash drive's current directory is the root again
   void powerOn();

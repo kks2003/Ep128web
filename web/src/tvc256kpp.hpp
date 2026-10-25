@@ -99,6 +99,10 @@ class TVC256kpp {
   uint8_t  debugRegister(int r);       // as read, without side effects
   size_t   psramSize() const { return psram_.size(); }
   static TVC256kpp *current;
+  // the card's state for quick saves (registers, fast RAM, PSRAM, the
+  // firmware's variables); loadState() returns false for a bad blob
+  void saveState(std::vector<uint8_t>& out);
+  bool loadState(const uint8_t *p, size_t n);
 
  private:
   bool    enabled_;
