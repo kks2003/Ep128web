@@ -448,8 +448,47 @@
   // a disk image), else the TVC256k++ card if present, else FILE:
   let tvcLastLoadCard = -1;
 
+  // TVC: the default storage chosen by the user (a card id, or -1: as the
+  // machine chooses it, the card in the highest numbered slot). It is set
+  // after each boot, when the ROM and the cards have set theirs.
+  let tvcDefDev = -1;
+  try { tvcDefDev = Number(localStorage.getItem('ep128web.tvcDefDev') ?? -1); } catch (e) { }
+  if (![-1, SLOT_VTDOS, SLOT_FILEIO, SLOT_CARD256].includes(tvcDefDev)) tvcDefDev = -1;
+  // after a reset: waits until the ROM and the cards have set the redirect
+  // ($0B05 in U0 got a new value, a card's, at least 1 s after the reset,
+  // and it does not change for 0.1 s), then sets the chosen one (in U0)
+  let tvcDefDevWatch = null;            // { start, until, last, since, changed }
+  function tvcDefDevRedirect() {
+    return tvcDefDev >= 0 ? tvcRedirectFor(tvcDefDev) : 0;
+  }
+  const u0 = (a) => 0xF8 * 16384 + a;
+  // called after a reset (not by an autostart, which sets its own)
+  function scheduleTvcDefDev() {
+    tvcDefDevWatch = (machine && machine.type === 1 && tvcDefDevRedirect())
+      ? { start: emulatedUs, until: emulatedUs + 20e6, last: -1, since: emulatedUs, changed: false } : null;
+  }
+  // called by the main loop
+  function tvcDefDevTick() {
+    const w = tvcDefDevWatch;
+    if (!w) return;
+    if (autoTask || emulatedUs > w.until || machine.type !== 1) { tvcDefDevWatch = null; return; }
+    const v = M.HEAPU8[api.dbgMem(u0(2821), 1, 1)];
+    if (v !== w.last) {
+      if (w.last >= 0) w.changed = true;
+      w.last = v;
+      w.since = emulatedUs;
+      return;
+    }
+    if (w.changed && (v & 0x80) && emulatedUs - w.start >= 1e6 && emulatedUs - w.since >= 100000) {
+      tvcDefDevWatch = null;
+      const r = tvcDefDevRedirect();
+      if (v !== r) { api.dbgPoke(u0(2821), r, 1); api.dbgPoke(u0(2829), r, 1); }
+    }
+  }
+
   function defaultTvcLoadRedirect() {
     if (tapeName) return 5;
+    if (tvcDefDevRedirect()) return tvcDefDevRedirect();
     if (tvcLastLoadCard >= 0 && tvcSlotOf(tvcLastLoadCard) >= 0) return tvcRedirectFor(tvcLastLoadCard);
     return tvcSlotOf(SLOT_CARD256) >= 0 ? tvcRedirectFor(SLOT_CARD256) : tvcRedirectFor(SLOT_FILEIO);
   }
@@ -857,9 +896,12 @@
         t.onerror = () => reject(t.error);
       });
     }
+    let frozen = false;
     return {
-      put: (key, value) => tx('readwrite', (s) => s.put(value, key)).catch(() => {}),
-      del: (key) => tx('readwrite', (s) => s.delete(key)).catch(() => {}),
+      put: (key, value) => frozen ? Promise.resolve() : tx('readwrite', (s) => s.put(value, key)).catch(() => {}),
+      del: (key) => frozen ? Promise.resolve() : tx('readwrite', (s) => s.delete(key)).catch(() => {}),
+      // no more writes: the page is about to reload after an import
+      freeze: () => { frozen = true; },
       getAll: async () => {
         try {
           const d = await open();
@@ -1335,6 +1377,7 @@ registerProcessor('ep-output', EPOutput);
   function startAutostart(command, onTyped, isTvcTape = false, tvcRedirect, prepare) {
     releaseAllKeys();
     api.reset(1);
+    tvcDefDevWatch = null;              // the task sets the redirect it needs
     keyedSinceReset = false;
     autoTask = {
       // the TVC starts BASIC directly, the Enterprise shows a logo first
@@ -1830,6 +1873,297 @@ registerProcessor('ep-output', EPOutput);
     syncDiskNames();
     renderDrives();
   }
+  // --- disk manager: the files of a disk image (VT-DOS / EXDOS FAT12, UPM) ---
+  // The disk code is from TVC-DiskManager (web/shell/diskmgr, a copy); the
+  // changes are written back to the slot (and the drive) at once.
+  let DMLIB = null;
+  let TAPELIB = null;
+  async function tapeLib() {
+    if (!TAPELIB) TAPELIB = await import('./tapewav.js?v=' + encodeURIComponent((document.querySelector('meta[name="build"]') || {}).content || ''));
+    return TAPELIB;
+  }
+  async function dmLib() {
+    if (DMLIB) return DMLIB;
+    const v = '?v=' + encodeURIComponent((document.querySelector('meta[name="build"]') || {}).content || '');
+    const [types, fat, upm, zip, cas] = await Promise.all(['types', 'fat_disk', 'upm_disk', 'zip_writer', 'cas_parser']
+      .map((n) => import('./diskmgr/' + n + '.js' + v)));
+    DMLIB = { DISK_FORMATS: types.DISK_FORMATS, FatDisk: fat.FatDisk, UpmDisk: upm.UpmDisk, SimpleZip: zip.SimpleZip, CasParser: cas.CasParser };
+    return DMLIB;
+  }
+  const dm = { d: 0, i: 0, disk: null, sys: '', user: -1, sel: new Set() };
+
+  // the slot's image as a disk object (null: empty slot); throws for an
+  // unknown format
+  function dmOpenDisk(bytes, name) {
+    const L = DMLIB;
+    if (L.FatDisk.isFatImage(bytes)) {
+      const disk = new L.FatDisk();
+      disk.load(bytes, name);
+      return { disk, sys: 'DOS' };
+    }
+    const disk = new L.UpmDisk();
+    disk.load(bytes, name);                       // throws if not a UPM size
+    return { disk, sys: 'UPM' };
+  }
+
+  async function dmShow(d, i) {
+    await dmLib();
+    Object.assign(dm, { d, i, disk: null, sys: '', user: -1 });
+    dm.sel.clear();
+    const s = drives[d].slots[i];
+    if (s) {
+      try {
+        Object.assign(dm, dmOpenDisk(slotBytes(d, i), s.name));
+      } catch (e) {
+        setMessage('A lemezkép formátuma nem ismert (VT-DOS/EXDOS FAT12 vagy UPM): ' + (e.message || e), true);
+        return;
+      }
+    }
+    dmRender();
+    const dlg = $('dm');
+    if (!dlg.open) dlg.showModal();
+  }
+
+  // writes the changed image back to the slot (and to the drive)
+  function dmCommit() {
+    const { d, i } = dm;
+    const bytes = dm.disk.saveImage();
+    const p = slotPath(d, i);
+    const inDrive = drives[d].active === i && ready;
+    if (inDrive) api.setDisk(d, '');
+    M.FS.writeFile(p, bytes);
+    if (inDrive) api.setDisk(d, p);
+    putSlot(d, i, bytes);
+    dm.sel.clear();
+    dmRender();
+  }
+  function dmTry(fn) {
+    try {
+      if (fn() !== false) dmCommit();
+    } catch (e) {
+      setMessage(e.message || String(e), true);
+      dmRender();
+    }
+  }
+
+  // the files shown: [{ name, size, dir, info, user }]
+  function dmFiles() {
+    if (dm.sys === 'DOS') {
+      return dm.disk.listCurrentDirectory().map((f) => ({ name: f.fullName, size: f.size, dir: f.isDirectory, info: f, user: 0,
+        attrs: (f.isReadOnly ? 'R' : '') + (f.isHidden ? 'H' : '') + (f.isSystem ? 'S' : ''), date: f.dateTime || '' }));
+    }
+    return dm.disk.getFiles().filter((f) => dm.user < 0 || f.user === dm.user).map((f) => ({ name: f.fullName, size: f.exactBytes,
+      dir: false, info: f, user: f.user, attrs: (f.isReadOnly ? 'R/O ' : '') + (f.isSystem ? 'SYS' : ''), date: String(f.user) }));
+  }
+  function dmRead(f) {
+    return dm.sys === 'DOS' ? dm.disk.readFile(f.name) : dm.disk.readFile(f.name, f.user);
+  }
+  const dmFree = () => dm.sys === 'DOS' ? dm.disk.getFreeClustersCount() * dm.disk.getClusterSize()
+    : dm.disk.getFreeBlockIndices().length * dm.disk.getFormat().blockSize;
+
+  // a program the machine can start from this disk
+  function dmStartable(f) {
+    if (f.dir) return false;
+    const ext = extOf(f.name);
+    if (machine.type === 1) return ext === 'cas' && (dm.sys === 'UPM' ? f.user === 0 : dm.disk.getCurrentPath() === '\\');
+    if (dm.sys !== 'DOS' || dm.disk.getCurrentPath() !== '\\') return false;
+    if (['bas', 'com', 'prg'].includes(ext)) return true;
+    try { const b = dmRead(f); return b[0] === 0 && (b[1] === 4 || b[1] === 5); } catch (e) { return false; }
+  }
+  function dmStart(f) {
+    const { d, i } = dm;
+    $('dm').close();
+    if (drives[d].active !== i) selectSlot(d, i);
+    const base = f.name.replace(/\.[^.]*$/, '');
+    if (machine.type === 1) {
+      const card = dm.sys === 'UPM' ? SLOT_UPM : SLOT_VTDOS;
+      const slot = ensureTvcDiskCard(card);
+      if (slot >= 0) {
+        autoTask = null;
+        applyMachine(machine);          // loads the card's ROM, cold reset
+        mountDrive(0); mountDrive(1);
+        setMessage(tvcCardMoved(card, slot));
+      }
+      startAutostart('load "' + (d ? 'B:' : '') + base + '"\n', null, false, tvcRedirectFor(card));
+    } else {
+      if (!machine.roms.some((r) => r[0].startsWith('exdos'))) {
+        applyMachine(MACHINES.find((x) => x.id === 'ep128uk-exdos'));
+        $('machine').value = machine.id;
+        mountDrive(0); mountDrive(1);
+      }
+      const b = dmRead(f);
+      const isBasic = extOf(f.name) === 'bas' || (b[0] === 0 && b[1] === 4);
+      startAutostart(':def_dev_disk\n' + (isBasic ? 'run' : 'load') + ' "' + (d ? 'B:' : 'A:') + f.name + '"\n', null);
+    }
+    canvas.focus({ preventScroll: true });
+  }
+
+  function dmRender() {
+    const { d, i } = dm;
+    const s = drives[d].slots[i];
+    $('dm-title').textContent = (d ? 'B:' : 'A:') + ' ' + (i + 1) + '. lemez' + (s ? ': ' + s.name : ' (üres)');
+    const has = !!dm.disk;
+    $('dm-new').hidden = has;
+    $('dm-main').hidden = !has;
+    if (!has) {
+      // the Enterprise (EXDOS) only uses FAT disks
+      const sel = $('dm-format');
+      sel.textContent = '';
+      for (const [id, f] of Object.entries(DMLIB.DISK_FORMATS)) {
+        if (machine.type === 1 || f.system === 'DOS') sel.add(new Option(f.system === 'DOS' && machine.type !== 1 ? f.name.replace('VT-DOS', 'EXDOS') : f.name, id));
+      }
+      sel.value = 'vtdos_720k';
+      return;
+    }
+    const fmt = dm.disk.getFormat();
+    const dos = dm.sys === 'DOS';
+    $('dm-info').textContent = (dos ? 'FAT12 (VT-DOS / EXDOS)' : 'UPM (CP/M 2.2)') + ' · ' + Math.round(fmt.totalSize / 1024) + ' KB · szabad: ' +
+      Math.round(dmFree() / 1024) + ' KB' + (dos && dm.disk.getVolumeLabel() ? ' · kötetnév: ' + dm.disk.getVolumeLabel() : '');
+    $('dm-note').hidden = !(drives[d].active === i);
+    $('dm-path').textContent = dos ? (d ? 'B:' : 'A:') + dm.disk.getCurrentPath() : '';
+    $('dm-mkdir').hidden = !dos;
+    $('dm-label').hidden = !dos;
+    const us = $('dm-user');
+    us.hidden = dos;
+    if (!dos && us.options.length !== 17) {
+      us.textContent = '';
+      us.add(new Option('minden user', '-1'));
+      for (let u = 0; u < 16; u++) us.add(new Option('user ' + u, String(u)));
+    }
+    us.value = String(dm.user);
+    $('dm-th-date').textContent = dos ? 'Dátum' : 'User';
+    const tb = $('dm-list');
+    tb.textContent = '';
+    if (dos && dm.disk.getCurrentPath() !== '\\') {
+      const tr = document.createElement('tr');
+      tr.className = 'dir';
+      tr.innerHTML = '<td></td><td>📁 ..</td><td></td><td></td><td></td><td></td>';
+      tr.onclick = () => { const p = dm.disk.getCurrentPath(); dm.disk.setCurrentPath(p.slice(0, p.lastIndexOf('\\')) || '\\'); dm.sel.clear(); dmRender(); };
+      tb.append(tr);
+    }
+    const files = dmFiles();
+    for (const f of files) {
+      if (dos && f.dir && (f.name === '.' || f.name === '..')) continue;
+      const key = f.user + ':' + f.name;
+      const tr = document.createElement('tr');
+      const td = (t, c) => { const e = document.createElement('td'); if (c) e.className = c; if (t !== undefined) e.textContent = t; tr.append(e); return e; };
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = dm.sel.has(key);
+      cb.onchange = () => { if (cb.checked) dm.sel.add(key); else dm.sel.delete(key); };
+      td().append(cb);
+      const nm = td((f.dir ? '📁 ' : '') + f.name, 'nm');
+      if (f.dir) {
+        tr.className = 'dir';
+        nm.onclick = () => { dm.disk.setCurrentPath((dm.disk.getCurrentPath() === '\\' ? '' : dm.disk.getCurrentPath()) + '\\' + f.name); dm.sel.clear(); dmRender(); };
+      }
+      td(f.dir ? '' : String(f.size), 'num');
+      td(f.date);
+      const cas = f.info.casInfo;
+      const at = td(f.attrs + (cas ? (cas.autoStart ? ' ⚡RUN' : '') : ''));
+      if (cas && !f.dir) {
+        at.title = 'Kattintás: AutoRun be/ki (a CAS fejléc indítás-jelzője)';
+        at.style.cursor = 'pointer';
+        at.onclick = () => dmTry(() => dos ? dm.disk.setFileAutoRun(f.name, !cas.autoStart) : dm.disk.setFileAutoRun(f.name, f.user, !cas.autoStart));
+      }
+      const act = td('', 'act');
+      const btn = (t, title, fn) => { const b = document.createElement('button'); b.textContent = t; b.title = title; b.onclick = fn; act.append(b); };
+      if (!f.dir && dmStartable(f)) btn('▶', 'Indítás az emulátorban', () => dmStart(f));
+      if (!f.dir) btn('⬇', 'Letöltés', () => download(dmRead(f), f.name));
+      btn('✎', 'Átnevezés', () => {
+        const n = window.prompt('Új név (8.3):', f.name);
+        if (n && n !== f.name) dmTry(() => dos ? dm.disk.renameFile(f.name, n.toUpperCase()) : dm.disk.renameFile(f.name, n.toUpperCase(), f.user));
+      });
+      btn('✕', 'Törlés', () => {
+        if (window.confirm(f.name + ' törlése?')) dmTry(() => dos ? dm.disk.deleteFile(f.name) : dm.disk.deleteFile(f.name, f.user));
+      });
+      tb.append(tr);
+    }
+    if (!files.length) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td></td><td colspan="5" class="small">üres</td>';
+      tb.append(tr);
+    }
+  }
+
+  // uploads files (a ZIP is unpacked) to the current directory / user
+  async function dmUpload(list) {
+    const files = [];
+    for (const file of list) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (extOf(file.name) === 'zip') files.push(...await unzip(bytes));
+      else files.push({ name: file.name, bytes });
+    }
+    const done = [];
+    dmTry(() => {
+      for (const f of files) {
+        // 8.3 upper case name, without accents
+        const n = f.name.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9._\-$#!&]/g, '_');
+        const ok = dm.sys === 'DOS' ? dm.disk.writeFile(n, f.bytes) : dm.disk.writeFile(n, f.bytes, Math.max(0, dm.user), false);
+        if (ok === false) throw new Error('Nem fér el a lemezen: ' + f.name);
+        done.push(n);
+      }
+    });
+    if (done.length) setMessage(done.length + ' fájl a lemezre került');
+  }
+
+  function dmSelected() {
+    return dmFiles().filter((f) => !f.dir && dm.sel.has(f.user + ':' + f.name));
+  }
+
+  function setupDiskManager() {
+    const dlg = $('dm');
+    $('dm-close').onclick = () => dlg.close();
+    dlg.addEventListener('close', () => { renderDrives(); canvas.focus({ preventScroll: true }); });
+    $('dm-upload').onchange = (e) => { const fl = Array.from(e.target.files); e.target.value = ''; dmUpload(fl); };
+    const drop = $('dm-main');
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('drag'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+    drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('drag'); if (e.dataTransfer.files.length) dmUpload(Array.from(e.dataTransfer.files)); });
+    $('dm-user').onchange = (e) => { dm.user = +e.target.value; dm.sel.clear(); dmRender(); };
+    $('dm-mkdir').onclick = () => {
+      const n = window.prompt('Az új mappa neve (8 betű):', '');
+      if (n) dmTry(() => dm.disk.createDirectory(n.toUpperCase()));
+    };
+    $('dm-label').onclick = () => {
+      const n = window.prompt('Kötetnév (11 betű):', dm.disk.getVolumeLabel() || '');
+      if (n !== null) dmTry(() => { dm.disk.setVolumeLabel(n.toUpperCase()); });
+    };
+    $('dm-zip').onclick = () => {
+      const sel = dmSelected();
+      if (!sel.length) { setMessage('Jelölj ki fájlokat', true); return; }
+      if (sel.length === 1) { download(dmRead(sel[0]), sel[0].name); return; }
+      const z = new DMLIB.SimpleZip();
+      for (const f of sel) z.addFile(f.name, dmRead(f));
+      const s = drives[dm.d].slots[dm.i];
+      download(z.generate(), (s ? s.name.replace(/\.[^.]*$/, '') : 'lemez') + '.zip');
+    };
+    $('dm-del').onclick = () => {
+      const sel = dmSelected();
+      if (!sel.length) { setMessage('Jelölj ki fájlokat', true); return; }
+      if (!window.confirm(sel.length + ' fájl törlése?')) return;
+      dmTry(() => { for (const f of sel) (dm.sys === 'DOS' ? dm.disk.deleteFile(f.name) : dm.disk.deleteFile(f.name, f.user)); });
+    };
+    $('dm-all').onchange = (e) => {
+      dm.sel.clear();
+      if (e.target.checked) for (const f of dmFiles()) if (!f.dir) dm.sel.add(f.user + ':' + f.name);
+      dmRender();
+    };
+    $('dm-image').onclick = () => { const s = drives[dm.d].slots[dm.i]; download(dm.disk.saveImage(), s ? s.name : 'lemez.dsk'); };
+    $('dm-create').onclick = () => {
+      const id = $('dm-format').value;
+      const f = DMLIB.DISK_FORMATS[id];
+      const name = ($('dm-newname').value.trim() || (f.system === 'UPM' ? 'upm' : 'lemez')).replace(/\.(dsk|img)$/i, '') + '.dsk';
+      const disk = f.system === 'UPM' ? new DMLIB.UpmDisk() : new DMLIB.FatDisk();
+      disk.createNew(id, name.toUpperCase());
+      storeSlot(dm.d, dm.i, { name, bytes: disk.saveImage() });
+      if (drives[dm.d].active === dm.i) mountDrive(dm.d);
+      Object.assign(dm, { disk, sys: f.system });
+      renderDrives();
+      dmRender();
+    };
+  }
+
   // saves the disks in the drives, e.g. when the page is closed
   function persistDrives() {
     if (!ready) return;
@@ -1917,7 +2251,11 @@ registerProcessor('ep-output', EPOutput);
         x.title = 'A lemez kivétele (a hely üres lesz)';
         x.disabled = !s;
         x.onclick = () => { clearSlot(d, i); canvas.focus({ preventScroll: true }); };
-        row.append(pick, open, dl, x);
+        const fm = document.createElement('button');
+        fm.textContent = s ? '🗂' : '＋';
+        fm.title = s ? 'Tartalom: a lemez fájljai (feltöltés, letöltés, törlés, indítás)' : 'Új, üres lemez ebbe a helyre';
+        fm.onclick = () => dmShow(d, i);
+        row.append(pick, fm, open, dl, x);
         box.append(row);
       }
     }
@@ -2794,13 +3132,34 @@ registerProcessor('ep-output', EPOutput);
       sel.onchange = update;
     }
     show();
-    refreshTvcSlotsUI = () => { show(); update(); };
+    // the default storage
+    const dd = $('tvc-defdev');
+    const ddShow = () => {
+      for (const o of dd.options) {
+        const card = Number(o.value);
+        o.disabled = card >= 0 && tvcSlotOf(card) < 0;
+      }
+      dd.value = String(tvcDefDev);
+      const missing = tvcDefDev >= 0 && tvcSlotOf(tvcDefDev) < 0;
+      $('tvc-defdev-note').textContent = missing ? 'A kiválasztott kártya nincs bent: a gép választ (a legnagyobb sorszámú portban lévő).' : '';
+    };
+    dd.onchange = () => {
+      tvcDefDev = Number(dd.value);
+      try { localStorage.setItem('ep128web.tvcDefDev', String(tvcDefDev)); } catch (e) { }
+      ddShow();
+      // at once, too (the automatic one comes back with the next boot)
+      if (machine.type === 1 && tvcDefDevRedirect()) setTvcRedirect(tvcDefDevRedirect());
+      canvas.focus({ preventScroll: true });
+    };
+    ddShow();
+    refreshTvcSlotsUI = () => { show(); update(); ddShow(); };
     $('tvc-slots-apply').onclick = () => {
       const p = pending();
       if (!validTvcSlots(p)) { update(); return; }
       tvcSlots = p;
       try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots)); } catch (e) { }
       update();
+      ddShow();
       if (fxOn && tvcSlotOf(SLOT_CARD256) >= 0) {
         fxOn = false;
         try { localStorage.setItem('ep128web.2dfx', '0'); } catch (e) { }
@@ -2858,6 +3217,164 @@ registerProcessor('ep-output', EPOutput);
   function toggleTurbo() {
     turbo = !turbo;
     $('btn-turbo').classList.toggle('on', turbo);
+  }
+
+  // --- speed ---
+  let speed = 1;
+  function setupSpeed() {
+    const sel = $('speed');
+    try { const v = Number(localStorage.getItem('ep128web.speed')); if ([0.25, 0.5, 1, 2, 4].includes(v)) speed = v; } catch (e) { }
+    sel.value = String(speed);
+    sel.onchange = () => {
+      speed = Number(sel.value);
+      try { localStorage.setItem('ep128web.speed', String(speed)); } catch (e) { }
+      sel.classList.toggle('on', speed !== 1);
+      canvas.focus({ preventScroll: true });
+    };
+    sel.classList.toggle('on', speed !== 1);
+  }
+
+  // --- quick saves: 4 slots with a picture (IndexedDB 'qs:n') ---
+  const QS_SLOTS = 4;
+  const quickSaves = new Array(QS_SLOTS).fill(null);   // { machine, slots, time, bytes, pic }
+  function qsPicture() {
+    const c = document.createElement('canvas');
+    c.width = 160; c.height = 120;
+    const x = c.getContext('2d');
+    x.imageSmoothingEnabled = true;
+    x.drawImage(canvas, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.8);
+  }
+  function qsSave(i) {
+    if (!ready) return;
+    check(api.saveSnapshot('/tmp/qs.ep128s'), 'mentés');
+    quickSaves[i] = { machine: machine.id, slots: tvcSlots.slice(), fx: fxOn, time: Date.now(),
+                      bytes: M.FS.readFile('/tmp/qs.ep128s'), pic: qsPicture() };
+    db.put('qs:' + i, quickSaves[i]);
+    renderQuickSaves();
+    setMessage((i + 1) + '. gyorsmentés kész');
+  }
+  // the machine of a saved state (and the TVC cards), then the state
+  function loadSavedState(st) {
+    const m = MACHINES.find((x) => x.id === st.machine);
+    if (!m) throw new Error('ismeretlen gép: ' + st.machine);
+    const slotsDiffer = m.type === 1 && st.slots && st.slots.join() !== tvcSlots.join();
+    if (m.id !== machine.id || slotsDiffer) {
+      if (slotsDiffer) {
+        tvcSlots = st.slots.slice();
+        try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots)); } catch (e) { }
+        refreshTvcSlotsUI();
+      }
+      autoTask = null;
+      applyMachine(m);
+      $('machine').value = m.id;
+    }
+    M.FS.writeFile('/tmp/qs.ep128s', st.bytes);
+    check(api.loadSnapshot('/tmp/qs.ep128s'), 'pillanatkép');
+    releaseAllKeys();
+  }
+  function qsLoad(i) {
+    const st = quickSaves[i];
+    if (!st || !ready) return;
+    try {
+      loadSavedState(st);
+      rewindClear();
+      setMessage((i + 1) + '. gyorsmentés betöltve');
+    } catch (e) {
+      setMessage('A betöltés nem sikerült: ' + (e.message || e), true);
+    }
+    canvas.focus({ preventScroll: true });
+  }
+  function renderQuickSaves() {
+    const box = $('qs-slots');
+    box.textContent = '';
+    quickSaves.forEach((st, i) => {
+      const d = document.createElement('div');
+      d.className = 'qs-slot';
+      let pic;
+      if (st) {
+        pic = document.createElement('img');
+        pic.src = st.pic;
+        pic.alt = '';
+        pic.title = 'Betöltés';
+        pic.onclick = () => qsLoad(i);
+      } else {
+        pic = document.createElement('div');
+        pic.className = 'qs-empty';
+        pic.textContent = 'üres';
+      }
+      const lab = document.createElement('div');
+      lab.className = 'qs-label';
+      const m = st && MACHINES.find((x) => x.id === st.machine);
+      lab.textContent = (i + 1) + '. ' + (st ? new Date(st.time).toLocaleString('hu-HU', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) + ' · ' + (m ? m.name.split(' · ')[0] : st.machine) : '');
+      lab.title = st ? (m ? m.name : st.machine) : '';
+      const btns = document.createElement('div');
+      btns.className = 'qs-btns';
+      const b = (t, title, fn, dis) => { const e = document.createElement('button'); e.textContent = t; e.title = title; e.onclick = () => { fn(); canvas.focus({ preventScroll: true }); }; e.disabled = !!dis; btns.append(e); };
+      b('💾', 'A mostani állapot mentése ide', () => {
+        if (st && !window.confirm((i + 1) + '. hely felülírása?')) return;
+        qsSave(i);
+      });
+      b('▶', 'Ennek az állapotnak a betöltése', () => qsLoad(i), !st);
+      b('✕', 'Törlés', () => { quickSaves[i] = null; db.del('qs:' + i); renderQuickSaves(); }, !st);
+      d.append(pic, lab, btns);
+      box.append(d);
+    });
+  }
+
+  // --- rewind: a snapshot each second of the last ~30 s ---
+  const RW_MAX = 32, RW_MAX_BYTES = 96 << 20;
+  let rwOn = false, rwBuf = [], rwBytes = 0, rwAcc = 0;
+  function rewindClear() {
+    rwBuf = [];
+    rwBytes = 0;
+    rwAcc = 0;
+    rewindNote();
+  }
+  function rewindNote() {
+    $('rw-note').textContent = rwOn ? (rwBuf.length ? rwBuf.length + ' mp visszatekerhető' : '') : '';
+    $('rw-back').disabled = !rwOn || rwBuf.length < 2;
+  }
+  function rewindTick(us) {
+    if (!rwOn || paused || dbgStopped) return;
+    rwAcc += us;
+    if (rwAcc < 1e6) return;
+    rwAcc = 0;
+    if (api.saveSnapshot('/tmp/rw.ep128s') !== 0) return;
+    const bytes = M.FS.readFile('/tmp/rw.ep128s');
+    rwBuf.push({ machine: machine.id, slots: tvcSlots.slice(), bytes });
+    rwBytes += bytes.length;
+    while (rwBuf.length > RW_MAX || (rwBytes > RW_MAX_BYTES && rwBuf.length > 1)) rwBytes -= rwBuf.shift().bytes.length;
+    rewindNote();
+  }
+  function rewindBack() {
+    if (rwBuf.length < 2) return;
+    const idx = Math.max(0, rwBuf.length - 1 - 5);
+    const st = rwBuf[idx];
+    while (rwBuf.length > idx + 1) rwBytes -= rwBuf.pop().bytes.length;
+    try {
+      loadSavedState(st);
+    } catch (e) {
+      setMessage('A visszatekerés nem sikerült: ' + (e.message || e), true);
+      rewindClear();
+      return;
+    }
+    rwAcc = 0;
+    rewindNote();
+    canvas.focus({ preventScroll: true });
+  }
+  function setupQuickSaves() {
+    renderQuickSaves();
+    try { rwOn = localStorage.getItem('ep128web.rewind') === '1'; } catch (e) { }
+    $('rw-on').checked = rwOn;
+    $('rw-on').onchange = (e) => {
+      rwOn = e.target.checked;
+      try { localStorage.setItem('ep128web.rewind', rwOn ? '1' : '0'); } catch (er) { }
+      if (!rwOn) rewindClear();
+      rewindNote();
+    };
+    $('rw-back').onclick = rewindBack;
+    rewindNote();
   }
 
   // ========== CATALOG SECTION ==========
@@ -3253,7 +3770,14 @@ registerProcessor('ep-output', EPOutput);
     };
     $('tape-stop').onclick = () => { if (tapeName) api.tapeCommand(0); canvas.focus({ preventScroll: true }); };
     $('tape-rew').onclick = () => { if (tapeName) api.tapeCommand(2); canvas.focus({ preventScroll: true }); };
-    $('tape-rec').onclick = () => { if (tapeName) api.tapeCommand(3); canvas.focus({ preventScroll: true }); };
+    $('tape-rec').onclick = () => {
+      if (tapeName) {
+        // TVC: SAVE goes to the tape too
+        if (machine.type === 1) { writeMemory(2821, 5); writeMemory(2829, 5); }
+        api.tapeCommand(3);
+      }
+      canvas.focus({ preventScroll: true });
+    };
     $('tape-new').onclick = () => {
       tapeName = 'tape-' + Date.now().toString(36) + '.tap';
       check(api.setTape('/tape/' + tapeName), 'kazetta');
@@ -3265,6 +3789,41 @@ registerProcessor('ep-output', EPOutput);
       api.setTape('');                  // flush and close the tape file
       download(M.FS.readFile('/tape/' + tapeName), tapeName);
       check(api.setTape('/tape/' + tapeName), 'kazetta');
+    };
+    $('tape-wav').onclick = async () => {
+      if (!tapeName) return;
+      api.setTape('');
+      const bytes = M.FS.readFile('/tape/' + tapeName);
+      check(api.setTape('/tape/' + tapeName), 'kazetta');
+      try {
+        const base = tapeName.replace(/\.[^.]*$/, '');
+        download(extOf(tapeName) === 'wav' ? bytes : (await tapeLib()).tapToWav(bytes), base + '.wav');
+      } catch (e) {
+        setMessage('A kazetta nem alakítható át: ' + (e.message || e), true);
+      }
+    };
+    $('cas-wav').onchange = async (e) => {
+      const list = Array.from(e.target.files);
+      e.target.value = '';
+      try {
+        const lib = await tapeLib();
+        const files = [];
+        for (const f of list) {
+          const bytes = new Uint8Array(await f.arrayBuffer());
+          if (extOf(f.name) === 'zip') files.push(...await unzip(bytes));
+          else files.push({ name: f.name, bytes });
+        }
+        const cas = files.filter((f) => extOf(f.name) === 'cas');
+        if (!cas.length) throw new Error('nincs benne .cas fájl');
+        for (const f of cas) {
+          const name = f.name.split(/[\\/]/).pop();
+          download(lib.casToWav(f.bytes, name), name.replace(/\.[^.]*$/, '') + '.wav');
+        }
+        setMessage(cas.length + ' .wav fájl elkészült');
+      } catch (err) {
+        setMessage('CAS → WAV: ' + (err.message || err), true);
+      }
+      canvas.focus({ preventScroll: true });
     };
     renderDrives();
     setInterval(checkDiskActivity, 300);
@@ -3306,6 +3865,10 @@ registerProcessor('ep-output', EPOutput);
     setupTvcSlotsUI();
     setup2dfx();
     setupDebugger();
+    setupDiskManager();
+    setupSpeed();
+    setupQuickSaves();
+    setupSettingsIO();
 
     const wrap = $('screen-wrap');
     wrap.addEventListener('dragover', (e) => { e.preventDefault(); wrap.classList.add('drag'); });
@@ -6119,7 +6682,9 @@ ep.log('CTRL+ESC megnyomva');`
     pollGamepads();
 
     let us = dt * 1000;
-    if (audioRunning && !turbo) {
+    if (speed !== 1 && !turbo) {
+      us *= speed;                      // the sound is off at other speeds
+    } else if (audioRunning && !turbo) {
       // keep about 60 ms of audio buffered. The speed is only nudged (at most
       // 0.5 %, from a smoothed buffer level): bigger steps change the pitch
       // audibly, like a dragging tape. Only an almost empty buffer (e.g.
@@ -6152,6 +6717,7 @@ ep.log('CTRL+ESC megnyomva');`
         } while (performance.now() - t0 < 14 && !api.dbgState());
       } else {
         check(api.run(us), 'emuláció');
+        if (speed !== 1) api.audioClear();
       }
     } catch (e) {
       // a WebAssembly error stops the emulator for good: say so
@@ -6164,6 +6730,8 @@ ep.log('CTRL+ESC megnyomva');`
       return;
     }
     emulatedUs += us;
+    tvcDefDevTick();
+    rewindTick(us);
     dbgFrameTick(us);
     dbgHandleStops();
     if (!dbgStopped) dbgScriptFrame(us);
@@ -6246,7 +6814,7 @@ ep.log('CTRL+ESC megnyomva');`
       fileMachineType: c('ep_file_machine_type', 'number', ['string']),
       resetMemory: c('ep_reset_memory', 'number', ['number']),
       loadRom: c('ep_load_rom', 'number', ['number', 'string', 'number']),
-      reset: newState(c('ep_reset', 'number', ['number'])),
+      reset: ((f) => (...a) => { const r = f(...a); scheduleTvcDefDev(); return r; })(newState(c('ep_reset', 'number', ['number']))),
       run: c('ep_run', 'number', ['number']),
       setKey: c('ep_set_key', null, ['number', 'number']),
       frameBuffer: c('ep_frame_buffer', 'number', []),
@@ -6352,6 +6920,7 @@ ep.log('CTRL+ESC megnyomva');`
         else if (key.startsWith('rom:')) M.FS.writeFile('/roms/' + key.slice(4), value);
         else if (key === 'usbfiles') usbSaved = value;
         else if (key.startsWith('disk:')) restoreDisk(key, value);
+        else if (key.startsWith('qs:') && +key.slice(3) < QS_SLOTS) quickSaves[+key.slice(3)] = value;
         else if (key === 'cardflash') {
           try { M.FS.mkdir('/card'); } catch (e) { }
           M.FS.writeFile('/card/flash.bin', value);
@@ -6359,6 +6928,7 @@ ep.log('CTRL+ESC megnyomva');`
         }
       } catch (e) { console.warn(e); }
     }
+    renderQuickSaves();
     if (!fileExists('/roms/exos21.rom')) {
       const romUrls = [
         'https://tvc.homeserver.hu/dl.php?file=ep128emu_roms-2.0.11.bin',
@@ -6392,6 +6962,101 @@ ep.log('CTRL+ESC megnyomva');`
     else resumeAudio();
     canvas.focus({ preventScroll: true });
     requestAnimationFrame(frame);
+    setupPwa();
+  }
+
+  // --- settings export / import ---
+  // localStorage ep128web.* and optionally the stored disks, quick saves,
+  // pendrive and card flash (not the ROMs); byte arrays as base64
+  const CFG_FORMAT = 'ep128web-settings';
+  const cfgDataKey = (k) => /^(disk:|qs:)/.test(k) || k === 'usbfiles' || k === 'cardflash';
+  function b64(u8) {
+    let s = '';
+    for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
+  function unb64(str) {
+    const s = atob(str);
+    const u8 = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) u8[i] = s.charCodeAt(i);
+    return u8;
+  }
+  async function cfgExport(withData) {
+    persistDrives();
+    const settings = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k.startsWith('ep128web.')) settings[k] = localStorage.getItem(k);
+    }
+    const out = { format: CFG_FORMAT, version: 1, time: new Date().toISOString(), settings };
+    if (withData) {
+      out.data = {};
+      for (const [k, v] of await db.getAll()) if (cfgDataKey(k)) out.data[k] = v;
+    }
+    const json = JSON.stringify(out, (k, v) => (v instanceof Uint8Array ? { $u8: b64(v) } : v));
+    const d = new Date();
+    const p2 = (n) => String(n).padStart(2, '0');
+    download(new TextEncoder().encode(json), 'ep128web-beallitasok-' + d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) + '.json');
+  }
+  async function cfgImport(file) {
+    let cfg;
+    try {
+      cfg = JSON.parse(await file.text(), (k, v) => (v && typeof v === 'object' && typeof v.$u8 === 'string' ? unb64(v.$u8) : v));
+    } catch (e) {
+      throw new Error('nem olvasható JSON fájl');
+    }
+    if (!cfg || cfg.format !== CFG_FORMAT || !cfg.settings) throw new Error('nem Ep128web beállításfájl');
+    const n = Object.keys(cfg.data || {}).length;
+    if (!window.confirm('A mostani beállítások' + (n ? ' és a fájlban lévő lemezek/mentések' : '') +
+                        ' felülíródnak, és az oldal újratöltődik. Mehet?')) return;
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+    for (const k of keys) if (k.startsWith('ep128web.')) localStorage.removeItem(k);
+    for (const [k, v] of Object.entries(cfg.settings)) if (k.startsWith('ep128web.')) localStorage.setItem(k, String(v));
+    if (n) {
+      // the disks and quick saves of the file replace the stored ones
+      for (const [k] of await db.getAll()) if (cfgDataKey(k) && !(k in cfg.data)) await db.del(k);
+      for (const [k, v] of Object.entries(cfg.data)) if (cfgDataKey(k)) await db.put(k, v);
+    }
+    db.freeze();
+    location.reload();
+  }
+  function setupSettingsIO() {
+    $('cfg-export').onclick = () => cfgExport($('cfg-data').checked).catch((e) => setMessage('Exportálás: ' + (e.message || e), true));
+    $('cfg-import').onchange = (e) => {
+      const f = e.target.files[0];
+      e.target.value = '';
+      if (f) cfgImport(f).catch((err) => setMessage('Importálás: ' + (err.message || err), true));
+    };
+  }
+
+  // --- installable app (PWA): offline worker, install button, files opened from the OS ---
+  function setupPwa() {
+    if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+      navigator.serviceWorker.register('sw.js').catch((e) => console.warn('service worker:', e));
+    }
+    const btn = $('btn-install');
+    let prompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      prompt = e;
+      btn.hidden = false;
+    });
+    btn.onclick = async () => {
+      if (!prompt) return;
+      prompt.prompt();
+      await prompt.userChoice.catch(() => { });
+      prompt = null;
+      btn.hidden = true;
+    };
+    window.addEventListener('appinstalled', () => { btn.hidden = true; });
+    if ('launchQueue' in window) {
+      window.launchQueue.setConsumer(async (params) => {
+        if (!params.files || !params.files.length) return;
+        const files = await Promise.all(params.files.map((h) => h.getFile()));
+        loadFiles(files);
+      });
+    }
   }
 
   main().catch((e) => {

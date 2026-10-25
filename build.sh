@@ -134,7 +134,7 @@ em++ -O3 $OBJS -o dist/ep128emu.js \
   -sENVIRONMENT=web,node -sINVOKE_RUN=1 -sEXIT_RUNTIME=0 \
   -lidbfs.js
 
-cp web/shell/* dist/
+cp -r web/shell/. dist/
 # build id in the page header (time of the build, commit), also used to make
 # browsers load the new scripts and .wasm after an update
 BUILD_TIME=$(TZ=Europe/Budapest date '+%Y.%m.%d %H:%M')

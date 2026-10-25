@@ -35,6 +35,50 @@ letöltését külön kell betölteni.
 | `.ep128s` / `.ep128d` | ep128emu pillanatkép / demó |
 | `.bin` (ROM-csomag), `.rom` | ROM-ok telepítése |
 
+### Telepítés alkalmazásként, offline használat
+
+Az oldal telepíthető (PWA): Chrome/Edge alatt a „Telepítés” gomb (vagy a
+címsor ikonja), Androidon a menü „Alkalmazás telepítése”, iOS-en a Megosztás →
+„Főképernyőhöz adás”. Az első betöltés után internet nélkül is indul (a ROM-ok
+és lemezek amúgy is a böngészőben vannak). Frissítéskor mindig a hálózatról
+jön az új változat, a tárolt példány csak offline kell. A telepített
+alkalmazással a `.cas`, `.dsk`, `.img`, `.tap`, `.zip` stb. fájlok közvetlenül
+is megnyithatók (Chrome/Edge asztali változatban).
+
+### Magnó: felvétel, .wav
+
+- **Felvétel**: „Üres kazetta”, „● Felvétel”, majd a gépen `SAVE` (TVC-n a
+  felvétel gomb a magnóra állítja a mentést is). A „Letöltés (.tap)” az
+  ep128emu saját formátumában, a „Letöltés (.wav)” hangfájlként tölti le a
+  kazettát; a .wav valódi gépbe (magnóbemenetre játszva) vagy más emulátorba is
+  betölthető.
+- **CAS → WAV…**: TVC `.cas` programokból (vagy egy `.zip`-ben lévőkből)
+  kazettás hangfelvételt készít, ugyanúgy kódolva, ahogy a TVC ROM-ja a
+  magnóra ír (fejblokk a névvel, adatblokk 256 bájtos szektorokkal,
+  szektoronkénti CRC).
+
+### Beállítások exportálása / importálása
+
+A „Beállítások” panel „Exportálás” gombja egy `.json` fájlba menti az oldal
+beállításait (gép, TVC-kártyák, alapértelmezett tároló, joystick, hangerő,
+sebesség, debugger-töréspontok, -címkék, -szkriptek stb.). A „lemezekkel,
+gyorsmentésekkel együtt” bejelölésével a tárolt lemezek, a gyorsmentések, a
+pendrive és a TVC256k++ flash tartalma is bekerül (a ROM-ok nem). Az
+„Importálás…” egy másik gépen vagy böngészőben visszaállítja mindezt (az oldal
+újratöltődik).
+
+### Gyorsmentés, visszatekerés, sebesség
+
+- **Gyorsmentés**: 4 hely, mindegyik egy kis képpel. 💾 elmenti a gép mostani
+  állapotát, ▶ (vagy a képre kattintás) visszatölti, ✕ törli. A mentések a
+  böngészőben maradnak (IndexedDB). Ha a mentés másik gépen (vagy TVC-n más
+  bővítőkártyákkal) készült, betöltéskor átvált arra.
+- **Visszatekerés**: bekapcsolva másodpercenként pillanatképet tesz el az utolsó
+  ~30 másodpercről; a „⏪ 5 mp” gomb 5 másodpercet ugrik vissza (többször is
+  megnyomható). A beállítást az oldal megjegyzi.
+- **Sebesség**: a Turbó gomb melletti választóval 25%–400%. 100%-tól eltérő
+  sebességen nincs hang.
+
 ### Lemezmeghajtók (A:, B:)
 
 Mindkét meghajtónak 3 helye van, egymás alatt. Egy hely sora:
@@ -43,6 +87,15 @@ Mindkét meghajtónak 3 helye van, egymás alatt. Egy hely sora:
 - **📂 Megnyitás:** lemezkép (.dsk, .img, .zip) feltöltése a helyre. A hely aktív lesz, az A:-n a lemez ki is listázódik.
 - **⬇ Letöltés:** a lemezkép mentése.
 - **✕ Törlés:** kiveszi a lemezt, a hely üres lesz.
+- **🗂 Tartalom** (üres helynél **＋ Új lemez**): a lemezkezelő, lásd lent.
+
+**Lemezkezelő.** A lemez fájljai egy ablakban: VT-DOS és EXDOS (FAT12, könyvtárakkal, kötetnévvel) és UPM (CP/M 2.2, user számokkal).
+- Feltöltés gombbal vagy ráhúzással (ZIP kibontva), letöltés (több fájl ZIP-ben), átnevezés, törlés, új mappa, az egész lemezkép letöltése.
+- ▶ indítás: a gép betölti a programot erről a lemezről (TVC: `LOAD` a VT-DOS / UPM kártyával, ha kell, beteszi a kártyát; EP: `RUN`/`LOAD "A:…"` az EXDOS-szal).
+- CAS fájloknál az AutoRun jelző (a programfejléc indítás-bájtja) egy kattintással be- és kikapcsolható.
+- Üres helyen új, formázott lemez: VT-DOS/EXDOS 720K vagy 360K, TVC-n UPM is.
+- A változás azonnal a lemezképre és a böngésző tárolójába kerül; ha a lemez a meghajtóban van, újra behelyeződik. Ha a DOS a régi könyvtárat tartja a memóriában, egy DIR vagy újraindítás segít.
+- A lemezkezelő kód a [TVC-DiskManager](https://github.com/kks2003/TVC-DiskManager) magjának másolata (`web/shell/diskmgr`, MIT); a két projekt független egymástól.
 
 A lemezképeket és a kiválasztott helyeket a böngésző megjegyzi (IndexedDB), újratöltés után is megvannak. Amit a gép a lemezre ír, az is mentődik, amikor a meghajtó lámpája elalszik.
 
@@ -207,6 +260,14 @@ működik, ha az alapértelmezett tároló rájuk mutat. Ezért az alapbeállít
 **0: FILE:, 1: VT-DOS, 2: GameCard, 3: üres** – így bootolás után a VT-DOS az
 alapértelmezett. Lemezkép betöltésekor az oldal a VT-DOS-ra, `.cas` program
 indításakor a FILE:-ra, kazettánál a magnóra állítja át az átirányítást.
+
+Az **Alapértelmezett tároló** választóval ez rögzíthető: automatikus (a valódi
+géphez hasonlóan a legnagyobb sorszámú port), VT-DOS, FILE: vagy TVC256k++. A
+kiválasztottat az oldal minden indulás (bekapcsolás, újraindítás, oldal-újratöltés)
+után beállítja, amint a ROM és a kártyák beállították a sajátjukat; így például a
+TVC256k++ a 3-as portban maradhat, és az `EXT 2` mégis a VT-DOS-t indítja. A
+programindítás (katalógus, FILE:, lemez, kazetta) továbbra is a program saját
+tárolóját állítja be.
 
 Lemezkép betöltésekor az oldal felismeri a formátumát: a FAT-os (boot szektoros)
 lemez VT-DOS-é, az UPM-lemez első 4 pályája üres, utána CP/M-katalógus jön. A
