@@ -2728,6 +2728,25 @@ registerProcessor('ep-output', EPOutput);
     return r;
   }
 
+  // CRT effect: scanlines / scanlines + glow, shadow mask and vignette
+  function setupCrt() {
+    const sel = $('crt');
+    let v = 'off';
+    try { v = localStorage.getItem('ep128web.crt') || 'off'; } catch (e) { }
+    const apply = () => {
+      const wrap = $('screen-wrap');
+      wrap.classList.toggle('fx-scan', sel.value === 'scan');
+      wrap.classList.toggle('fx-crt', sel.value === 'crt');
+    };
+    sel.value = ['off', 'scan', 'crt'].includes(v) ? v : 'off';
+    apply();
+    sel.onchange = () => {
+      apply();
+      try { localStorage.setItem('ep128web.crt', sel.value); } catch (e) { }
+      canvas.focus({ preventScroll: true });
+    };
+  }
+
   // the format selector: shown when the browser can record both, MP4 by default
   function setupVideoFormat() {
     const sel = $('video-fmt');
@@ -3915,6 +3934,7 @@ registerProcessor('ep-output', EPOutput);
     setupSpeed();
     setupQuickSaves();
     setupSettingsIO();
+    setupCrt();
     $('btn-share').onclick = () => shareLink().catch((e) => setMessage('Link: ' + (e.message || e), true));
 
     const wrap = $('screen-wrap');
@@ -6952,6 +6972,7 @@ ep.log('CTRL+ESC megnyomva');`
     canvas.width = w;
     canvas.height = h;
     imageData = ctx.createImageData(w, h);
+    $('screen-wrap').style.setProperty('--lines', String(h));
     updateScreenCrop();
 
     // ROMs: epfileio.rom ships with ep128emu (GPL); the rest come from the

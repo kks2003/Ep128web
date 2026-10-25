@@ -6,17 +6,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610250354-e736dd3">
+<link rel="stylesheet" href="style.css?v=202610250356-cbcc814">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <meta name="theme-color" content="#c8102e">
-<meta name="build" content="202610250354-e736dd3">
+<meta name="build" content="202610250356-cbcc814">
 </head>
 <body>
-<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #29 előnézete, nem az éles oldal · fordítva: 2026.10.25 04:54 · e736dd3 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #29 előnézete, nem az éles oldal · fordítva: 2026.10.25 04:56 · cbcc814 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.25 04:54 · e736dd3</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.25 04:56 · cbcc814</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -37,6 +37,11 @@
     </label>
     <button id="btn-snap" title="Pillanatkép mentése (.ep128s)">Állapot mentése</button>
     <button id="btn-shot" title="A képernyő mentése képként (.png)">📷 Kép</button>
+    <select id="crt" title="Képernyő-effekt: régi tévé / monitor hatás" aria-label="Képernyő-effekt">
+      <option value="off">Kép: éles</option>
+      <option value="scan">Kép: scanline</option>
+      <option value="crt">Kép: CRT</option>
+    </select>
     <button id="btn-video" title="Videó felvétele hanggal; újra megnyomva leáll és letöltődik">● Videó</button>
     <select id="video-fmt" title="A videó formátuma" aria-label="A videó formátuma" hidden>
       <option value="mp4">MP4</option>
@@ -54,6 +59,7 @@
  <div id="play">
   <div id="screen-wrap">
     <canvas id="screen" width="768" height="288" tabindex="0"></canvas>
+    <div id="crt-fx" aria-hidden="true"></div>
     <div id="overlay" hidden>
       <div class="box">
         <h2>Hiányzó ROM-ok</h2>
@@ -528,7 +534,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610250354-e736dd3"></script>
-<script src="ep128.js?v=202610250354-e736dd3"></script>
+<script src="ep128emu.js?v=202610250356-cbcc814"></script>
+<script src="ep128.js?v=202610250356-cbcc814"></script>
 </body>
 </html>
