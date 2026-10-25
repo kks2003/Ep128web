@@ -3,6 +3,11 @@
 (() => {
   'use strict';
 
+  // the translation of a Hungarian text (i18n.js); F(): with {0}, {1}…
+  const T = window.I18N ? window.I18N.T : (s) => s;
+  const LOCALE = { hu: 'hu-HU', en: 'en-GB', de: 'de-DE', uk: 'uk-UA' }[window.I18N ? window.I18N.lang : 'hu'];
+  const F = window.I18N ? window.I18N.F : (s, ...a) => s.replace(/\{(\d+)\}/g, (x, i) => a[+i]);
+
   // --------------------------------------------------------------------------
   // Machine configurations (subset of the ones created by ep128emu's
   // epmakecfg); ROM file names are those in ep128emu_roms-2.0.11.bin
@@ -22,7 +27,7 @@
              ['exdos14isdos10uk-hfont.rom', [0x20, 0x21]]]
     },
     {
-      id: 'ep128uk-tape', name: 'EP128 (UK) · csak magnó · 128K', ram: 128,
+      id: 'ep128uk-tape', name: T('EP128 (UK) · csak magnó · 128K'), ram: 128,
       roms: [['exos21.rom', [0x00, 0x01]], ['basic21.rom', [0x04]],
              ['epfileio.rom', [0x10]]]
     },
@@ -43,7 +48,7 @@
              ['epfileio.rom', [0x10]], ['exdos14isdos10uk.rom', [0x20, 0x21]]]
     },
     {
-      id: 'ep2048uk-tape', name: 'EP 2048K · EXOS 2.4 (UK) · csak magnó', ram: 2048,
+      id: 'ep2048uk-tape', name: T('EP 2048K · EXOS 2.4 (UK) · csak magnó'), ram: 2048,
       roms: [['exos24uk.rom', [0x00, 0x01, 0x02, 0x03]],
              ['epfileio.rom', [0x10]]]
     },
@@ -84,10 +89,10 @@
   // ROM of the UPM compatible floppy interface
   const SLOT_EMPTY = 0, SLOT_VTDOS = 1, SLOT_FILEIO = 2, SLOT_CARD256 = 5, SLOT_UPM = 6;
   const TVC_CARDS = [
-    { id: SLOT_EMPTY, name: '— üres —' },
-    { id: SLOT_VTDOS, name: 'VT-DOS (lemez)', rom: 'tvc_dos12d.rom', seg: 0x03 },
-    { id: SLOT_UPM, name: 'UPM (lemez)', rom: 'tvcupm_d.rom', seg: 0x03, hw: SLOT_VTDOS },
-    { id: SLOT_FILEIO, name: 'FILE: (.cas fájlok)', rom: 'tvcfileio.rom', seg: 0x04 },
+    { id: SLOT_EMPTY, name: T('— üres —') },
+    { id: SLOT_VTDOS, name: T('VT-DOS (lemez)'), rom: 'tvc_dos12d.rom', seg: 0x03 },
+    { id: SLOT_UPM, name: T('UPM (lemez)'), rom: 'tvcupm_d.rom', seg: 0x03, hw: SLOT_VTDOS },
+    { id: SLOT_FILEIO, name: T('FILE: (.cas fájlok)'), rom: 'tvcfileio.rom', seg: 0x04 },
     { id: 3, name: 'GameCard (SN76489 + Joy 3-4)' },
     { id: 4, name: 'Multichip Soundcard (SN, SAA, OPL2)' },
     { id: SLOT_CARD256, name: 'TVC256k++' }
@@ -137,13 +142,13 @@
   const JOY_SOURCES = [
     { id: 'numpad', name: 'Num 8/4/6/2 + 0',
       keys: { Numpad6: 1, Numpad4: 2, Numpad2: 4, Numpad5: 4, Numpad8: 8, Numpad0: 16 } },
-    { id: 'arrows', name: 'Nyilak + j.Ctrl',
+    { id: 'arrows', name: T('Nyilak + j.Ctrl'),
       keys: { ArrowRight: 1, ArrowLeft: 2, ArrowDown: 4, ArrowUp: 8, ControlRight: 16 } },
     { id: 'wasd', name: 'WASD + Space',
       keys: { KeyD: 1, KeyA: 2, KeyS: 4, KeyW: 8, Space: 16 } },
     { id: 'gp1', name: 'Gamepad 1' }, { id: 'gp2', name: 'Gamepad 2' },
     { id: 'gp3', name: 'Gamepad 3' }, { id: 'gp4', name: 'Gamepad 4' },
-    { id: 'touch', name: 'Érintős' }
+    { id: 'touch', name: T('Érintős') }
   ];
   const JOY_DEFAULT = { numpad: 1, arrows: 0, wasd: 0, gp1: 1, gp2: 2, gp3: 3, gp4: 4, touch: 1 };
   let joyTarget = Object.assign({}, JOY_DEFAULT);
@@ -158,8 +163,8 @@
 
   function joyName(t) {
     if (machine && machine.type === 1)
-      return ['nincs', '1. port', '2. port', 'GameCard 3', 'GameCard 4'][t];
-    return ['nincs', 'külső 1', 'külső 2'][t];
+      return [T('nincs'), T('1. port'), T('2. port'), 'GameCard 3', 'GameCard 4'][t];
+    return [T('nincs'), T('külső 1'), T('külső 2')][t];
   }
 
   // sends the changes of the joystick states to the machine
@@ -417,6 +422,7 @@
 
   function tvcCardMoved(card, slot) {
     const n = tvcCardName(card);
+    if (window.I18N && window.I18N.lang !== 'hu') return F('A(z) {0} kártya a(z) {1}. portba került', n, slot);
     return az(n).replace(/^a/, 'A') + ' ' + n + ' kártya ' + az(slot) + ' ' + slot + '. portba került';
   }
 
@@ -517,7 +523,7 @@
     const cb = $('fx-on');
     if (cb) cb.checked = fxOn;
     const note = $('fx-note');
-    if (note) note.textContent = fxOn && fxBlocked() ? 'a TVC256k++ mellett nem működik' : '';
+    if (note) note.textContent = fxOn && fxBlocked() ? T('a TVC256k++ mellett nem működik') : '';
   }
   function setup2dfx() {
     const cb = $('fx-on');
@@ -535,10 +541,10 @@
         autoTask = null;
         releaseAllKeys();
         applyMachine(machine);          // without the card, cold reset
-        setMessage('2dfx bekapcsolva; a TVC256k++ kártya kikerült a ' + slot + '. portból (a kettő együtt nem működik)');
+        setMessage(F('2dfx bekapcsolva; a TVC256k++ kártya kikerült a(z) {0}. portból (a kettő együtt nem működik)', slot));
       } else {
         apply2dfx();
-        setMessage(fxOn ? '2dfx kártya bekapcsolva (F8h/F9h)' : '2dfx kártya kikapcsolva');
+        setMessage(fxOn ? T('2dfx kártya bekapcsolva (F8h/F9h)') : T('2dfx kártya kikapcsolva'));
       }
       canvas.focus({ preventScroll: true });
     };
@@ -568,11 +574,11 @@
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const f = (await unzip(new Uint8Array(await r.arrayBuffer())))
         .find((e) => fileKind(e) === 'cardflash');
-      if (!f) throw new Error('nincs benne flash-kép');
+      if (!f) throw new Error(T('nincs benne flash-kép'));
       if (!cardFlashLoaded) loadCardFlash(f);
     } catch (e) {
       console.warn(e);
-      setMessage('A TVC256k++ flash drive képe nem tölthető le (' + (e.message || e) + '); ráhúzhatod a flash-root-*-bin.zip fájlt', true);
+      setMessage(T('A TVC256k++ flash drive képe nem tölthető le (') + T(T(String(e.message || e))) + T('); ráhúzhatod a flash-root-*-bin.zip fájlt'), true);
     }
     cardFlashFetching = false;
   }
@@ -629,7 +635,7 @@
       if (e.d) api.usbMkdir(e.p);
       else if (!usbPutBytes(e.p, e.b)) failed.push(e.p);
     }
-    if (failed.length) setMessage('Nem fért a pendrive-ra: ' + failed.join(', '), true);
+    if (failed.length) setMessage(T('Nem fért a pendrive-ra: ') + failed.join(', '), true);
   }
 
   function usbPutBytes(path, bytes) {
@@ -642,7 +648,7 @@
 
   // adds files to the current directory; entries: {path (relative), bytes}
   async function addUsbFiles(fileList, useRelativePath) {
-    if (!usbPlugged) { setMessage('Előbb dugd be a pendrive-ot (Bedugva)', true); return; }
+    if (!usbPlugged) { setMessage(T('Előbb dugd be a pendrive-ot (Bedugva)'), true); return; }
     const entries = [];
     for (const file of Array.from(fileList)) {
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -655,9 +661,9 @@
     }
     const failed = entries.filter((e) => !usbPutBytes(usbJoin(usbCwd, e.path), e.bytes)).map((e) => e.path);
     if (failed.length)
-      setMessage('Nem sikerült (megtelt, vagy a név nem megengedett): ' + failed.join(', '), true);
+      setMessage(T('Nem sikerült (megtelt, vagy a név nem megengedett): ') + failed.join(', '), true);
     else
-      setMessage(entries.length + ' fájl a pendrive-ra került');
+      setMessage(entries.length + T(' fájl a pendrive-ra került'));
     saveUsb();
     renderUsb();
   }
@@ -678,13 +684,13 @@
     list.textContent = '';
     path.textContent = '';
     $('usb-note').textContent = (usbOn && tvcSlotOf(SLOT_CARD256) < 0)
-      ? 'A TVC256k++ kártya nincs egyik portban sem (Bővítőportok).' : '';
+      ? T('A TVC256k++ kártya nincs egyik portban sem (Bővítőportok).') : '';
     if (!usbPlugged) {
-      $('usb-space').textContent = 'nincs bedugva';
+      $('usb-space').textContent = T('nincs bedugva');
       return;
     }
     const total = api.usbInfo(0), free = api.usbInfo(1);
-    $('usb-space').textContent = 'szabad: ' + fmtSize(free * 1024) + ' / ' + fmtSize(total * 1024);
+    $('usb-space').textContent = T('szabad: ') + fmtSize(free * 1024) + ' / ' + fmtSize(total * 1024);
     // path: clickable parts
     const parts = usbCwd ? usbCwd.split('/') : [];
     const link = (text, to) => {
@@ -721,8 +727,8 @@
     if (usbCwd) row('..', 'dir', '', () => { usbCwd = parts.slice(0, -1).join('/'); renderUsb(); }, []);
     for (const e of entries) {
       const p = usbJoin(usbCwd, e.n);
-      const del = ['✕', 'Törlés', () => {
-        if (!confirm('Törlöd: ' + p + (e.d ? ' (a mappa teljes tartalmával)' : '') + '?')) return;
+      const del = ['✕', T('Törlés'), () => {
+        if (!confirm(T('Törlöd: ') + p + (e.d ? T(' (a mappa teljes tartalmával)') : '') + '?')) return;
         api.usbDelete(p);
         saveUsb();
         renderUsb();
@@ -733,14 +739,14 @@
         const runnable = extOf(e.n) === 'cas';
         const run = () => runFromUsb(usbCwd, e.n);
         row(e.n, runnable ? 'run' : '', fmtSize(e.s), runnable ? run : null, [
-          ...(runnable ? [['▶', 'Indítás a pendrive-ról (a kártyán keresztül)', run]] : []),
-          ['⬇', 'Letöltés', () => {
+          ...(runnable ? [['▶', T('Indítás a pendrive-ról (a kártyán keresztül)'), run]] : []),
+          ['⬇', T('Letöltés'), () => {
           try { M.FS.mkdir('/tmp'); } catch (err) { }
           if (api.usbGet(p, '/tmp/usbfile') === 0) download(M.FS.readFile('/tmp/usbfile'), e.n);
         }], del]);
       }
     }
-    if (!entries.length) row('(üres)', '', '', null, []);
+    if (!entries.length) row(T('(üres)'), '', '', null, []);
   }
 
   // starts a .cas program of the pendrive: the machine restarts, then the
@@ -748,7 +754,7 @@
   function runFromUsb(dir, name) {
     if (!machine || machine.type !== 1) return;
     if (tvcSlotOf(SLOT_CARD256) < 0) {
-      setMessage('A pendrive-ról indításhoz tedd a TVC256k++ kártyát egy portba (Bővítőportok)', true);
+      setMessage(T('A pendrive-ról indításhoz tedd a TVC256k++ kártyát egy portba (Bővítőportok)'), true);
       return;
     }
     let base = name.replace(/\.cas$/i, '');
@@ -757,7 +763,7 @@
       const simple = sanitizeName(base).replace(/\./g, '-') || 'program';
       if (api.usbGet(usbJoin(dir, name), '/tmp/usbfile') !== 0 ||
           !usbPutBytes(usbJoin(dir, simple + '.cas'), M.FS.readFile('/tmp/usbfile'))) {
-        setMessage('Nem sikerült elindítani: ' + name, true);
+        setMessage(T('Nem sikerült elindítani: ') + name, true);
         return;
       }
       base = simple;
@@ -767,7 +773,7 @@
     if (tapeName) {
       api.setTape('');
       tapeName = '';
-      $('tape-name').textContent = 'nincs kazetta';
+      $('tape-name').textContent = T('nincs kazetta');
     }
     startAutostart('load "' + base + '"\n', null, false, tvcRedirectFor(SLOT_CARD256), () => {
       api.cardSelectDrive(0);
@@ -779,7 +785,7 @@
   // deletes everything from the pendrive (it is formatted again)
   function clearUsb() {
     if (!usbPlugged) return;
-    if (!confirm('Törlöd a pendrive teljes tartalmát?')) return;
+    if (!confirm(T('Törlöd a pendrive teljes tartalmát?'))) return;
     api.cardUsb(0);
     usbPlugged = false;
     usbSaved = [];
@@ -787,7 +793,7 @@
     usbCwd = '';
     applyTvcUsb();
     saveUsb();
-    setMessage('A pendrive üres');
+    setMessage(T('A pendrive üres'));
   }
 
   function setupUsbUI() {
@@ -797,13 +803,13 @@
       try { localStorage.setItem('ep128web.usbOn', usbOn ? '1' : '0'); } catch (e) { }
       if (!usbOn && usbPlugged) saveUsb();
       applyTvcUsb();
-      setMessage(usbOn ? 'Pendrive bedugva' : 'Pendrive kihúzva (a tartalma megmarad)');
+      setMessage(usbOn ? T('Pendrive bedugva') : T('Pendrive kihúzva (a tartalma megmarad)'));
     };
     $('usb-size').onchange = () => {
       const size = Number($('usb-size').value);
       if (usbPlugged) {
         saveUsb();
-        if (!confirm('A pendrive újraformázódik ' + size + ' MB-ra, a fájlok visszakerülnek rá. Mehet?')) {
+        if (!confirm(F('A pendrive újraformázódik {0} MB-ra, a fájlok visszakerülnek rá. Mehet?', size))) {
           $('usb-size').value = String(usbSize);
           return;
         }
@@ -821,9 +827,9 @@
     $('usb-folder').onchange = (e) => { addUsbFiles(e.target.files, true); e.target.value = ''; };
     $('usb-mkdir').onclick = () => {
       if (!usbPlugged) return;
-      const name = prompt('Az új mappa neve:');
+      const name = prompt(T('Az új mappa neve:'));
       if (!name) return;
-      if (api.usbMkdir(usbJoin(usbCwd, name.replace(/[\\/]/g, '_'))) !== 0) setMessage('Nem sikerült a mappát létrehozni', true);
+      if (api.usbMkdir(usbJoin(usbCwd, name.replace(/[\\/]/g, '_'))) !== 0) setMessage(T('Nem sikerült a mappát létrehozni'), true);
       saveUsb();
       renderUsb();
     };
@@ -973,8 +979,8 @@
     // the machines with a system cartridge show it, else the loaded .crt
     const sys = machine && machine.cart && machine.roms.find((r) => r[1][0] === 0x01);
     if (nameEl) nameEl.textContent = sys
-      ? (machine.cart === 'upm' ? 'UPM' : 'VT-DOS') + ' rendszer (' + sys[0] + ')'
-      : (cartridgeName || 'nincs modul');
+      ? (machine.cart === 'upm' ? 'UPM' : 'VT-DOS') + T(' rendszer (') + sys[0] + ')'
+      : (cartridgeName || T('nincs modul'));
     updateTvcCardsUI();
   }
 
@@ -1002,7 +1008,7 @@
       autoTask = null;
       releaseAllKeys();
       applyMachine(plainTvc());
-      setMessage('Cartridge eltávolítva');
+      setMessage(T('Cartridge eltávolítva'));
       canvas.focus({ preventScroll: true });
       return;
     }
@@ -1014,7 +1020,7 @@
       keyedSinceReset = false;
     }
     updateCartridgeUI();
-    setMessage('Cartridge eltávolítva');
+    setMessage(T('Cartridge eltávolítva'));
     canvas.focus({ preventScroll: true });
   }
 
@@ -1026,7 +1032,7 @@
     api.reset(1);
     keyedSinceReset = false;
     updateCartridgeUI();
-    setMessage('TVC Cartridge (bővítő modul) betöltve: ' + f.name);
+    setMessage(T('TVC Cartridge (bővítő modul) betöltve: ') + f.name);
   }
 
   function applyMachine(m, coldReset) {
@@ -1051,19 +1057,19 @@
     if (missing.length) {
       ready = false;
       overlay.hidden = false;
-      setMessage('Hiányzó ROM: ' + missing.join(', '), true);
+      setMessage(T('Hiányzó ROM: ') + missing.join(', '), true);
       return false;
     }
     overlay.hidden = true;
     if (m.type !== machineType) {
       // a different emulated machine: the VM object is recreated
-      check(api.setMachineType(m.type), 'gép');
+      check(api.setMachineType(m.type), T('gép'));
       machineType = m.type;
       applyVolume();
       if (tapeName && fileExists('/tape/' + tapeName))
         api.setTape('/tape/' + tapeName);
     }
-    check(api.resetMemory(m.ram), 'memória');
+    check(api.resetMemory(m.ram), T('memória'));
     for (const [file, segments] of machineROMs(m)) {
       segments.forEach((seg, i) => {
         check(api.loadRom(seg, '/roms/' + file, i * 16384), file);
@@ -1413,7 +1419,7 @@ registerProcessor('ep-output', EPOutput);
     };
     if (machine.type === 1 && (autoTask.tvcRedirect & 0x80))
       tvcLastLoadCard = tvcSlots[autoTask.tvcRedirect & 3];
-    setMessage('Indítás…');
+    setMessage(T('Indítás…'));
   }
 
   // TVC: forces the cassette device redirect (system variables $0B05/$0B0D)
@@ -1493,7 +1499,7 @@ registerProcessor('ep-output', EPOutput);
         if (!autoTask) break;
       }
       const us = Math.min(autoTask.wait, 20000);
-      check(api.run(us), 'emuláció');
+      check(api.run(us), T('emuláció'));
       autoTask.t += us;
       autoTask.wait -= us;
       spent += us;
@@ -1521,7 +1527,7 @@ registerProcessor('ep-output', EPOutput);
   function listFiles() {
     const names = M.FS.readdir('/files').filter((n) => n !== '.' && n !== '..').sort();
     const list = $('files-list');
-    list.textContent = names.length ? '' : 'üres';
+    list.textContent = names.length ? '' : T('üres');
     names.forEach((n, i) => {
       if (i) list.append(', ');
       if (!isStartable(n)) { list.append(n); return; }
@@ -1529,7 +1535,7 @@ registerProcessor('ep-output', EPOutput);
       b.href = '#';
       b.className = 'file-start';
       b.textContent = n;
-      b.title = 'Indítás';
+      b.title = T('Indítás');
       b.onclick = (e) => {
         e.preventDefault();
         if (!ready) return;
@@ -1575,12 +1581,12 @@ registerProcessor('ep-output', EPOutput);
     for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
       if (dv.getUint32(i, true) === 0x06054B50) { eocd = i; break; }
     }
-    if (eocd < 0) throw new Error('hibás ZIP fájl');
+    if (eocd < 0) throw new Error(T('hibás ZIP fájl'));
     const n = dv.getUint16(eocd + 10, true);
     let p = dv.getUint32(eocd + 16, true);
     const out = [];
     for (let i = 0; i < n; i++) {
-      if (dv.getUint32(p, true) !== 0x02014B50) throw new Error('hibás ZIP fájl');
+      if (dv.getUint32(p, true) !== 0x02014B50) throw new Error(T('hibás ZIP fájl'));
       const method = dv.getUint16(p + 10, true);
       const csize = dv.getUint32(p + 20, true);
       const nameLen = dv.getUint16(p + 28, true);
@@ -1602,7 +1608,7 @@ registerProcessor('ep-output', EPOutput);
         const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
         content = new Uint8Array(await new Response(stream).arrayBuffer());
       } else {
-        throw new Error('nem támogatott ZIP tömörítés: ' + name);
+        throw new Error(T('nem támogatott ZIP tömörítés: ') + name);
       }
       out.push({ name: name.split('/').pop(), path: name, bytes: content });
     }
@@ -1644,10 +1650,10 @@ registerProcessor('ep-output', EPOutput);
   function loadCardFlash(f) {
     try { M.FS.mkdir('/card'); } catch (e) { }
     M.FS.writeFile('/card/flash.bin', f.bytes);
-    check(api.loadTvcCardFlash('/card/flash.bin'), 'TVC256k++ flash drive kép');
+    check(api.loadTvcCardFlash('/card/flash.bin'), T('TVC256k++ flash drive kép'));
     cardFlashLoaded = true;
     db.put('cardflash', f.bytes);
-    setMessage('TVC256k++ flash drive kép betöltve' + (tvcSlotOf(SLOT_CARD256) >= 0 ? '' : ' – tedd a kártyát egy bővítőportba'));
+    setMessage(T('TVC256k++ flash drive kép betöltve') + (tvcSlotOf(SLOT_CARD256) >= 0 ? '' : T(' – tedd a kártyát egy bővítőportba')));
   }
 
   function loadROMFile(f) {
@@ -1655,11 +1661,11 @@ registerProcessor('ep-output', EPOutput);
       const romName = f.name.toLowerCase();
       M.FS.writeFile('/roms/' + romName, f.bytes);
       db.put('rom:' + romName, f.bytes);
-      setMessage('ROM betöltve: ' + romName);
+      setMessage(T('ROM betöltve: ') + romName);
     } else {
       const n = check(installROMPackage(f.bytes), 'ROM-csomag');
       db.put('pkg', f.bytes);
-      setMessage(n + ' ROM kicsomagolva');
+      setMessage(n + T(' ROM kicsomagolva'));
     }
     if (!ready || machine && missingROMs(machine).length === 0)
       applyMachine(machine);
@@ -1675,7 +1681,7 @@ registerProcessor('ep-output', EPOutput);
       if (missingROMs(m).length === 0) {
         applyMachine(m);
       } else {
-        check(api.setMachineType(type), 'gép');
+        check(api.setMachineType(type), T('gép'));
         machineType = type;
         machine = m;
         updateLoadButton();
@@ -1684,8 +1690,8 @@ registerProcessor('ep-output', EPOutput);
       }
       $('machine').value = m.id;
     }
-    check(api.loadSnapshot('/tmp/snapshot'), 'pillanatkép');
-    setMessage((ext === 'ep128d' ? 'Demó: ' : 'Pillanatkép: ') + f.name);
+    check(api.loadSnapshot('/tmp/snapshot'), T('pillanatkép'));
+    setMessage((ext === 'ep128d' ? T('Demó: ') : T('Pillanatkép: ')) + f.name);
   }
 
   function loadTapeFile(f) {
@@ -1693,9 +1699,9 @@ registerProcessor('ep-output', EPOutput);
     tapeName = sanitizeName(f.name);
     M.FS.writeFile('/tape/' + tapeName, f.bytes);
     setTvcRedirect(5);
-    check(api.setTape('/tape/' + tapeName), 'kazetta');
+    check(api.setTape('/tape/' + tapeName), T('kazetta'));
     $('tape-name').textContent = f.name;
-    setMessage('Kazetta betöltve – indítás…');
+    setMessage(T('Kazetta betöltve – indítás…'));
     // the default device is set to TAPE: so that multi-part programs load
     // their further parts from the tape as well
     startAutostart(machine.type === 1 ? 'load\n' : ':def_dev_tape\nload\n',
@@ -1749,27 +1755,27 @@ registerProcessor('ep-output', EPOutput);
       autoTask = null;
       applyMachine(machine);          // loads the card's ROM, cold reset
     }
-    check(api.setDisk(0, '/disk/' + diskName), 'lemez');
+    check(api.setDisk(0, '/disk/' + diskName), T('lemez'));
     const moved = slot >= 0 ? ' (' + tvcCardMoved(card, slot) + ')' : '';
     const wrong = machine.diskCard && fmt && fmt !== (machine.diskCard === SLOT_UPM ? 'upm' : 'fat')
-      ? ' – figyelem: ez ' + (fmt === 'upm' ? 'UPM' : 'VT-DOS') + ' lemez' : '';
+      ? T(' – figyelem: ez ') + (fmt === 'upm' ? 'UPM' : 'VT-DOS') + T(' lemez') : '';
     if (machine.cart === 'upm') {
       // the cartridge waits for RETURN after its "*", then UPM starts (a
       // second RETURN in case the first one came too early: at the A>
       // prompt it does nothing)
-      setMessage('UPM indítása a lemezről…' + moved + wrong);
+      setMessage(T('UPM indítása a lemezről…') + moved + wrong);
       startAutostart(PAUSE + '\n' + PAUSE + 'dir\n', null, false, 0);
       autoTask.bootWait = 3e6;
     } else if (machine.cart) {
       api.reset(1);
       keyedSinceReset = false;
-      setMessage('VT-DOS indítása a lemezről…' + moved + wrong);
+      setMessage(T('VT-DOS indítása a lemezről…') + moved + wrong);
     } else if (card === SLOT_UPM) {
       const names = upmCasFiles(bytes);
-      setMessage('UPM lemez az A: meghajtóban' + moved);
+      setMessage(T('UPM lemez az A: meghajtóban') + moved);
       if (names.length) chooseUpmProgram(names);
     } else {
-      setMessage('Lemez az A: meghajtóban – VT-DOS indítása…' + moved);
+      setMessage(T('Lemez az A: meghajtóban – VT-DOS indítása…') + moved);
       // the VT-DOS commands (EXT 2) need the default device to be the DOS
       startAutostart('ext 2\n' + PAUSE + 'dir\n' + PAUSE + PRESS_ESC, null, false,
                      tvcRedirectFor(SLOT_VTDOS));
@@ -1779,8 +1785,8 @@ registerProcessor('ep-output', EPOutput);
   // the programs of a UPM disk: BASIC loads them with the UPM card
   function chooseUpmProgram(names) {
     const box = $('chooser');
-    $('chooser-title').textContent = 'Melyik programot töltsem be?';
-    $('chooser-desc').textContent = 'A lemezen lévő programok (BASIC: LOAD "NÉV" az UPM kártyáról).';
+    $('chooser-title').textContent = T('Melyik programot töltsem be?');
+    $('chooser-desc').textContent = T('A lemezen lévő programok (BASIC: LOAD "NÉV" az UPM kártyáról).');
     const list = $('chooser-list');
     list.textContent = '';
     for (const n of names) {
@@ -1868,7 +1874,7 @@ registerProcessor('ep-output', EPOutput);
     syncDiskNames();
     if (!ready) return;
     const p = slotPath(d, drives[d].active);
-    check(api.setDisk(d, p), d ? 'lemez (B:)' : 'lemez');
+    check(api.setDisk(d, p), d ? T('lemez (B:)') : T('lemez'));
   }
   // selecting a slot puts its disk in the drive at once
   function selectSlot(d, i) {
@@ -1880,7 +1886,7 @@ registerProcessor('ep-output', EPOutput);
     saveDiskActive();
     renderDrives();
     const s = drives[d].slots[i];
-    setMessage((d ? 'B:' : 'A:') + ' ' + (i + 1) + '. lemez: ' + (s ? s.name : 'üres'));
+    setMessage((d ? 'B:' : 'A:') + ' ' + F('{0}. lemez: ', i + 1) + (s ? s.name : T('üres')));
   }
   function clearSlot(d, i) {
     const p = slotPath(d, i);
@@ -1934,7 +1940,7 @@ registerProcessor('ep-output', EPOutput);
       try {
         Object.assign(dm, dmOpenDisk(slotBytes(d, i), s.name));
       } catch (e) {
-        setMessage('A lemezkép formátuma nem ismert (VT-DOS/EXDOS FAT12 vagy UPM): ' + (e.message || e), true);
+        setMessage(T('A lemezkép formátuma nem ismert (VT-DOS/EXDOS FAT12 vagy UPM): ') + T(T(String(e.message || e))), true);
         return;
       }
     }
@@ -1960,7 +1966,7 @@ registerProcessor('ep-output', EPOutput);
     try {
       if (fn() !== false) dmCommit();
     } catch (e) {
-      setMessage(e.message || String(e), true);
+      setMessage(T(e.message || String(e)), true);
       dmRender();
     }
   }
@@ -2020,7 +2026,7 @@ registerProcessor('ep-output', EPOutput);
   function dmRender() {
     const { d, i } = dm;
     const s = drives[d].slots[i];
-    $('dm-title').textContent = (d ? 'B:' : 'A:') + ' ' + (i + 1) + '. lemez' + (s ? ': ' + s.name : ' (üres)');
+    $('dm-title').textContent = (d ? 'B:' : 'A:') + ' ' + F('{0}. lemez', i + 1) + (s ? ': ' + s.name : T(' (üres)'));
     const has = !!dm.disk;
     $('dm-new').hidden = has;
     $('dm-main').hidden = !has;
@@ -2036,8 +2042,8 @@ registerProcessor('ep-output', EPOutput);
     }
     const fmt = dm.disk.getFormat();
     const dos = dm.sys === 'DOS';
-    $('dm-info').textContent = (dos ? 'FAT12 (VT-DOS / EXDOS)' : 'UPM (CP/M 2.2)') + ' · ' + Math.round(fmt.totalSize / 1024) + ' KB · szabad: ' +
-      Math.round(dmFree() / 1024) + ' KB' + (dos && dm.disk.getVolumeLabel() ? ' · kötetnév: ' + dm.disk.getVolumeLabel() : '');
+    $('dm-info').textContent = (dos ? 'FAT12 (VT-DOS / EXDOS)' : 'UPM (CP/M 2.2)') + ' · ' + Math.round(fmt.totalSize / 1024) + T(' KB · szabad: ') +
+      Math.round(dmFree() / 1024) + ' KB' + (dos && dm.disk.getVolumeLabel() ? T(' · kötetnév: ') + dm.disk.getVolumeLabel() : '');
     $('dm-note').hidden = !(drives[d].active === i);
     $('dm-path').textContent = dos ? (d ? 'B:' : 'A:') + dm.disk.getCurrentPath() : '';
     $('dm-mkdir').hidden = !dos;
@@ -2046,11 +2052,11 @@ registerProcessor('ep-output', EPOutput);
     us.hidden = dos;
     if (!dos && us.options.length !== 17) {
       us.textContent = '';
-      us.add(new Option('minden user', '-1'));
+      us.add(new Option(T('minden user'), '-1'));
       for (let u = 0; u < 16; u++) us.add(new Option('user ' + u, String(u)));
     }
     us.value = String(dm.user);
-    $('dm-th-date').textContent = dos ? 'Dátum' : 'User';
+    $('dm-th-date').textContent = dos ? T('Dátum') : 'User';
     const tb = $('dm-list');
     tb.textContent = '';
     if (dos && dm.disk.getCurrentPath() !== '\\') {
@@ -2081,26 +2087,26 @@ registerProcessor('ep-output', EPOutput);
       const cas = f.info.casInfo;
       const at = td(f.attrs + (cas ? (cas.autoStart ? ' ⚡RUN' : '') : ''));
       if (cas && !f.dir) {
-        at.title = 'Kattintás: AutoRun be/ki (a CAS fejléc indítás-jelzője)';
+        at.title = T('Kattintás: AutoRun be/ki (a CAS fejléc indítás-jelzője)');
         at.style.cursor = 'pointer';
         at.onclick = () => dmTry(() => dos ? dm.disk.setFileAutoRun(f.name, !cas.autoStart) : dm.disk.setFileAutoRun(f.name, f.user, !cas.autoStart));
       }
       const act = td('', 'act');
       const btn = (t, title, fn) => { const b = document.createElement('button'); b.textContent = t; b.title = title; b.onclick = fn; act.append(b); };
-      if (!f.dir && dmStartable(f)) btn('▶', 'Indítás az emulátorban', () => dmStart(f));
-      if (!f.dir) btn('⬇', 'Letöltés', () => download(dmRead(f), f.name));
-      btn('✎', 'Átnevezés', () => {
-        const n = window.prompt('Új név (8.3):', f.name);
+      if (!f.dir && dmStartable(f)) btn('▶', T('Indítás az emulátorban'), () => dmStart(f));
+      if (!f.dir) btn('⬇', T('Letöltés'), () => download(dmRead(f), f.name));
+      btn('✎', T('Átnevezés'), () => {
+        const n = window.prompt(T('Új név (8.3):'), f.name);
         if (n && n !== f.name) dmTry(() => dos ? dm.disk.renameFile(f.name, n.toUpperCase()) : dm.disk.renameFile(f.name, n.toUpperCase(), f.user));
       });
-      btn('✕', 'Törlés', () => {
-        if (window.confirm(f.name + ' törlése?')) dmTry(() => dos ? dm.disk.deleteFile(f.name) : dm.disk.deleteFile(f.name, f.user));
+      btn('✕', T('Törlés'), () => {
+        if (window.confirm(f.name + T(' törlése?'))) dmTry(() => dos ? dm.disk.deleteFile(f.name) : dm.disk.deleteFile(f.name, f.user));
       });
       tb.append(tr);
     }
     if (!files.length) {
       const tr = document.createElement('tr');
-      tr.innerHTML = '<td></td><td colspan="5" class="small">üres</td>';
+      tr.innerHTML = T('<td></td><td colspan="5" class="small">üres</td>');
       tb.append(tr);
     }
   }
@@ -2119,11 +2125,11 @@ registerProcessor('ep-output', EPOutput);
         // 8.3 upper case name, without accents
         const n = f.name.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9._\-$#!&]/g, '_');
         const ok = dm.sys === 'DOS' ? dm.disk.writeFile(n, f.bytes) : dm.disk.writeFile(n, f.bytes, Math.max(0, dm.user), false);
-        if (ok === false) throw new Error('Nem fér el a lemezen: ' + f.name);
+        if (ok === false) throw new Error(T('Nem fér el a lemezen: ') + f.name);
         done.push(n);
       }
     });
-    if (done.length) setMessage(done.length + ' fájl a lemezre került');
+    if (done.length) setMessage(done.length + T(' fájl a lemezre került'));
   }
 
   function dmSelected() {
@@ -2141,26 +2147,26 @@ registerProcessor('ep-output', EPOutput);
     drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('drag'); if (e.dataTransfer.files.length) dmUpload(Array.from(e.dataTransfer.files)); });
     $('dm-user').onchange = (e) => { dm.user = +e.target.value; dm.sel.clear(); dmRender(); };
     $('dm-mkdir').onclick = () => {
-      const n = window.prompt('Az új mappa neve (8 betű):', '');
+      const n = window.prompt(T('Az új mappa neve (8 betű):'), '');
       if (n) dmTry(() => dm.disk.createDirectory(n.toUpperCase()));
     };
     $('dm-label').onclick = () => {
-      const n = window.prompt('Kötetnév (11 betű):', dm.disk.getVolumeLabel() || '');
+      const n = window.prompt(T('Kötetnév (11 betű):'), dm.disk.getVolumeLabel() || '');
       if (n !== null) dmTry(() => { dm.disk.setVolumeLabel(n.toUpperCase()); });
     };
     $('dm-zip').onclick = () => {
       const sel = dmSelected();
-      if (!sel.length) { setMessage('Jelölj ki fájlokat', true); return; }
+      if (!sel.length) { setMessage(T('Jelölj ki fájlokat'), true); return; }
       if (sel.length === 1) { download(dmRead(sel[0]), sel[0].name); return; }
       const z = new DMLIB.SimpleZip();
       for (const f of sel) z.addFile(f.name, dmRead(f));
       const s = drives[dm.d].slots[dm.i];
-      download(z.generate(), (s ? s.name.replace(/\.[^.]*$/, '') : 'lemez') + '.zip');
+      download(z.generate(), (s ? s.name.replace(/\.[^.]*$/, '') : T('lemez')) + '.zip');
     };
     $('dm-del').onclick = () => {
       const sel = dmSelected();
-      if (!sel.length) { setMessage('Jelölj ki fájlokat', true); return; }
-      if (!window.confirm(sel.length + ' fájl törlése?')) return;
+      if (!sel.length) { setMessage(T('Jelölj ki fájlokat'), true); return; }
+      if (!window.confirm(sel.length + T(' fájl törlése?'))) return;
       dmTry(() => { for (const f of sel) (dm.sys === 'DOS' ? dm.disk.deleteFile(f.name) : dm.disk.deleteFile(f.name, f.user)); });
     };
     $('dm-all').onchange = (e) => {
@@ -2168,11 +2174,11 @@ registerProcessor('ep-output', EPOutput);
       if (e.target.checked) for (const f of dmFiles()) if (!f.dir) dm.sel.add(f.user + ':' + f.name);
       dmRender();
     };
-    $('dm-image').onclick = () => { const s = drives[dm.d].slots[dm.i]; download(dm.disk.saveImage(), s ? s.name : 'lemez.dsk'); };
+    $('dm-image').onclick = () => { const s = drives[dm.d].slots[dm.i]; download(dm.disk.saveImage(), s ? s.name : T('lemez.dsk')); };
     $('dm-create').onclick = () => {
       const id = $('dm-format').value;
       const f = DMLIB.DISK_FORMATS[id];
-      const name = ($('dm-newname').value.trim() || (f.system === 'UPM' ? 'upm' : 'lemez')).replace(/\.(dsk|img)$/i, '') + '.dsk';
+      const name = ($('dm-newname').value.trim() || (f.system === 'UPM' ? 'upm' : T('lemez'))).replace(/\.(dsk|img)$/i, '') + '.dsk';
       const disk = f.system === 'UPM' ? new DMLIB.UpmDisk() : new DMLIB.FatDisk();
       disk.createNew(id, name.toUpperCase());
       storeSlot(dm.d, dm.i, { name, bytes: disk.saveImage() });
@@ -2239,7 +2245,7 @@ registerProcessor('ep-output', EPOutput);
         row.className = 'dslot' + (drives[d].active === i ? ' active' : '');
         const pick = document.createElement('label');
         pick.className = 'dpick';
-        pick.title = 'Ez a lemez legyen a meghajtóban';
+        pick.title = T('Ez a lemez legyen a meghajtóban');
         const r = document.createElement('input');
         r.type = 'radio';
         r.name = 'drive' + d;
@@ -2247,12 +2253,12 @@ registerProcessor('ep-output', EPOutput);
         r.onchange = () => { selectSlot(d, i); canvas.focus({ preventScroll: true }); };
         const nm = document.createElement('span');
         nm.className = 'dname';
-        nm.textContent = (i + 1) + '. ' + (s ? s.name : 'üres');
+        nm.textContent = (i + 1) + '. ' + (s ? s.name : T('üres'));
         nm.title = s ? s.name : '';
         pick.append(r, nm);
         const open = document.createElement('label');
         open.className = 'file';
-        open.title = 'Megnyitás: lemezkép feltöltése ebbe a helyre (.dsk, .img, .zip)';
+        open.title = T('Megnyitás: lemezkép feltöltése ebbe a helyre (.dsk, .img, .zip)');
         open.textContent = '📂';
         const inp = document.createElement('input');
         inp.type = 'file';
@@ -2261,18 +2267,18 @@ registerProcessor('ep-output', EPOutput);
         open.append(inp);
         const dl = document.createElement('button');
         dl.textContent = '⬇';
-        dl.title = 'Letöltés: a lemezkép mentése';
+        dl.title = T('Letöltés: a lemezkép mentése');
         dl.disabled = !s;
         dl.onclick = () => { if (s) download(slotBytes(d, i), s.name); canvas.focus({ preventScroll: true }); };
         const x = document.createElement('button');
         x.textContent = '✕';
         x.className = 'dclear';
-        x.title = 'A lemez kivétele (a hely üres lesz)';
+        x.title = T('A lemez kivétele (a hely üres lesz)');
         x.disabled = !s;
         x.onclick = () => { clearSlot(d, i); canvas.focus({ preventScroll: true }); };
         const fm = document.createElement('button');
         fm.textContent = s ? '🗂' : '＋';
-        fm.title = s ? 'Tartalom: a lemez fájljai (feltöltés, letöltés, törlés, indítás)' : 'Új, üres lemez ebbe a helyre';
+        fm.title = s ? T('Tartalom: a lemez fájljai (feltöltés, letöltés, törlés, indítás)') : T('Új, üres lemez ebbe a helyre');
         fm.onclick = () => dmShow(d, i);
         row.append(pick, fm, open, dl, x);
         box.append(row);
@@ -2286,20 +2292,20 @@ registerProcessor('ep-output', EPOutput);
       const file = e.target.files[0];
       e.target.value = '';
       if (!file) return;
-      if (!ready) { setMessage('Először a ROM-okat kell betölteni', true); return; }
+      if (!ready) { setMessage(T('Először a ROM-okat kell betölteni'), true); return; }
       resumeAudio();
       try {
         let bytes = new Uint8Array(await file.arrayBuffer());
         let name = file.name;
         if (extOf(name) === 'zip') {
           const img = (await unzip(bytes)).find((x) => fileKind(x) === 'disk');
-          if (!img) { setMessage('Nincs lemezkép a ZIP-ben', true); return; }
+          if (!img) { setMessage(T('Nincs lemezkép a ZIP-ben'), true); return; }
           bytes = img.bytes;
           name = img.name;
         }
         load({ name, bytes });
       } catch (err) {
-        setMessage(String(err.message || err), true);
+        setMessage(StringT(T(String(err.message || err))), true);
       }
       canvas.focus({ preventScroll: true });
     };
@@ -2315,7 +2321,7 @@ registerProcessor('ep-output', EPOutput);
     if (old !== i) persistSlot(1, old);
     saveDiskActive();
     renderDrives();
-    setMessage('Lemez a B: meghajtóban: ' + f.name);
+    setMessage(T('Lemez a B: meghajtóban: ') + f.name);
   }
 
   function loadDiskFile(f, slot) {
@@ -2331,7 +2337,7 @@ registerProcessor('ep-output', EPOutput);
       if (tapeName) {
         api.setTape('');
         tapeName = '';
-        $('tape-name').textContent = 'nincs kazetta';
+        $('tape-name').textContent = T('nincs kazetta');
       }
       loadTvcDisk(f.bytes);
     } else {
@@ -2339,8 +2345,8 @@ registerProcessor('ep-output', EPOutput);
         applyMachine(MACHINES.find((x) => x.id === 'ep128uk-exdos'));
         $('machine').value = machine.id;
       }
-      check(api.setDisk(0, '/disk/' + diskName), 'lemez');
-      setMessage('Lemez az A: meghajtóban');
+      check(api.setDisk(0, '/disk/' + diskName), T('lemez'));
+      setMessage(T('Lemez az A: meghajtóban'));
       startAutostart(':def_dev_disk\n:dir\n', null);
     }
   }
@@ -2388,7 +2394,7 @@ registerProcessor('ep-output', EPOutput);
     }
     if (usbPlugged) {
       const failed = files.filter((f) => !usbPutBytes(f, M.FS.readFile('/files/' + f)));
-      if (failed.length) setMessage('Nem fért a pendrive-ra: ' + failed.join(', '), true);
+      if (failed.length) setMessage(T('Nem fért a pendrive-ra: ') + failed.join(', '), true);
       saveUsb();
       renderUsb();
       startAutostart('load "' + base + '"\n', null, false, tvcRedirectFor(SLOT_CARD256), () => api.cardSelectDrive(0));
@@ -2397,7 +2403,7 @@ registerProcessor('ep-output', EPOutput);
     const prepare = () => {
       const failed = files.filter((f) => api.cardPutFile(f, '/files/' + f) !== 0);
       if (failed.length)
-        setMessage('Nem fért a kártya PSRAM drive-jára: ' + failed.join(', '), true);
+        setMessage(T('Nem fért a kártya PSRAM drive-jára: ') + failed.join(', '), true);
     };
     startAutostart('load "' + base + '"\n', null, false, tvcRedirectFor(SLOT_CARD256), prepare);
   }
@@ -2417,7 +2423,7 @@ registerProcessor('ep-output', EPOutput);
     };
     document.addEventListener('pointerlockchange', () => {
       btn.classList.toggle('on', locked());
-      if (locked()) setMessage('Egér a TVC256k++ kártyán – kilépés: Esc');
+      if (locked()) setMessage(T('Egér a TVC256k++ kártyán – kilépés: Esc'));
       else { buttons = 0; if (ready) api.setMouse(0, 0, 0, 0); setMessage(''); }
     });
     canvas.addEventListener('mousemove', (e) => {
@@ -2449,20 +2455,20 @@ registerProcessor('ep-output', EPOutput);
       if (tapeName) {
         api.setTape('');
         tapeName = '';
-        $('tape-name').textContent = 'nincs kazetta';
+        $('tape-name').textContent = T('nincs kazetta');
       }
       startProgramOnCard(name);
       return;
     }
     if (machine.type === 1) {
       if (tvcSlotOf(SLOT_FILEIO) < 0) {
-        setMessage('A .cas programokhoz tegyél FILE: kártyát egy bővítőportba (Bővítőportok)', true);
+        setMessage(T('A .cas programokhoz tegyél FILE: kártyát egy bővítőportba (Bővítőportok)'), true);
         return;
       }
       if (tapeName) {
         api.setTape('');
         tapeName = '';
-        $('tape-name').textContent = 'nincs kazetta';
+        $('tape-name').textContent = T('nincs kazetta');
       }
       setTvcRedirect(tvcRedirectFor(SLOT_FILEIO));
       let base = name.replace(/\.cas$/i, '');
@@ -2495,10 +2501,10 @@ registerProcessor('ep-output', EPOutput);
     const title = $('chooser-title');
     const desc = $('chooser-desc');
     const list = $('chooser-list');
-    if (title) title.textContent = 'Melyik programot indítsam?';
+    if (title) title.textContent = T('Melyik programot indítsam?');
     if (desc) desc.textContent = (machine.type === 1 && tvcSlotOf(SLOT_CARD256) >= 0)
-      ? 'Az összes fájl a TVC256k++ kártya PSRAM drive-jára kerül, így a program futás közben is betöltheti a többit.'
-      : 'Az összes fájl a FILE: eszközre került, így a program futás közben is betöltheti a többit.';
+      ? T('Az összes fájl a TVC256k++ kártya PSRAM drive-jára kerül, így a program futás közben is betöltheti a többit.')
+      : T('Az összes fájl a FILE: eszközre került, így a program futás közben is betöltheti a többit.');
     list.textContent = '';
     for (const n of names) {
       const b = document.createElement('button');
@@ -2523,8 +2529,8 @@ registerProcessor('ep-output', EPOutput);
     const title = $('chooser-title');
     const desc = $('chooser-desc');
     const list = $('chooser-list');
-    if (title) title.textContent = 'CAS vagy WAV formátum?';
-    if (desc) desc.textContent = 'A betöltött ZIP archívumban CAS és WAV formátum is található. Melyiket szeretnéd elindítani?';
+    if (title) title.textContent = T('CAS vagy WAV formátum?');
+    if (desc) desc.textContent = T('A betöltött ZIP archívumban CAS és WAV formátum is található. Melyiket szeretnéd elindítani?');
     list.textContent = '';
 
     for (const f of casFiles) {
@@ -2572,7 +2578,7 @@ registerProcessor('ep-output', EPOutput);
       for (const f of of('cardflash')) loadCardFlash(f);
       if (!files.some((f) => !['rom', 'cardflash'].includes(fileKind(f)))) return;
       if (!ready) {
-        setMessage('Először a ROM-okat kell betölteni', true);
+        setMessage(T('Először a ROM-okat kell betölteni'), true);
         return;
       }
 
@@ -2586,7 +2592,7 @@ registerProcessor('ep-output', EPOutput);
             if (tapeName) {
               api.setTape('');
               tapeName = '';
-              $('tape-name').textContent = 'nincs kazetta';
+              $('tape-name').textContent = T('nincs kazetta');
             }
             chosenFiles = files.filter((f) => extOf(f.name) !== 'wav');
           } else {
@@ -2600,7 +2606,7 @@ registerProcessor('ep-output', EPOutput);
       processLoadedFiles(files);
     } catch (e) {
       console.error(e);
-      setMessage(String(e.message || e), true);
+      setMessage(StringT(T(String(e.message || e))), true);
     }
     canvas.focus({ preventScroll: true });
   }
@@ -2657,7 +2663,7 @@ registerProcessor('ep-output', EPOutput);
     } else if (startable.length > 1) {
       choosePrograms(startable.sort());
     } else if (progFiles.length) {
-      setMessage('Fájlok a FILE: eszközre másolva: ' + progFiles.map((f) => f.name).join(', '));
+      setMessage(T('Fájlok a FILE: eszközre másolva: ') + progFiles.map((f) => f.name).join(', '));
     }
   }
 
@@ -2772,7 +2778,7 @@ registerProcessor('ep-output', EPOutput);
       audioRec = null;
       clearInterval(audioRecTimer);
       btn.classList.remove('on');
-      btn.textContent = '● Hang';
+      btn.textContent = T('● Hang');
       if (rec.frames) download(wavFile(rec.chunks, rec.frames, sampleRate), stampName('wav'));
       return;
     }
@@ -2781,8 +2787,8 @@ registerProcessor('ep-output', EPOutput);
     audioRec = { chunks: [], frames: 0 };
     const t0 = performance.now();
     btn.classList.add('on');
-    btn.textContent = '■ Hang 0:00';
-    audioRecTimer = setInterval(() => { btn.textContent = '■ Hang ' + recTime(t0); }, 500);
+    btn.textContent = T('■ Hang 0:00');
+    audioRecTimer = setInterval(() => { btn.textContent = T('■ Hang ') + recTime(t0); }, 500);
   }
 
   // the recording types the browser supports: { mp4, webm }
@@ -2846,7 +2852,7 @@ registerProcessor('ep-output', EPOutput);
     }
     if (!ready) return;
     if (!canvas.captureStream || !window.MediaRecorder) {
-      setMessage('Ez a böngésző nem tud videót felvenni', true);
+      setMessage(T('Ez a böngésző nem tud videót felvenni'), true);
       return;
     }
     resumeAudio();
@@ -2860,7 +2866,7 @@ registerProcessor('ep-output', EPOutput);
     try {
       rec = new MediaRecorder(stream, type ? { mimeType: type, videoBitsPerSecond: 8000000 } : {});
     } catch (e) {
-      setMessage('A videófelvétel nem indult el: ' + (e.message || e), true);
+      setMessage(T('A videófelvétel nem indult el: ') + T(T(String(e.message || e))), true);
       return;
     }
     const parts = [];
@@ -2870,7 +2876,7 @@ registerProcessor('ep-output', EPOutput);
       $('video-fmt').disabled = false;
       clearInterval(videoRecTimer);
       btn.classList.remove('on');
-      btn.textContent = '● Videó';
+      btn.textContent = T('● Videó');
       for (const t of stream.getVideoTracks()) t.stop();
       const mime = rec.mimeType || type || 'video/webm';
       const blob = new Blob(parts, { type: mime });
@@ -2882,9 +2888,9 @@ registerProcessor('ep-output', EPOutput);
     $('video-fmt').disabled = true;
     const t0 = performance.now();
     btn.classList.add('on');
-    btn.textContent = '■ Videó 0:00';
-    videoRecTimer = setInterval(() => { btn.textContent = '■ Videó ' + recTime(t0); }, 500);
-    setMessage('Videófelvétel: a hangerő és a némítás a felvételre is hat');
+    btn.textContent = T('■ Videó 0:00');
+    videoRecTimer = setInterval(() => { btn.textContent = T('■ Videó ') + recTime(t0); }, 500);
+    setMessage(T('Videófelvétel: a hangerő és a némítás a felvételre is hat'));
   }
 
   // --------------------------------------------------------------------------
@@ -3166,12 +3172,12 @@ registerProcessor('ep-output', EPOutput);
         if (autoTask.fromTyper) {       // the button stops a long typing
           autoTask = null;
           releaseAllKeys();
-          setMessage('Beírás leállítva');
-          $('typer-send').textContent = 'Beír + Enter';
+          setMessage(T('Beírás leállítva'));
+          $('typer-send').textContent = T('Beír + Enter');
         }
         return;
       }
-      $('typer-send').textContent = 'Beír + Enter';
+      $('typer-send').textContent = T('Beír + Enter');
       const text = inp.value.replace(/\r\n?/g, '\n').replace(/\t/g, ' ').replace(/\s+$/, '');
       if (!text) return;
       const map = charMap();
@@ -3181,11 +3187,11 @@ registerProcessor('ep-output', EPOutput);
       autoTask.fromTyper = true;
       const lines = text.split('\n').length;
       if (lines > 1) {
-        $('typer-send').textContent = 'Leállítás';
-        autoTask.onTyped = () => { $('typer-send').textContent = 'Beír + Enter'; };
+        $('typer-send').textContent = T('Leállítás');
+        autoTask.onTyped = () => { $('typer-send').textContent = T('Beír + Enter'); };
       }
-      setMessage((lines > 1 ? lines + ' sor beírása…' : '') +
-        (bad.size ? ' Nem gépelhető karakterek kimaradnak: ' + Array.from(bad).join(' ') : ''), bad.size > 0);
+      setMessage((lines > 1 ? lines + T(' sor beírása…') : '') +
+        (bad.size ? T(' Nem gépelhető karakterek kimaradnak: ') + Array.from(bad).join(' ') : ''), bad.size > 0);
       inp.value = '';
       fit();
     });
@@ -3215,9 +3221,9 @@ registerProcessor('ep-output', EPOutput);
       $('tvc-slots-apply').classList.toggle('on', changed);
       $('tvc-slots-note').textContent = !validTvcSlots(p)
         ? (p.includes(SLOT_VTDOS) && p.includes(SLOT_UPM)
-          ? 'Egyszerre csak egy lemezkártya (VT-DOS vagy UPM) működik.'
-          : 'Egy kártya csak egy portban lehet.')
-        : (changed ? 'Módosítva – a betöltés gombbal lép életbe.' : '');
+          ? T('Egyszerre csak egy lemezkártya (VT-DOS vagy UPM) működik.')
+          : T('Egy kártya csak egy portban lehet.'))
+        : (changed ? T('Módosítva – a betöltés gombbal lép életbe.') : '');
     };
     for (const sel of selects) {
       for (const card of TVC_CARDS) {
@@ -3238,7 +3244,7 @@ registerProcessor('ep-output', EPOutput);
       }
       dd.value = String(tvcDefDev);
       const missing = tvcDefDev >= 0 && tvcSlotOf(tvcDefDev) < 0;
-      $('tvc-defdev-note').textContent = missing ? 'A kiválasztott kártya nincs bent: a gép választ (a legnagyobb sorszámú portban lévő).' : '';
+      $('tvc-defdev-note').textContent = missing ? T('A kiválasztott kártya nincs bent: a gép választ (a legnagyobb sorszámú portban lévő).') : '';
     };
     dd.onchange = () => {
       tvcDefDev = Number(dd.value);
@@ -3260,7 +3266,7 @@ registerProcessor('ep-output', EPOutput);
       if (fxOn && tvcSlotOf(SLOT_CARD256) >= 0) {
         fxOn = false;
         try { localStorage.setItem('ep128web.2dfx', '0'); } catch (e) { }
-        setMessage('A 2dfx kártya kikapcsolva: a TVC256k++ mellett nem működik');
+        setMessage(T('A 2dfx kártya kikapcsolva: a TVC256k++ mellett nem működik'));
       }
       if (machine.type === 1) {
         autoTask = null;
@@ -3290,7 +3296,7 @@ registerProcessor('ep-output', EPOutput);
     const b = $('btn-mute');
     if (b) {
       b.textContent = muted ? '🔇' : '🔊';
-      b.title = muted ? 'Hang bekapcsolása' : 'Némítás';
+      b.title = muted ? T('Hang bekapcsolása') : T('Némítás');
       b.setAttribute('aria-pressed', String(muted));
     }
   }
@@ -3347,28 +3353,28 @@ registerProcessor('ep-output', EPOutput);
     try {
       qsSaveTo(i);
     } catch (e) {
-      setMessage('A mentés nem sikerült: ' + (e.message || e), true);
+      setMessage(T('A mentés nem sikerült: ') + T(T(String(e.message || e))), true);
     }
   }
   function qsSaveTo(i) {
-    check(api.saveSnapshot('/tmp/qs.ep128s'), 'mentés');
+    check(api.saveSnapshot('/tmp/qs.ep128s'), T('mentés'));
     quickSaves[i] = { machine: machine.id, slots: tvcSlots.slice(), fx: fxOn, time: Date.now(),
                       bytes: M.FS.readFile('/tmp/qs.ep128s'), card: saveCardState(), pic: qsPicture() };
     db.put('qs:' + i, quickSaves[i]);
     renderQuickSaves();
-    setMessage((i + 1) + '. gyorsmentés kész');
+    setMessage(F('{0}. gyorsmentés kész', i + 1));
   }
   // the state of the TVC256k++ and 2dfx cards, which ep128emu's snapshots
   // do not have (null: no such card)
   function saveCardState() {
     const r = api.saveCardState('/tmp/card.st');
-    if (r < 0) throw new Error('a kártyák állapota nem menthető');
+    if (r < 0) throw new Error(T('a kártyák állapota nem menthető'));
     return r === 1 ? M.FS.readFile('/tmp/card.st') : null;
   }
   // the machine of a saved state (and the TVC cards), then the state
   function loadSavedState(st) {
     const m = MACHINES.find((x) => x.id === st.machine);
-    if (!m) throw new Error('ismeretlen gép: ' + st.machine);
+    if (!m) throw new Error(T('ismeretlen gép: ') + st.machine);
     const slotsDiffer = m.type === 1 && st.slots && st.slots.join() !== tvcSlots.join();
     if (m.id !== machine.id || slotsDiffer) {
       if (slotsDiffer) {
@@ -3386,11 +3392,11 @@ registerProcessor('ep-output', EPOutput);
       apply2dfx();
     }
     M.FS.writeFile('/tmp/qs.ep128s', st.bytes);
-    check(api.loadSnapshot('/tmp/qs.ep128s'), 'pillanatkép');
+    check(api.loadSnapshot('/tmp/qs.ep128s'), T('pillanatkép'));
     if (st.card) {
       M.FS.writeFile('/tmp/card.st', st.card);
       if (api.loadCardState('/tmp/card.st') !== 0)
-        setMessage('A bővítőkártyák állapota nem tölthető vissza (más változattal készült mentés?)', true);
+        setMessage(T('A bővítőkártyák állapota nem tölthető vissza (más változattal készült mentés?)'), true);
     }
     releaseAllKeys();
   }
@@ -3400,9 +3406,9 @@ registerProcessor('ep-output', EPOutput);
     try {
       loadSavedState(st);
       rewindClear();
-      setMessage((i + 1) + '. gyorsmentés betöltve');
+      setMessage(F('{0}. gyorsmentés betöltve', i + 1));
     } catch (e) {
-      setMessage('A betöltés nem sikerült: ' + (e.message || e), true);
+      setMessage(T('A betöltés nem sikerült: ') + T(T(String(e.message || e))), true);
     }
     canvas.focus({ preventScroll: true });
   }
@@ -3412,7 +3418,7 @@ registerProcessor('ep-output', EPOutput);
   }
   function renderQuickSaves() {
     const used = quickSaves.reduce((a, st) => a + (st ? qsBytes(st) : 0), 0);
-    $('qs-total').textContent = used ? 'összesen ' + fmtSize(used) : '';
+    $('qs-total').textContent = used ? T('összesen ') + fmtSize(used) : '';
     const box = $('qs-slots');
     box.textContent = '';
     quickSaves.forEach((st, i) => {
@@ -3423,32 +3429,32 @@ registerProcessor('ep-output', EPOutput);
         pic = document.createElement('img');
         pic.src = st.pic;
         pic.alt = '';
-        pic.title = 'Betöltés';
+        pic.title = T('Betöltés');
         pic.onclick = () => qsLoad(i);
       } else {
         pic = document.createElement('div');
         pic.className = 'qs-empty';
-        pic.textContent = 'üres';
+        pic.textContent = T('üres');
       }
       const lab = document.createElement('div');
       lab.className = 'qs-label';
       const m = st && MACHINES.find((x) => x.id === st.machine);
-      lab.textContent = (i + 1) + '. ' + (st ? new Date(st.time).toLocaleString('hu-HU', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) + ' · ' + (m ? m.name.split(' · ')[0] : st.machine) : '');
+      lab.textContent = (i + 1) + '. ' + (st ? new Date(st.time).toLocaleString(LOCALE, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) + ' · ' + (m ? m.name.split(' · ')[0] : st.machine) : '');
       lab.title = st ? (m ? m.name : st.machine) : '';
       const btns = document.createElement('div');
       btns.className = 'qs-btns';
       const b = (t, title, fn, dis) => { const e = document.createElement('button'); e.textContent = t; e.title = title; e.onclick = () => { fn(); canvas.focus({ preventScroll: true }); }; e.disabled = !!dis; btns.append(e); };
-      b('💾', 'A mostani állapot mentése ide', () => {
-        if (st && !window.confirm((i + 1) + '. hely felülírása?')) return;
+      b('💾', T('A mostani állapot mentése ide'), () => {
+        if (st && !window.confirm(F('{0}. hely felülírása?', i + 1))) return;
         qsSave(i);
       });
-      b('▶', 'Ennek az állapotnak a betöltése', () => qsLoad(i), !st);
-      b('✕', 'Törlés', () => { quickSaves[i] = null; db.del('qs:' + i); renderQuickSaves(); }, !st);
+      b('▶', T('Ennek az állapotnak a betöltése'), () => qsLoad(i), !st);
+      b('✕', T('Törlés'), () => { quickSaves[i] = null; db.del('qs:' + i); renderQuickSaves(); }, !st);
       const size = document.createElement('div');
       size.className = 'qs-size';
       size.textContent = st ? fmtSize(qsBytes(st)) : '';
-      size.title = st ? 'Gép: ' + fmtSize(st.bytes.length) + (st.card ? ', bővítőkártyák: ' + fmtSize(st.card.length) : '') +
-                        ', kép: ' + fmtSize(st.pic ? st.pic.length : 0) : '';
+      size.title = st ? T('Gép: ') + fmtSize(st.bytes.length) + (st.card ? T(', bővítőkártyák: ') + fmtSize(st.card.length) : '') +
+                        T(', kép: ') + fmtSize(st.pic ? st.pic.length : 0) : '';
       d.append(pic, lab, size, btns);
       box.append(d);
     });
@@ -3464,7 +3470,7 @@ registerProcessor('ep-output', EPOutput);
     rewindNote();
   }
   function rewindNote() {
-    $('rw-note').textContent = rwOn ? (rwBuf.length ? rwBuf.length + ' mp visszatekerhető · ' + fmtSize(rwBytes) + ' memória' : '') : '';
+    $('rw-note').textContent = rwOn ? (rwBuf.length ? rwBuf.length + T(' mp visszatekerhető · ') + fmtSize(rwBytes) + T(' memória') : '') : '';
     $('rw-back').disabled = !rwOn || rwBuf.length < 2;
   }
   function rewindTick(us) {
@@ -3489,7 +3495,7 @@ registerProcessor('ep-output', EPOutput);
     try {
       loadSavedState(st);
     } catch (e) {
-      setMessage('A visszatekerés nem sikerült: ' + (e.message || e), true);
+      setMessage(T('A visszatekerés nem sikerült: ') + T(T(String(e.message || e))), true);
       rewindClear();
       return;
     }
@@ -3534,7 +3540,7 @@ registerProcessor('ep-output', EPOutput);
 
   function normalizeCatalogMeta(item) {
     return {
-      title: item.title || 'Program',
+      title: item.title || T('Program'),
       description: item.description || '',
       image_url: item.image_url || '',
       download_url: item.download_url || item.url || '',
@@ -3549,10 +3555,10 @@ registerProcessor('ep-output', EPOutput);
     if (!sel) return;
     const types = [...new Set(catalogState.items.map((i) => i.type).filter(Boolean))].sort();
     const current = sel.value;
-    sel.innerHTML = '<option value="">Minden típus</option>';
+    sel.innerHTML = T('<option value="">Minden típus</option>');
     // the machine / expansion categories, from the words in the titles
     const g = document.createElement('optgroup');
-    g.label = 'Gép, bővítés';
+    g.label = T('Gép, bővítés');
     for (const t of CATALOG_TAGS) {
       const opt = document.createElement('option');
       opt.value = 'tag:' + t.id;
@@ -3562,7 +3568,7 @@ registerProcessor('ep-output', EPOutput);
     }
     sel.appendChild(g);
     const g2 = document.createElement('optgroup');
-    g2.label = 'Típus';
+    g2.label = T('Típus');
     for (const t of types) {
       const opt = document.createElement('option');
       opt.value = t;
@@ -3578,7 +3584,7 @@ registerProcessor('ep-output', EPOutput);
     if (!sel) return;
     const years = [...new Set(catalogState.items.map((i) => (i.date ? i.date.slice(0, 4) : '')).filter(Boolean))].sort();
     const current = sel.value || '2000+';
-    sel.innerHTML = '<option value="">Minden évjárat</option><option value="2000+">2000-től</option>';
+    sel.innerHTML = T('<option value="">Minden évjárat</option><option value="2000+">2000-től</option>');
     for (const y of years) {
       const opt = document.createElement('option');
       opt.value = y;
@@ -3596,7 +3602,7 @@ registerProcessor('ep-output', EPOutput);
     if (!items.length) {
       const empty = document.createElement('div');
       empty.className = 'catalog-empty';
-      empty.textContent = 'Nincs a szűrőknek megfelelő program.';
+      empty.textContent = T('Nincs a szűrőknek megfelelő program.');
       grid.appendChild(empty);
       return;
     }
@@ -3624,7 +3630,7 @@ registerProcessor('ep-output', EPOutput);
       title.textContent = entry.title;
 
       const desc = document.createElement('p');
-      desc.textContent = entry.description || 'TVC program';
+      desc.textContent = entry.description || T('TVC program');
 
       const meta = document.createElement('div');
       meta.className = 'catalog-meta';
@@ -3643,7 +3649,7 @@ registerProcessor('ep-output', EPOutput);
 
       const button = document.createElement('button');
       button.type = 'button';
-      button.textContent = 'Betöltés';
+      button.textContent = T('Betöltés');
       button.onclick = async () => {
         // the program starts on the emulator screen: show it
         $('screen-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -3687,7 +3693,7 @@ registerProcessor('ep-output', EPOutput);
     renderCatalog(filtered);
     const status = $('catalog-status');
     if (status) {
-      status.textContent = `${filtered.length} program megjelenítve`;
+      status.textContent = F('{0} program megjelenítve', filtered.length);
     }
   }
 
@@ -3763,7 +3769,7 @@ registerProcessor('ep-output', EPOutput);
     const url = item.download_url || dlUrl;
 
     try {
-      setMessage('Program letöltése…');
+      setMessage(T('Program letöltése…'));
       let res;
       try {
         res = await fetch(dlUrl, { cache: 'no-store' });
@@ -3771,7 +3777,7 @@ registerProcessor('ep-output', EPOutput);
       } catch (err1) {
         // Fallback to item.download_url if dlUrl failed
         res = await fetch(url, { cache: 'no-store' });
-        if (!res.ok) throw new Error('Letöltés HTTP ' + res.status);
+        if (!res.ok) throw new Error(T('Letöltés HTTP ') + res.status);
       }
 
       const blob = await res.blob();
@@ -3792,10 +3798,10 @@ registerProcessor('ep-output', EPOutput);
 
       await loadFiles([file]);
       shareSrc = { cat: item.file_name || fileName };
-      setMessage('Program betöltve: ' + (item.title || fileName));
+      setMessage(T('Program betöltve: ') + (item.title || fileName));
     } catch (e) {
       console.error(e);
-      setMessage('Hiba a program letöltésekor: ' + (e.message || e), true);
+      setMessage(T('Hiba a program letöltésekor: ') + T(T(String(e.message || e))), true);
     }
   }
 
@@ -3816,10 +3822,10 @@ registerProcessor('ep-output', EPOutput);
       populateCatalogYearFilter();
       applyCatalogFilters();
       const count = catalogState.filtered.length;
-      status.textContent = count ? `${count} program található` : 'Nincs megjeleníthető program';
+      status.textContent = count ? F('{0} program található', count) : T('Nincs megjeleníthető program');
     } catch (e) {
       console.error(e);
-      status.textContent = 'A programkatalógus nem érhető el.';
+      status.textContent = T('A programkatalógus nem érhető el.');
     }
   }
 
@@ -3885,7 +3891,7 @@ registerProcessor('ep-output', EPOutput);
     setupUsbUI();
     $('btn-snap').onclick = () => {
       if (!ready) return;
-      check(api.saveSnapshot('/tmp/save.ep128s'), 'mentés');
+      check(api.saveSnapshot('/tmp/save.ep128s'), T('mentés'));
       download(M.FS.readFile('/tmp/save.ep128s'), 'ep128-' +
                new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.ep128s');
     };
@@ -3930,26 +3936,26 @@ registerProcessor('ep-output', EPOutput);
     };
     $('tape-new').onclick = () => {
       tapeName = 'tape-' + Date.now().toString(36) + '.tap';
-      check(api.setTape('/tape/' + tapeName), 'kazetta');
-      $('tape-name').textContent = tapeName + ' (üres)';
+      check(api.setTape('/tape/' + tapeName), T('kazetta'));
+      $('tape-name').textContent = tapeName + T(' (üres)');
       canvas.focus({ preventScroll: true });
     };
     $('tape-save').onclick = () => {
       if (!tapeName) return;
       api.setTape('');                  // flush and close the tape file
       download(M.FS.readFile('/tape/' + tapeName), tapeName);
-      check(api.setTape('/tape/' + tapeName), 'kazetta');
+      check(api.setTape('/tape/' + tapeName), T('kazetta'));
     };
     $('tape-wav').onclick = async () => {
       if (!tapeName) return;
       api.setTape('');
       const bytes = M.FS.readFile('/tape/' + tapeName);
-      check(api.setTape('/tape/' + tapeName), 'kazetta');
+      check(api.setTape('/tape/' + tapeName), T('kazetta'));
       try {
         const base = tapeName.replace(/\.[^.]*$/, '');
         download(extOf(tapeName) === 'wav' ? bytes : (await tapeLib()).tapToWav(bytes), base + '.wav');
       } catch (e) {
-        setMessage('A kazetta nem alakítható át: ' + (e.message || e), true);
+        setMessage(T('A kazetta nem alakítható át: ') + T(T(String(e.message || e))), true);
       }
     };
     $('cas-wav').onchange = async (e) => {
@@ -3964,14 +3970,14 @@ registerProcessor('ep-output', EPOutput);
           else files.push({ name: f.name, bytes });
         }
         const cas = files.filter((f) => extOf(f.name) === 'cas');
-        if (!cas.length) throw new Error('nincs benne .cas fájl');
+        if (!cas.length) throw new Error(T('nincs benne .cas fájl'));
         for (const f of cas) {
           const name = f.name.split(/[\\/]/).pop();
           download(lib.casToWav(f.bytes, name), name.replace(/\.[^.]*$/, '') + '.wav');
         }
-        setMessage(cas.length + ' .wav fájl elkészült');
+        setMessage(cas.length + T(' .wav fájl elkészült'));
       } catch (err) {
-        setMessage('CAS → WAV: ' + (err.message || err), true);
+        setMessage('CAS → WAV: ' + T(T(String(err.message || err))), true);
       }
       canvas.focus({ preventScroll: true });
     };
@@ -3987,7 +3993,7 @@ registerProcessor('ep-output', EPOutput);
       const fileList = Array.from(e.target.files);
       e.target.value = '';
       if (!fileList.length) return;
-      if (!ready) { setMessage('Először a ROM-okat kell betölteni', true); return; }
+      if (!ready) { setMessage(T('Először a ROM-okat kell betölteni'), true); return; }
       try {
         const files = [];
         for (const file of fileList) {
@@ -3996,10 +4002,10 @@ registerProcessor('ep-output', EPOutput);
           else files.push({ name: file.name, bytes });
         }
         const startable = storeProgramFiles(files);
-        setMessage('FILE: eszközre másolva: ' + files.map((f) => f.name).join(', ') +
-          (startable.length ? ' (indítás: kattints a nevére)' : ''));
+        setMessage(T('FILE: eszközre másolva: ') + files.map((f) => f.name).join(', ') +
+          (startable.length ? T(' (indítás: kattints a nevére)') : ''));
       } catch (err) {
-        setMessage(String(err.message || err), true);
+        setMessage(StringT(T(String(err.message || err))), true);
       }
       canvas.focus({ preventScroll: true });
     };
@@ -4019,8 +4025,9 @@ registerProcessor('ep-output', EPOutput);
     setupSpeed();
     setupQuickSaves();
     setupSettingsIO();
+    setupLang();
     setupCrt();
-    $('btn-share').onclick = () => shareLink().catch((e) => setMessage('Link: ' + (e.message || e), true));
+    $('btn-share').onclick = () => shareLink().catch((e) => setMessage('Link: ' + T(T(String(e.message || e))), true));
 
     const wrap = $('screen-wrap');
     wrap.addEventListener('dragover', (e) => { e.preventDefault(); wrap.classList.add('drag'); });
@@ -4045,9 +4052,9 @@ registerProcessor('ep-output', EPOutput);
   const hex = (v, n) => (v >>> 0).toString(16).toUpperCase().padStart(n, '0');
   const DBG_REGS = ['PC', 'AF', 'BC', 'DE', 'HL', 'IX', 'IY', 'SP',
                     "AF'", "BC'", "DE'", "HL'", 'I', 'R', 'IM', 'IFF1', 'IFF2'];
-  const DBG_REASONS = ['', 'Töréspont', 'Lépés kész', 'Megállítva',
-                       'Memória olvasás', 'Memória írás', 'Port olvasás (IN)', 'Port írás (OUT)', 'Raszter'];
-  const DBG_MEM_NAMES = ['CPU', 'szegmens', '2dfx RAM', 'PSRAM', '256k++ RAM'];
+  const DBG_REASONS = ['', T('Töréspont'), T('Lépés kész'), T('Megállítva'),
+                       T('Memória olvasás'), T('Memória írás'), T('Port olvasás (IN)'), T('Port írás (OUT)'), 'Raszter'];
+  const DBG_MEM_NAMES = ['CPU', T('szegmens'), '2dfx RAM', 'PSRAM', '256k++ RAM'];
   let dbgOpen = false;
   let dbgStopped = false;
   let dbgCursor = -1;                 // selected disassembly line (run to cursor)
@@ -4131,7 +4138,7 @@ registerProcessor('ep-output', EPOutput);
     return a === null ? null : { addr: a, end: a };
   }
   function dbgBpAddrText(b) {
-    if (b.type === 'ras') return 'sor ' + b.addr;
+    if (b.type === 'ras') return T('sor ') + b.addr;
     const w = b.type.startsWith('io') ? 2 : 4, end = dbgBpEnd(b);
     return (b.seg !== undefined ? hex(b.seg, 2) + ':' : '') + hex(b.addr, w) + (end !== b.addr ? '-' + hex(end, w) : '');
   }
@@ -4234,13 +4241,13 @@ registerProcessor('ep-output', EPOutput);
   const dbgMHz = () => (machine && machine.type === 1 ? 3.125 : 4);
   function dbgCycText(n) {
     const us = n / dbgMHz();
-    return n + ' T (' + (us < 10000 ? us.toFixed(1) + ' µs' : (us / 1000).toFixed(2) + ' ms') + ', ' + (us / 64).toFixed(1) + ' sor)';
+    return n + ' T (' + (us < 10000 ? us.toFixed(1) + ' µs' : (us / 1000).toFixed(2) + ' ms') + ', ' + (us / 64).toFixed(1) + T(' sor)');
   }
   function dbgRenderTiming() {
     const c = api.dbgCycles();
-    $('dbg-timing').textContent = 'Képsor ' + api.dbgVideoLine() + ' · képkocka ' + api.dbgVideoFrame() + ' · ciklus ' + c +
-      '\nElőző megállás óta: ' + (dbgStopped && dbgCycPrev ? dbgCycText(dbgCycStop - dbgCycPrev) : '–') +
-      '\nStopper: ' + dbgCycText(c - dbgCycSw);
+    $('dbg-timing').textContent = T('Képsor ') + api.dbgVideoLine() + T(' · képkocka ') + api.dbgVideoFrame() + T(' · ciklus ') + c +
+      T('\nElőző megállás óta: ') + (dbgStopped && dbgCycPrev ? dbgCycText(dbgCycStop - dbgCycPrev) : '–') +
+      T('\nStopper: ') + dbgCycText(c - dbgCycSw);
   }
 
   function dbgRenderRegs() {
@@ -4254,7 +4261,7 @@ registerProcessor('ep-output', EPOutput);
         const inp = document.createElement('input');
         inp.dataset.reg = i;
         inp.spellcheck = false;
-        inp.title = 'Hex érték, Enter: beállítás (csak megállítva)';
+        inp.title = T('Hex érték, Enter: beállítás (csak megállítva)');
         inp.addEventListener('keydown', (e) => {
           if (e.key !== 'Enter') return;
           const v = parseInt(inp.value, 16);
@@ -4276,10 +4283,10 @@ registerProcessor('ep-output', EPOutput);
     $('dbg-flags').innerHTML = 'SZ-H-PNC'.split('').map((ch, i) =>
       (f & (0x80 >> i)) ? '<b>' + ch + '</b>' : (ch === '-' ? '-' : ch.toLowerCase())).join('') +
       '  (' + hex(f, 2) + ')';
-    $('dbg-pages').textContent = 'Lapok: ' + [0, 1, 2, 3].map((i) => dbgSegText(r[17 + i])).join(' · ');
+    $('dbg-pages').textContent = T('Lapok: ') + [0, 1, 2, 3].map((i) => dbgSegText(r[17 + i])).join(' · ');
     dbgRenderTiming();
     const sp = r[7], p = api.dbgMem(sp, 16, 0);
-    let st = 'Verem:';
+    let st = T('Verem:');
     for (let i = 0; i < 8; i++) {
       const w = M.HEAPU8[p + 2 * i] | (M.HEAPU8[p + 2 * i + 1] << 8);
       st += (i % 4 ? ' ' : '\n') + hex(w, 4);
@@ -4460,7 +4467,7 @@ registerProcessor('ep-output', EPOutput);
     for (let i = 0; i < n; i++) EP_SYSVARS[a + i] = name + (i ? ' +' + i : '');
   }
   // EXOS variables 0, 2..39 from BFC5h (variable 1 is FLAG_SOFT_IRQ at BFF2h)
-  EXOS_VARS.forEach((n, i) => { if (i !== 1) EP_SYSVARS[0xBFC5 + i] = 'EXOS változó ' + i + ': ' + n; });
+  EXOS_VARS.forEach((n, i) => { if (i !== 1) EP_SYSVARS[0xBFC5 + i] = T('EXOS változó ') + i + ': ' + n; });
   // TVC system calls (RST 30h + code), from "TV-Computer Operációs rendszer"
   // (tvcdoc): bit 7 = input, bits 6..4 = class, bits 3..0 = function
   const TVC_FN = {
@@ -4495,25 +4502,25 @@ registerProcessor('ep-output', EPOutput);
   function dbgTvcFnName(c) {
     if (TVC_FN[c]) return TVC_FN[c];
     const f = c & 15;
-    return TVC_CLASS[c >> 4 & 7] + ' osztály ' + (c & 0x80 ? 'input ' : 'output ') +
-           (f === 0 ? 'IT' : f === 1 ? 'karakter' : f === 2 ? 'blokk' : f + '. funkció');
+    return TVC_CLASS[c >> 4 & 7] + T(' osztály ') + (c & 0x80 ? 'input ' : 'output ') +
+           (f === 0 ? 'IT' : f === 1 ? T('karakter') : f === 2 ? T('blokk') : F('{0}. funkció', f));
   }
   // what the registers mean at a TVC call
   function dbgTvcFnArgs(c, o) {
     const ch = (v) => hex(v, 2) + (v >= 32 && v < 127 ? " '" + String.fromCharCode(v) + "'" : '');
     const f = c & 15;
     if (c === 0x33) return 'B=' + o.B + ' (×20 ms), C=' + o.C + ', DE=' + hex(o.DE, 4);
-    if (c === 0x03 || c === 0x23 || c === 0xA3) return 'oszlop ' + o.B + ', sor ' + o.C;
+    if (c === 0x03 || c === 0x23 || c === 0xA3) return T('oszlop ') + o.B + T(', sor ') + o.C;
     if (c === 0x04) return 'C=' + o.C + ' (GRAPHICS ' + ([2, 4, 16][o.C] || '?') + ')';
     if (c === 0x06 || c === 0x07) return 'X=' + hex(o.BC, 4) + ', Y=' + hex(o.DE, 4);
     if (c === 0x0B) return 'C=' + ch(o.C) + ', DE=' + hex(o.DE, 4);
     if (c === 0x0C) return 'DE=' + hex(o.DE, 4);
-    if (c === 0xD3 || c === 0x53) return 'név: ' + dbgExosName(o.DE);
+    if (c === 0xD3 || c === 0x53) return T('név: ') + dbgExosName(o.DE);
     if (c >= 0xD6 && c <= 0xD8) return 'BCDE=' + hex(o.BC, 4) + hex(o.DE, 4);
-    if (c === 0xDA) return 'parancs: ' + dbgExosName(o.DE);
+    if (c === 0xDA) return T('parancs: ') + dbgExosName(o.DE);
     if ((c & 0x70) === 0x70) return 'DE=' + hex(o.DE, 4) + ', BC=' + hex(o.BC, 4);
     if (f === 1 && !(c & 0x80)) return 'C=' + ch(o.C);
-    if (f === 2) return 'DE=' + hex(o.DE, 4) + ', BC=' + hex(o.BC, 4) + ' bájt';
+    if (f === 2) return 'DE=' + hex(o.DE, 4) + ', BC=' + hex(o.BC, 4) + T(' bájt');
     return '';
   }
   // error codes returned in A (TVC)
@@ -4725,7 +4732,7 @@ registerProcessor('ep-output', EPOutput);
     const { v: [base, , name, desc], i } = TVC_VAR_AT.get(a);
     let d = desc;
     if (!full && d.length > 44) d = d.slice(0, 42).replace(/[\s;,(]+\S*$/, '') + '…';
-    const off = i ? '+' + i + (full ? ' (' + hex(base, 4) + '-tól)' : '') : '';
+    const off = i ? '+' + i + (full ? ' ' + F('({0}-tól)', hex(base, 4)) : '') : '';
     return (name ? name + off + ' – ' : (off ? off + ' ' : '')) + d;
   }
   const TVC_SEGS = { 0x00: 'SYS', 0x01: 'CART', 0x02: 'EXT', 0x07: 'SDEXT',
@@ -4751,7 +4758,7 @@ registerProcessor('ep-output', EPOutput);
 
   function dbgTvcSlotName(n) {
     const c = TVC_CARDS.find((c) => c.id === tvcSlots[n]);
-    return 'bővítő ' + n + (c && c.id !== SLOT_EMPTY ? ' (' + c.name.replace(/ \(.*$/, '') + ')' : '');
+    return T('bővítő ') + n + (c && c.id !== SLOT_EMPTY ? ' (' + c.name.replace(/ \(.*$/, '') + ')' : '');
   }
 
   // name of an I/O port of the current machine ('' if unknown)
@@ -4792,9 +4799,10 @@ registerProcessor('ep-output', EPOutput);
 
   // TVC colour: bits 0 B, 2 R, 4 G, 6 I (palette); the border uses bits 1, 3, 5, 7
   function dbgTvcColour(v) {
-    const n = ['fekete', 'kék', 'piros', 'bíbor', 'zöld', 'cián', 'sárga', 'fehér'][(v & 1) | (v >> 1 & 2) | (v >> 2 & 4)];
-    if (n === 'fekete' && (v & 0x40)) return 'szürke';
-    return (v & 0x40 ? 'világos ' : (v & 0x15 ? 'sötét ' : '')) + n;
+    const ci = (v & 1) | (v >> 1 & 2) | (v >> 2 & 4);
+    const n = [T('fekete'), T('kék'), T('piros'), T('bíbor'), T('zöld'), T('cián'), T('sárga'), T('fehér')][ci];
+    if (ci === 0 && (v & 0x40)) return T('szürke');
+    return (v & 0x40 ? T('világos ') : (v & 0x15 ? T('sötét ') : '')) + n;
   }
   const CRTC_REGS = ['vízszintes teljes', 'vízszintes látható', 'HSYNC pozíció', 'szinkron szélességek',
                      'függőleges teljes', 'függőleges finom', 'függőleges látható', 'VSYNC pozíció',
@@ -4819,20 +4827,20 @@ registerProcessor('ep-output', EPOutput);
     'két réteg', 'EC időzítés (TVC)', 'CRISP tearing (TVC)', 'koordináta-próba', 'C2 + SET_XY_OFFSET',
     'Elite hajó', 'alagút (speciális)', 'alagút (3D parancsok)'];
   function dbgFxCommand(v) {
-    if (v < 0x40) return 'sprite #' + v + ' (SPB írás)';
-    if (v < 0x50) return 'átlátszó szín ' + (v & 15);
-    if ((v & 0x60) === 0x60) return (v & 0x80 ? 'előtér' : 'háttér') + ' 2DPT ' + FX_2DPT[v & 31];
-    if (v >= 0xC0) return 'demó ' + hex(v, 2) + 'h' + (FX_EGGS[v - 0xC0] ? ': ' + FX_EGGS[v - 0xC0] : '');
+    if (v < 0x40) return 'sprite #' + v + T(' (SPB írás)');
+    if (v < 0x50) return T('átlátszó szín ') + (v & 15);
+    if ((v & 0x60) === 0x60) return (v & 0x80 ? T('előtér') : T('háttér')) + ' 2DPT ' + FX_2DPT[v & 31];
+    if (v >= 0xC0) return T('demó ') + hex(v, 2) + 'h' + (FX_EGGS[v - 0xC0] ? ': ' + FX_EGGS[v - 0xC0] : '');
     return FX_CMDS[v] || '?';
   }
   // the F8h status byte (bits 7..1 are active low on the wire, as the
   // card's emulation returns them: twodfx_emu_read_f8)
   function dbgFxStatus(v) {
     const b = [];
-    if (!(v & 0x80)) b.push('ütközés');
-    b.push(v & 0x40 ? 'nem kész (alszik)' : 'kész');
-    if (!(v & 0x20)) b.push('túlfutás');
-    for (let i = 0; i < 4; i++) if (!(v & (2 << i))) b.push('raszter IRQ ' + (i + 1));
+    if (!(v & 0x80)) b.push(T('ütközés'));
+    b.push(v & 0x40 ? T('nem kész (alszik)') : T('kész'));
+    if (!(v & 0x20)) b.push(T('túlfutás'));
+    for (let i = 0; i < 4; i++) if (!(v & (2 << i))) b.push(T('raszter IRQ ') + (i + 1));
     return b.join(', ');
   }
 
@@ -4850,7 +4858,7 @@ registerProcessor('ep-output', EPOutput);
     if (a && !a.phys) {
       const b = dbgPeek(a.addr & 0xFFFF), w = b | (dbgPeek((a.addr + 1) & 0xFFFF) << 8);
       const n = dbgAddrNote(a.addr, dbgRegObj().pages, true);
-      return { v: b, text: hex(b, 2) + '  ' + String(b).padStart(3) + '  szó: ' + hex(w, 4) + ' (' + w + ')' + (b >= 32 && b < 127 ? "  '" + String.fromCharCode(b) + "'" : '') + '   ' + hex(a.addr, 4) + ': ' + n };
+      return { v: b, text: hex(b, 2) + '  ' + String(b).padStart(3) + T('  szó: ') + hex(w, 4) + ' (' + w + ')' + (b >= 32 && b < 127 ? "  '" + String.fromCharCode(b) + "'" : '') + '   ' + hex(a.addr, 4) + ': ' + n };
     }
     let f = dbgCondCache.get('=' + t);
     if (!f) {
@@ -4869,7 +4877,7 @@ registerProcessor('ep-output', EPOutput);
       }
       return { v, text: String(v) };
     } catch (e) {
-      return { v: null, text: 'hiba: ' + e.message };
+      return { v: null, text: T('hiba: ') + e.message };
     }
   }
   function dbgRenderWatch() {
@@ -4882,7 +4890,7 @@ registerProcessor('ep-output', EPOutput);
       const d = document.createElement('div');
       const x = document.createElement('button');
       x.textContent = '✕';
-      x.title = 'Törlés';
+      x.title = T('Törlés');
       x.onclick = () => { dbgWatches.splice(i, 1); dbgWatchSave(); dbgRenderWatch(); };
       const t = document.createElement('span');
       t.textContent = ' ' + w.padEnd(14) + ' = ' + r.text;
@@ -4890,7 +4898,7 @@ registerProcessor('ep-output', EPOutput);
       d.append(x, t);
       box.append(d);
     });
-    if (!dbgWatches.length) box.textContent = 'Adj hozzá címet (pl. 0B4F), címkét vagy kifejezést (pl. HL, mem16(0x1722), A & 0x0F).';
+    if (!dbgWatches.length) box.textContent = T('Adj hozzá címet (pl. 0B4F), címkét vagy kifejezést (pl. HL, mem16(0x1722), A & 0x0F).');
     // the changes are shown against the previous stop
     if (dbgStopped) dbgWatchPrevNext = now;
   }
@@ -4907,7 +4915,7 @@ registerProcessor('ep-output', EPOutput);
       let what = null, target = -1;
       if (b3 === 0xCD || (b3 & 0xC7) === 0xC4) {
         target = dbgPeek((w - 2) & 0xFFFF) | (dbgPeek((w - 1) & 0xFFFF) << 8);
-        what = (b3 === 0xCD ? 'CALL ' : 'CALL feltétellel ') + hex(target, 4);
+        what = (b3 === 0xCD ? 'CALL ' : T('CALL feltétellel ')) + hex(target, 4);
       } else if (b2 === 0xF7) {
         what = machine.type === 1 ? 'RST 30: ' + hex(b1, 2) + ' ' + dbgTvcFnName(b1) : 'EXOS ' + b1 + ': ' + (EXOS_FN[b1] || '?');
       } else if ((b1 & 0xC7) === 0xC7) {
@@ -4916,7 +4924,7 @@ registerProcessor('ep-output', EPOutput);
       }
       if (!what) continue;
       const lbl = target >= 0 ? dbgLabel(target) : '';
-      out.push('SP+' + String(2 * i).padStart(2, '0') + '  vissza: ' + hex(w, 4) + (dbgLabel(w) ? ' (' + dbgLabel(w) + ')' : '') +
+      out.push('SP+' + String(2 * i).padStart(2, '0') + T('  vissza: ') + hex(w, 4) + (dbgLabel(w) ? ' (' + dbgLabel(w) + ')' : '') +
                '  ←  ' + what + (lbl ? ' (' + lbl + ')' : '') + (target >= 0 ? '   ; ' + dbgAddrNote(target, r.pages) : ''));
     }
     return out;
@@ -4968,14 +4976,14 @@ registerProcessor('ep-output', EPOutput);
   function dbgRenderSrc() {
     const box = $('dbg-src');
     box.textContent = '';
-    if (!dbgSrc) { box.textContent = 'Tölts be egy assembler listafájlt (pl. sjasmplus --lst, pasmo --listing).'; return; }
+    if (!dbgSrc) { box.textContent = T('Tölts be egy assembler listafájlt (pl. sjasmplus --lst, pasmo --listing).'); return; }
     const pc = dbgRegs()[0];
     let cur = dbgSrc.at.has(pc) ? dbgSrc.at.get(pc) : -1;
     const center = cur >= 0 ? cur : (dbgSrcView >= 0 ? dbgSrcView : 0);
     const from = Math.max(0, center - 12), to = Math.min(dbgSrc.lines.length, from + 40);
     const head = document.createElement('div');
     head.className = 'small';
-    head.textContent = dbgSrc.at.size + ' cím a listában' + (cur < 0 ? ' – a PC (' + hex(pc, 4) + ') nincs a listában' : '') + ' · kattintás: végrehajtási töréspont be/ki';
+    head.textContent = dbgSrc.at.size + T(' cím a listában') + (cur < 0 ? T(' – a PC (') + hex(pc, 4) + T(') nincs a listában') : '') + T(' · kattintás: végrehajtási töréspont be/ki');
     box.append(head);
     const addrOf = new Map();
     for (const [a, i] of dbgSrc.at) addrOf.set(i, a);
@@ -4999,13 +5007,13 @@ registerProcessor('ep-output', EPOutput);
     const lines = api.dbgCard256Gfx().trim().split('\n');
     if (!lines[0]) return '';
     const [mode, spr, bmp, scr, col, font] = lines[0].split(' ').map(Number);
-    let t = '\n\nOverlay grafika: ' + ['nincs (csak sprite-ok)', '2 színű szöveg', '16 színű szöveg', '16 színű kép'][mode & 3] +
-      '\n  kártya-RAM címek: sprite-ok ' + hex(spr, 5) + '  háttérkép ' + hex(bmp, 5) + '  szöveg ' + hex(scr, 5) +
-      '  színek ' + hex(col, 5) + '  font ' + hex(font, 5) +
-      '\n  (a képek a Grafika fülön: Előbeállítás → 256k++…)\nSprite-ok:\n   #  be  réteg    X    Y  fázis  szín  cím\n';
+    let t = T('\n\nOverlay grafika: ') + [T('nincs (csak sprite-ok)'), T('2 színű szöveg'), T('16 színű szöveg'), T('16 színű kép')][mode & 3] +
+      T('\n  kártya-RAM címek: sprite-ok ') + hex(spr, 5) + T('  háttérkép ') + hex(bmp, 5) + T('  szöveg ') + hex(scr, 5) +
+      T('  színek ') + hex(col, 5) + '  font ' + hex(font, 5) +
+      T('\n  (a képek a Grafika fülön: Előbeállítás → 256k++…)\nSprite-ok:\n   #  be  réteg    X    Y  fázis  szín  cím\n');
     lines.slice(1).forEach((l, i) => {
       const [x, y, en, fg, c, ph, full] = l.split(' ').map(Number);
-      t += String(i).padStart(4) + '  ' + (en ? 'igen' : ' -  ') + ' ' + (fg ? 'előtér ' : 'háttér ') +
+      t += String(i).padStart(4) + '  ' + (en ? T('igen') : ' -  ') + ' ' + (fg ? T('előtér ') : T('háttér ')) +
         String(x).padStart(4) + ' ' + String(y).padStart(4) + '  ' + String(ph).padStart(5) + '  ' +
         (full ? '  16 ' : String(c).padStart(4) + ' ') + ' ' + hex(spr + ph * (full ? 256 : 64), 5) + '\n';
     });
@@ -5015,7 +5023,7 @@ registerProcessor('ep-output', EPOutput);
   // the 2dfx commands of the I/O log: the F8h writes with the F9h bytes after them
   function dbgFxLog() {
     if (!fxOn) return '';
-    if (!dbgIoLogOn) return '\nParancsnapló: kapcsold be az I/O naplót (I/O napló fül), és a 2dfx parancsai itt jelennek meg.\n';
+    if (!dbgIoLogOn) return T('\nParancsnapló: kapcsold be az I/O naplót (I/O napló fül), és a 2dfx parancsai itt jelennek meg.\n');
     const log = api.dbgIoLog(4096).trim().split('\n').filter(Boolean).map((l) => l.split(' '));
     const cmds = [];
     let cur = null;
@@ -5027,10 +5035,10 @@ registerProcessor('ep-output', EPOutput);
         cmds.push(cur);
       } else if (p === 0xF9 && cur) cur.data.push(b);
     }
-    if (!cmds.length) return '\nParancsnapló: még nincs 2dfx parancs az I/O naplóban.\n';
-    return '\nParancsnapló (az utolsó ' + Math.min(100, cmds.length) + ', legújabb elöl):\n' +
+    if (!cmds.length) return T('\nParancsnapló: még nincs 2dfx parancs az I/O naplóban.\n');
+    return T('\nParancsnapló (az utolsó ') + Math.min(100, cmds.length) + T(', legújabb elöl):\n') +
       cmds.slice(-100).reverse().map((c) => c.pc + '  ' + hex(c.cmd, 2) + ' ' + dbgFxCommand(c.cmd) +
-        (c.data.length ? '  ' + c.data.slice(0, 16).map((x) => hex(x, 2)).join(' ') + (c.data.length > 16 ? ' … (' + c.data.length + ' bájt)' : '') : '')).join('\n') + '\n';
+        (c.data.length ? '  ' + c.data.slice(0, 16).map((x) => hex(x, 2)).join(' ') + (c.data.length > 16 ? ' … (' + c.data.length + T(' bájt)') : '') : '')).join('\n') + '\n';
   }
 
   // what writing 'v' to 'port' does (paging, video mode, colours decoded)
@@ -5108,8 +5116,8 @@ registerProcessor('ep-output', EPOutput);
         notes.push('EXOS ' + fn + ': ' + (EXOS_FN[fn] || '?'));
         if (atPC) {
           if (fn === 1 || fn === 2) notes.push('A=' + hex(o.A, 2) + ' ' + dbgExosName(o.DE));
-          else if (fn >= 3 && fn <= 11) notes.push('csatorna ' + hex(o.A, 2) + (fn === 7 ? ', B=' + hex(o.B, 2) : ''));
-          else if (fn === 16) notes.push(['olvasás', 'írás', 'váltás'][o.B] + ' ' + o.C + '. változó' + (EXOS_VARS[o.C] ? ' ' + EXOS_VARS[o.C] : '') + (o.B === 1 ? ' = ' + hex(o.D, 2) : ''));
+          else if (fn >= 3 && fn <= 11) notes.push(T('csatorna ') + hex(o.A, 2) + (fn === 7 ? ', B=' + hex(o.B, 2) : ''));
+          else if (fn === 16) notes.push([T('olvasás'), T('írás'), T('váltás')][o.B] + ' ' + F('{0}. változó', o.C) + (EXOS_VARS[o.C] ? ' ' + EXOS_VARS[o.C] : '') + (o.B === 1 ? ' = ' + hex(o.D, 2) : ''));
         }
       }
       return notes.join(', ');
@@ -5126,7 +5134,7 @@ registerProcessor('ep-output', EPOutput);
         if (isOut) val = rn === '0' ? 0 : (reg8[rn] ?? -1);
       }
       if (port >= 0) {
-        notes.push('port ' + hex(port, 2) + ': ' + (dbgPortName(port, isOut) || '?'));
+        notes.push(T('port ') + hex(port, 2) + ': ' + (dbgPortName(port, isOut) || '?'));
         if (val >= 0) {
           const w = dbgPortWriteNote(port, val);
           notes.push('← ' + hex(val, 2) + (w ? ' (' + w + ')' : ''));
@@ -5137,7 +5145,7 @@ registerProcessor('ep-output', EPOutput);
     if (/^(OUT|OT|IN)[ID]R?$/.test(mn) && atPC) {
       const port = o.C;
       const n = dbgPortName(port, mn.startsWith('O'));
-      return 'port ' + hex(port, 2) + (n ? ': ' + n : '');
+      return T('port ') + hex(port, 2) + (n ? ': ' + n : '');
     }
     const pages = o.pages;
     if ((k = /\(([0-9A-F]{4})\)/.exec(ops))) {
@@ -5220,7 +5228,7 @@ registerProcessor('ep-output', EPOutput);
     const box = $('dbg-mem');
     box.textContent = '';
     if (!dbgMemValid()) {
-      box.textContent = dbgMemSrc === 2 ? 'A 2dfx kártya nincs bekapcsolva.' : 'A TVC256k++ kártya nincs bent.';
+      box.textContent = dbgMemSrc === 2 ? T('A 2dfx kártya nincs bekapcsolva.') : T('A TVC256k++ kártya nincs bent.');
       return;
     }
     const p = api.dbgMem(dbgMemAddr, len, dbgMemSrc);
@@ -5246,8 +5254,8 @@ registerProcessor('ep-output', EPOutput);
           if (lbl || !/^P\d /.test(note)) b.classList.add('kn');
         }
         b.ondblclick = () => {
-          if (dbgMemSrc === 2) { setMessage('A 2dfx RAM csak a kártya portjain át írható', true); return; }
-          const t = window.prompt('Új érték (hex): ' + hex(a + i, aw), hex(v, 2));
+          if (dbgMemSrc === 2) { setMessage(T('A 2dfx RAM csak a kártya portjain át írható'), true); return; }
+          const t = window.prompt(T('Új érték (hex): ') + hex(a + i, aw), hex(v, 2));
           if (t === null) return;
           const nv = parseInt(t, 16);
           if (!isNaN(nv)) api.dbgPoke(a + i, nv & 0xFF, dbgMemSrc);
@@ -5262,15 +5270,15 @@ registerProcessor('ep-output', EPOutput);
     dbgPrevMem = { addr: dbgMemAddr, src: dbgMemSrc, bytes };
   }
 
-  const DBG_BP_NAMES = { ras: 'raszter (képsor)', x: 'végrehajtás', r: 'mem. olvasás', w: 'mem. írás', rw: 'mem. olv./írás',
-                         ior: 'port IN', iow: 'port OUT', iorw: 'port IN/OUT' };
+  const DBG_BP_NAMES = { ras: T('raszter (képsor)'), x: T('végrehajtás'), r: T('mem. olvasás'), w: T('mem. írás'), rw: T('mem. olv./írás'),
+                         ior: T('port IN'), iow: T('port OUT'), iorw: T('port IN/OUT') };
   function dbgRenderBps() {
     const ul = $('dbg-bp-list');
     ul.textContent = '';
     if (!dbgBps.length) {
       const li = document.createElement('li');
       li.className = 'small';
-      li.textContent = 'nincs';
+      li.textContent = T('nincs');
       ul.append(li);
     }
     dbgBps.forEach((b, i) => {
@@ -5282,13 +5290,13 @@ registerProcessor('ep-output', EPOutput);
       on.onchange = () => { b.on = on.checked; dbgApplyBps(); dbgRenderDis(); };
       const x = document.createElement('button');
       x.textContent = '✕';
-      x.title = 'Törlés';
+      x.title = T('Törlés');
       x.onclick = () => { dbgBps.splice(i, 1); dbgApplyBps(); dbgRenderBps(); dbgRenderDis(); };
       const a = dbgBpAddrText(b);
       const lbl = (b.type.startsWith('io') || b.type === 'ras' || b.seg !== undefined || dbgBpEnd(b) !== b.addr) ? '' : dbgLabel(b.addr);
       const t = document.createElement('span');
       t.textContent = a + (lbl ? ' ' + lbl : '') + '  ' + DBG_BP_NAMES[b.type] +
-        (b.cond ? '  ha ' + b.cond : '') + (b.hits ? '  (' + b.hits + '×)' : '');
+        (b.cond ? T('  ha ') + b.cond : '') + (b.hits ? '  (' + b.hits + '×)' : '');
       li.append(on, x, t);
       ul.append(li);
     });
@@ -5302,25 +5310,25 @@ registerProcessor('ep-output', EPOutput);
   function dbgStatus() {
     const st = $('dbg-status');
     if (!dbgStopped) {
-      st.textContent = 'fut';
+      st.textContent = T('fut');
       st.classList.remove('stopped');
       return;
     }
     const { why, pc, addr, value } = dbgInfo();
     const lbl = dbgLabel(pc);
-    let t = (dbgSteppedBack && why === 3 ? 'Visszalépve' : DBG_REASONS[why]) + ' – PC: ' + hex(pc, 4) + (lbl ? ' (' + lbl + ')' : '');
+    let t = (dbgSteppedBack && why === 3 ? T('Visszalépve') : DBG_REASONS[why]) + ' – PC: ' + hex(pc, 4) + (lbl ? ' (' + lbl + ')' : '');
     if (dbgCallRet && why === 2 && pc === dbgCallRet.ret) {
       const a = dbgRegs()[1] >> 8;
       const err = machine.type === 1 ? TVC_ERR[a] : EXOS_ERR[a];
-      t += ', a hívás eredménye: A=' + hex(a, 2) + (a === 0 ? ' (rendben)' : (err ? ' (' + err + ')' : ''));
+      t += T(', a hívás eredménye: A=') + hex(a, 2) + (a === 0 ? T(' (rendben)') : (err ? ' (' + err + ')' : ''));
     }
     if (why >= 4 && why <= 5) {
-      t += ', cím: ' + hex(addr, 4) + ' [' + dbgAddrNote(addr, dbgRegObj().pages) + '] = ' + hex(value, 2) + ' (a hozzáférő utasítás után)';
+      t += T(', cím: ') + hex(addr, 4) + ' [' + dbgAddrNote(addr, dbgRegObj().pages) + '] = ' + hex(value, 2) + T(' (a hozzáférő utasítás után)');
     }
-    if (why === 8) t += ', képsor: ' + addr + ' (a sor elején)';
+    if (why === 8) t += T(', képsor: ') + addr + T(' (a sor elején)');
     if (why === 6 || why === 7) {
       const pn = dbgPortName(addr, why === 7), wn = why === 7 ? dbgPortWriteNote(addr, value) : '';
-      t += ', port: ' + hex(addr & 0xFF, 2) + (pn ? ' [' + pn + ']' : '') + ' = ' + hex(value, 2) + (wn ? ' (' + wn + ')' : '') + ' (az utasítás után)';
+      t += T(', port: ') + hex(addr & 0xFF, 2) + (pn ? ' [' + pn + ']' : '') + ' = ' + hex(value, 2) + (wn ? ' (' + wn + ')' : '') + T(' (az utasítás után)');
     }
     st.textContent = t;
     st.classList.add('stopped');
@@ -5334,7 +5342,7 @@ registerProcessor('ep-output', EPOutput);
     dbgStatus();
     for (const id of ['dbg-step', 'dbg-over', 'dbg-out', 'dbg-cursor', 'dbg-run', 'dbg-frame']) $(id).disabled = !dbgStopped;
     $('dbg-back').disabled = !dbgStopped || !dbgUndo.length;
-    $('dbg-back').title = 'Visszalépés (' + dbgUndo.length + ' állapot): az előző debugger-lépés előtti állapot (pillanatképből; a lemez- és kártyaállapot nem lép vissza)';
+    $('dbg-back').title = T('Visszalépés (') + dbgUndo.length + T(' állapot): az előző debugger-lépés előtti állapot (pillanatképből; a lemez- és kártyaállapot nem lép vissza)');
     $('dbg-pause').disabled = dbgStopped;
     $('dbg-machine').textContent = machine ? '– ' + machine.name : '';
     // machine specific tabs
@@ -5364,7 +5372,7 @@ registerProcessor('ep-output', EPOutput);
       return !!f(dbgRegObj(), (a) => dbgPeek(a & 0xFFFF), (a) => dbgPeek(a & 0xFFFF) | (dbgPeek((a + 1) & 0xFFFF) << 8),
                  info.value, info.addr, hits);
     } catch (e) {
-      setMessage('Hibás feltétel (' + cond + '): ' + e.message, true);
+      setMessage(T('Hibás feltétel (') + cond + '): ' + e.message, true);
       return true;
     }
   }
@@ -5388,7 +5396,7 @@ registerProcessor('ep-output', EPOutput);
       try {
         if (dbgOnBreakFn(Object.assign(info, { reason: DBG_REASONS[info.why] })) === true) return false;
       } catch (e) {
-        dbgScriptLog('onBreak hiba: ' + e.message);
+        dbgScriptLog(T('onBreak hiba: ') + e.message);
       }
     }
     return true;
@@ -5404,7 +5412,7 @@ registerProcessor('ep-output', EPOutput);
         return;
       }
       api.dbgContinue();
-      check(api.run(0), 'emuláció');      // the rest of the time slice
+      check(api.run(0), T('emuláció'));      // the rest of the time slice
       if (++guard > 5000) return;          // the next frame continues
     }
   }
@@ -5451,10 +5459,10 @@ registerProcessor('ep-output', EPOutput);
     const u = dbgUndo.pop();
     if (!u) return;
     try {
-      if (u.machine !== machine.id) throw new Error('másik gép');
-      check(api.loadSnapshotKeepUndo(u.file), 'visszalépés');
+      if (u.machine !== machine.id) throw new Error(T('másik gép'));
+      check(api.loadSnapshotKeepUndo(u.file), T('visszalépés'));
     } catch (e) {
-      setMessage('A visszalépés nem sikerült: ' + (e.message || e), true);
+      setMessage(T('A visszalépés nem sikerült: ') + T(T(String(e.message || e))), true);
       return;
     } finally {
       try { M.FS.unlink(u.file); } catch (e) { }
@@ -5462,7 +5470,7 @@ registerProcessor('ep-output', EPOutput);
     // stop the restored machine before its first instruction, right now (a
     // Run pressed before the next frame would otherwise be lost)
     api.dbgPause();
-    check(api.run(1), 'visszalépés');
+    check(api.run(1), T('visszalépés'));
     api.audioClear();
     dbgSteppedBack = true;
     if (api.dbgState()) {
@@ -5524,21 +5532,21 @@ registerProcessor('ep-output', EPOutput);
     const box = $('dbg-find');
     box.textContent = '';
     if (!dbgFindCand) { $('dbg-find-count').textContent = ''; return; }
-    $('dbg-find-count').textContent = dbgFindCand.length + ' jelölt';
+    $('dbg-find-count').textContent = dbgFindCand.length + T(' jelölt');
     const cur = dbgReadAll();
     for (const a of dbgFindCand.slice(0, 100)) {
       const d = document.createElement('div');
       d.textContent = hex(a, 4) + '  ' + hex(dbgFindPrev[a], 2) + ' → ' + hex(cur[a], 2) + (dbgLabel(a) ? '   ' + dbgLabel(a) : '');
       d.style.cursor = 'pointer';
-      d.title = 'Írásfigyelés erre a címre';
+      d.title = T('Írásfigyelés erre a címre');
       d.onclick = () => {
         if (!dbgBps.some((b) => b.type === 'w' && b.addr === a)) dbgBps.push({ type: 'w', addr: a, cond: '', on: true, hits: 0 });
         dbgApplyBps(); dbgRenderBps();
-        setMessage('Írásfigyelés: ' + hex(a, 4));
+        setMessage(T('Írásfigyelés: ') + hex(a, 4));
       };
       box.append(d);
     }
-    if (dbgFindCand.length > 100) box.append('… (' + (dbgFindCand.length - 100) + ' további)');
+    if (dbgFindCand.length > 100) box.append('… (' + (dbgFindCand.length - 100) + T(' további)'));
   }
   function dbgFindNew() {
     dbgFindPrev = dbgReadAll();
@@ -5552,7 +5560,7 @@ registerProcessor('ep-output', EPOutput);
     const cur = dbgReadAll();
     const op = $('dbg-find-op').value;
     const v = parseInt($('dbg-find-val').value, 16);
-    if ((op === 'eq' || op === 'ne') && isNaN(v)) { setMessage('Adj meg egy értéket (hex)', true); return; }
+    if ((op === 'eq' || op === 'ne') && isNaN(v)) { setMessage(T('Adj meg egy értéket (hex)'), true); return; }
     const test = {
       eq: (o, n) => n === v, ne: (o, n) => n !== v, chg: (o, n) => n !== o, same: (o, n) => n === o,
       inc: (o, n) => n > o, dec: (o, n) => n < o, inc1: (o, n) => n === ((o + 1) & 255), dec1: (o, n) => n === ((o - 1) & 255)
@@ -5611,7 +5619,7 @@ registerProcessor('ep-output', EPOutput);
         $('dbg-hist').textContent = pcs.length ? pcs.map((a) => {
           const l = dbgLabel(a);
           return (l ? l + ':\n' : '') + dbgDisLine(a);
-        }).join('\n') : (dbgHistOn ? 'még nincs adat' : 'kapcsold be az előzmények gyűjtését');
+        }).join('\n') : (dbgHistOn ? T('még nincs adat') : T('kapcsold be az előzmények gyűjtését'));
         break;
       }
       case 'prof': {
@@ -5630,9 +5638,9 @@ registerProcessor('ep-output', EPOutput);
             if (top.length > 40) top.pop();
           }
         }
-        $('dbg-prof').textContent = total ? 'Összesen: ' + total + ' utasítás\n' + top.map(([a, c]) =>
+        $('dbg-prof').textContent = total ? T('Összesen: ') + total + T(' utasítás\n') + top.map(([a, c]) =>
           String(c).padStart(10) + '  ' + (100 * c / total).toFixed(2).padStart(6) + '%  ' + dbgDisLine(a) +
-          (dbgLabel(a) ? '   ; ' + dbgLabel(a) : '')).join('\n') : (dbgProfOn ? 'még nincs adat' : 'kapcsold be a profilert');
+          (dbgLabel(a) ? '   ; ' + dbgLabel(a) : '')).join('\n') : (dbgProfOn ? T('még nincs adat') : T('kapcsold be a profilert'));
         break;
       }
       case 'iolog': {
@@ -5641,14 +5649,14 @@ registerProcessor('ep-output', EPOutput);
         let lines = api.dbgIoLog(4096).trim().split('\n').filter(Boolean).map((l) => l.split(' '));
         if (f.length) lines = lines.filter((l) => f.includes(parseInt(l[1], 16)));
         lines = lines.slice(-200).reverse();
-        $('dbg-iolog').textContent = lines.length ? 'PC    irány port érték\n' + lines.map(([pc, port, v, w]) => {
+        $('dbg-iolog').textContent = lines.length ? T('PC    irány port érték\n') + lines.map(([pc, port, v, w]) => {
           const l = dbgLabel(parseInt(pc, 16));
           const pn = dbgPortName(parseInt(port, 16), w === '1');
           const wn = w === '1' ? dbgPortWriteNote(parseInt(port, 16), parseInt(v, 16)) :
                      (parseInt(port, 16) === 0xF8 && fxOn ? dbgFxStatus(parseInt(v, 16)) : '');
           const c = [l, pn, wn].filter(Boolean).join(', ');
           return pc + '  ' + (w === '1' ? 'OUT ' : 'IN  ') + '  ' + port + '   ' + v + (c ? '   ; ' + c : '');
-        }).join('\n') : (dbgIoLogOn ? 'még nincs adat' : 'kapcsold be az I/O naplót');
+        }).join('\n') : (dbgIoLogOn ? T('még nincs adat') : T('kapcsold be az I/O naplót'));
         break;
       }
       case 'ioregs': $('dbg-ioregs').textContent = api.dbgIoRegs(); break;
@@ -5658,13 +5666,13 @@ registerProcessor('ep-output', EPOutput);
       case 'watch': dbgRenderWatch(); break;
       case 'calls': {
         const l = dbgCallStack();
-        $('dbg-calls').textContent = l.length ? 'Valószínű hívási lánc (a verem visszatérési címei, a legutóbbi elöl):\n' + l.join('\n') : 'Nincs CALL/RST visszatérési cím a veremben.';
+        $('dbg-calls').textContent = l.length ? T('Valószínű hívási lánc (a verem visszatérési címei, a legutóbbi elöl):\n') + l.join('\n') : T('Nincs CALL/RST visszatérési cím a veremben.');
         break;
       }
       case 'trace': {
         $('dbg-trace-on').checked = dbgTraceOn;
         const l = dbgTraceLines(200, true).reverse();
-        $('dbg-trace').textContent = l.length ? l.join('\n') : (dbgTraceOn ? 'még nincs adat' : 'kapcsold be a nyomkövetést');
+        $('dbg-trace').textContent = l.length ? l.join('\n') : (dbgTraceOn ? T('még nincs adat') : T('kapcsold be a nyomkövetést'));
         break;
       }
       case 'src': dbgRenderSrc(); break;
@@ -5674,17 +5682,17 @@ registerProcessor('ep-output', EPOutput);
         const t = api.dbgCard256();
         // without the card only the note, no register or sprite data
         $('dbg-c256').textContent = t.startsWith('A TVC256k++') ? t : t +
-          '\nB0/B1: P2/P3 lap  B2-B5: 8 MB-os lapok  B6: PSRAM MB  B7: ROM lap  C3/C4: firmware\n' +
-          'C5: meghajtó  C8-CA: PSRAM / flash / DSK érvényes  D0: USB  D4/D5: egér  E0-FF: vSID' + dbgCard256Overlay();
+          T('\nB0/B1: P2/P3 lap  B2-B5: 8 MB-os lapok  B6: PSRAM MB  B7: ROM lap  C3/C4: firmware\n') +
+          T('C5: meghajtó  C8-CA: PSRAM / flash / DSK érvényes  D0: USB  D4/D5: egér  E0-FF: vSID') + dbgCard256Overlay();
         break;
       }
-      case 'find': if (dbgFindCand) $('dbg-find-count').textContent = dbgFindCand.length + ' jelölt'; break;
+      case 'find': if (dbgFindCand) $('dbg-find-count').textContent = dbgFindCand.length + T(' jelölt'); break;
       case 'sym': {
         const flt = $('dbg-sym-filter').value.trim().toUpperCase();
         const all = [...dbgSymAddr.entries()].filter(([n]) => !flt || n.includes(flt)).sort((x, y) => x[1] - y[1]);
-        $('dbg-sym-count').textContent = dbgSymAddr.size + ' címke';
+        $('dbg-sym-count').textContent = dbgSymAddr.size + T(' címke');
         $('dbg-sym').textContent = all.slice(0, 1000).map(([n, a]) => hex(a, 4) + '  ' + n).join('\n') +
-          (all.length > 1000 ? '\n… (' + (all.length - 1000) + ' további)' : '');
+          (all.length > 1000 ? '\n… (' + (all.length - 1000) + T(' további)') : '');
         break;
       }
     }
@@ -5831,7 +5839,7 @@ registerProcessor('ep-output', EPOutput);
         const val = (x, y) => { const k = (x & 1) ? data[y * stride + (x >> 1)] >> 4 : data[y * stride + (x >> 1)] & 15; return k === tr ? -1 : k; };
         list.push({ label: '2dfx sprite #' + m[1] + ' (' + w + '×' + h + ', ' + hex(a, 6) + ', X ' + m[2] + ' Y ' + m[3] + ')', w, h,
                     val, px: (x, y) => { const k = val(x, y); return k < 0 ? GFX_TRANSPARENT : dbgFxRgb(k, -1); },
-                    rows: rowsOf(data, 0, stride, h), fmt: '2dfx: 4 bit/pixel, az alsó félbájt a bal pixel' });
+                    rows: rowsOf(data, 0, stride, h), fmt: T('2dfx: 4 bit/pixel, az alsó félbájt a bal pixel') });
       }
       return list;
     }
@@ -5845,14 +5853,14 @@ registerProcessor('ep-output', EPOutput);
       return { label, w: 24, h: 21, dim, val,
                px: (x, y) => { const k = val(x, y); return k < 0 ? GFX_TRANSPARENT : ($('dbg-gfx-gray').checked ? [k * 17, k * 17, k * 17] : cardRgb(full ? k : col)); },
                rows: rowsOf(data, o, full ? 12 : 3, 21),
-               fmt: full ? '256k++ 16 szín: 4 bit/pixel, a felső félbájt a bal pixel, 8 = átlátszó' : '256k++ 2 szín: 1 bit/pixel, szín ' + col };
+               fmt: full ? T('256k++ 16 szín: 4 bit/pixel, a felső félbájt a bal pixel, 8 = átlátszó') : T('256k++ 2 szín: 1 bit/pixel, szín ') + col };
     };
     if (dbgGfx.sheet === 'c256') {
       // the 16 sprites with their current phase
       lines.slice(1).forEach((l, i) => {
         const [x, y, en, fg, col, phase, full] = l.split(' ').map(Number);
         const a = spriteBase + phase * (full ? 256 : 64);
-        list.push(cardSprite('256k++ sprite #' + i + (en ? ' (be' : ' (ki') + ', X ' + x + ' Y ' + y + ', fázis ' + phase + (full ? ', 16 szín' : ', szín ' + col) + (fg ? ', előtér' : '') + ', ' + hex(a, 5) + ')',
+        list.push(cardSprite('256k++ sprite #' + i + (en ? T(' (be') : T(' (ki')) + ', X ' + x + ' Y ' + y + T(', fázis ') + phase + (full ? T(', 16 szín') : T(', szín ') + col) + (fg ? T(', előtér') : '') + ', ' + hex(a, 5) + ')',
                              ep.read(a, full ? 252 : 63, 4), 0, !!full, col, !en));
       });
     } else {
@@ -5860,7 +5868,7 @@ registerProcessor('ep-output', EPOutput);
       const full = dbgGfx.sheet === 'c256p16', size = full ? 256 : 64;
       const data = ep.read(spriteBase, 16384, 4);
       for (let ph = 0; ph < 16384 / size; ph++) {
-        list.push(cardSprite('256k++ sprite-fázis ' + ph + ' (' + hex(spriteBase + ph * size, 5) + ')', data, ph * size, full, 15, false));
+        list.push(cardSprite(T('256k++ sprite-fázis ') + ph + ' (' + hex(spriteBase + ph * size, 5) + ')', data, ph * size, full, 15, false));
       }
     }
     return list;
@@ -5872,13 +5880,13 @@ registerProcessor('ep-output', EPOutput);
     const out = [];
     if (dbgGfx.sheet) {
       for (const s of dbgGfxSheets()) {
-        out.push('; ' + s.label, '; ' + s.fmt + '; képpontok: . = átlátszó, 0-F = színkód');
+        out.push('; ' + s.label, '; ' + s.fmt + T('; képpontok: . = átlátszó, 0-F = színkód'));
         for (let y = 0; y < s.h; y++) {
           let r = '';
           for (let x = 0; x < s.w; x++) { const k = s.val(x, y); r += k < 0 ? '.' : k.toString(16).toUpperCase(); }
           out.push(r);
         }
-        out.push('; bájtok soronként (hex)');
+        out.push(T('; bájtok soronként (hex)'));
         for (const r of s.rows) out.push(r.map((b) => hex(b, 2)).join(' '));
         out.push('');
       }
@@ -5943,8 +5951,8 @@ registerProcessor('ep-output', EPOutput);
         for (let py = 0; py < s.h; py++) for (let px = 0; px < s.w; px++) dbgGfxPut(img, W, c.x + px, c.y + py, s.px(px, py), s.dim);
       });
       ctx.putImageData(img, 0, 0);
-      $('dbg-gfx-info').textContent = list.length ? list.length + ' kép – az egér alatt a leírása' :
-        (dbgGfx.sheet === 'fx' ? 'Nincs bekapcsolt 2dfx sprite (vagy a kártya nincs bekapcsolva).' : 'A TVC256k++ kártya nincs bent.');
+      $('dbg-gfx-info').textContent = list.length ? list.length + T(' kép – az egér alatt a leírása') :
+        (dbgGfx.sheet === 'fx' ? T('Nincs bekapcsolt 2dfx sprite (vagy a kártya nincs bekapcsolva).') : T('A TVC256k++ kártya nincs bent.'));
       return;
     }
     dbgGfxCells = null;
@@ -5956,7 +5964,7 @@ registerProcessor('ep-output', EPOutput);
     cv.style.height = (h * zoom) + 'px';
     const img = ctx.createImageData(w, h);
     if (src !== 1 && !api.dbgMemValid(src)) {
-      $('dbg-gfx-info').textContent = src === 2 ? 'A 2dfx kártya nincs bekapcsolva.' : 'A TVC256k++ kártya nincs bent.';
+      $('dbg-gfx-info').textContent = src === 2 ? T('A 2dfx kártya nincs bekapcsolva.') : T('A TVC256k++ kártya nincs bent.');
       ctx.putImageData(img, 0, 0);
       return;
     }
@@ -5970,8 +5978,8 @@ registerProcessor('ep-output', EPOutput);
     }
     ctx.putImageData(img, 0, 0);
     $('dbg-gfx-info').textContent = dbgGfxAddrText(src, addr) +
-      (src === 1 && dbgSegName(addr >> 14) ? ' (' + dbgSegName(addr >> 14) + ')' : '') + ', ' + bytes + ' bájt × ' + lines + ' sor, ' +
-      $('dbg-gfx-bpp').selectedOptions[0].text + ' – az egér alatt a bájt címe';
+      (src === 1 && dbgSegName(addr >> 14) ? ' (' + dbgSegName(addr >> 14) + ')' : '') + ', ' + bytes + T(' bájt × ') + lines + T(' sor, ') +
+      $('dbg-gfx-bpp').selectedOptions[0].text + T(' – az egér alatt a bájt címe');
   }
 
   // the cell / byte under the mouse
@@ -6038,7 +6046,7 @@ registerProcessor('ep-output', EPOutput);
     $('dbg-gfx-next').onclick = () => step(1);
     $('dbg-gfx-canvas').onmousemove = (e) => {
       const at = dbgGfxAt(e);
-      e.target.title = at.cell ? at.cell.label : (at.a !== undefined ? dbgGfxAddrText(dbgGfx.src, at.a) + '  (sor ' + at.y + ', bájt ' + at.x + ')' : '');
+      e.target.title = at.cell ? at.cell.label : (at.a !== undefined ? dbgGfxAddrText(dbgGfx.src, at.a) + T('  (sor ') + at.y + T(', bájt ') + at.x + ')' : '');
     };
     $('dbg-gfx-canvas').onclick = (e) => {
       // the clicked byte in the memory view
@@ -6120,26 +6128,26 @@ registerProcessor('ep-output', EPOutput);
     const box = $('dbg-basic');
     const lines = dbgTvcBasic(3000);
     if (!dbgTvcKeywords().length) {
-      box.textContent = 'A BASIC kulcsszótábla nem található ebben a ROM-ban.';
+      box.textContent = T('A BASIC kulcsszótábla nem található ebben a ROM-ban.');
       return;
     }
     const cur = dbgTvcRam(0x170C, 2), curAddr = cur[0] | cur[1] << 8;
     const running = (dbgTvcRam(0x1700, 1)[0] & 4) !== 0;
     box.textContent = '';
     const save = document.createElement('button');
-    save.textContent = 'Mentés szövegként';
-    save.title = 'A program listája .txt fájlba (UTF-8)';
+    save.textContent = T('Mentés szövegként');
+    save.title = T('A program listája .txt fájlba (UTF-8)');
     save.onclick = () => dbgDownload('tvc-basic.txt', new Blob([lines.map((l) => l.num + ' ' + l.text).join('\r\n') + '\r\n'], { type: 'text/plain;charset=utf-8' }));
     box.append(save);
     const head = document.createElement('div');
     head.className = 'small';
-    head.textContent = lines.length + ' sor' + (running ? ', fut – az aktuális sor kiemelve' : '') +
-      ' (kattintás: a sor címe a memórianézetben)';
+    head.textContent = lines.length + T(' sor') + (running ? T(', fut – az aktuális sor kiemelve') : '') +
+      T(' (kattintás: a sor címe a memórianézetben)');
     box.append(head);
     for (const l of lines) {
       const d = document.createElement('div');
       d.textContent = String(l.num).padStart(5) + ' ' + l.text;
-      d.title = 'Cím: ' + hex(l.addr, 4);
+      d.title = T('Cím: ') + hex(l.addr, 4);
       if (running && l.addr === curAddr) d.className = 'pc';
       d.onclick = () => { dbgMemSrc = 0; $('dbg-mem-src').value = '0'; dbgMemAddr = l.addr; $('dbg-mem-addr').value = hex(l.addr, 4); dbgRenderMem(); };
       box.append(d);
@@ -6150,13 +6158,13 @@ registerProcessor('ep-output', EPOutput);
     const io = api.dbgIoRegs();
     const m = /Nick\s+80:\s*([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/.exec(io);
     const cur = /Nick\s+LPB:\s*([0-9A-F]{4})/.exec(io);
-    if (!m) { $('dbg-lpt').textContent = 'Csak Enterprise-on.'; return; }
+    if (!m) { $('dbg-lpt').textContent = T('Csak Enterprise-on.'); return; }
     const p82 = parseInt(m[3], 16), p83 = parseInt(m[4], 16);
     const base = (p82 << 4) | ((p83 & 0x0F) << 12);
     const curLpb = cur ? parseInt(cur[1], 16) & 0xFFF0 : -1;
     let html = '<div>Border: ' + m[2] + '  LPT: ' + hex(base, 4) + '  (83h: ' + m[4] + ')</div>' +
-      '<table><tr><th>#</th><th>cím</th><th>sor</th><th>mód</th><th>szín</th><th>VRES</th><th>IRQ</th>' +
-      '<th>margó</th><th>LD1</th><th>LD2</th><th>paletta</th></tr>';
+      T('<table><tr><th>#</th><th>cím</th><th>sor</th><th>mód</th><th>szín</th><th>VRES</th><th>IRQ</th>') +
+      T('<th>margó</th><th>LD1</th><th>LD2</th><th>paletta</th></tr>');
     let a = base, lines = 0;
     for (let n = 0; n < 64; n++) {
       const p = api.dbgMem(0x3F0000 + a, 16, 1);
@@ -6164,15 +6172,15 @@ registerProcessor('ep-output', EPOutput);
       const nl = 256 - b[0] || 256;
       const mode = (b[1] >> 1) & 7;
       html += '<tr' + (a === curLpb ? ' class="cur"' : '') + '><td>' + n + '</td><td>' + hex(a, 4) + '</td><td>' + nl +
-        '</td><td>' + NICK_MODES[mode] + '</td><td>' + NICK_COLS[(b[1] >> 5) & 3] + '</td><td>' + ((b[1] & 16) ? 'igen' : '') +
-        '</td><td>' + ((b[1] & 128) ? 'igen' : '') + '</td><td>' + hex(b[2] & 63, 2) + '-' + hex(b[3] & 63, 2) +
+        '</td><td>' + NICK_MODES[mode] + '</td><td>' + NICK_COLS[(b[1] >> 5) & 3] + '</td><td>' + ((b[1] & 16) ? T('igen') : '') +
+        '</td><td>' + ((b[1] & 128) ? T('igen') : '') + '</td><td>' + hex(b[2] & 63, 2) + '-' + hex(b[3] & 63, 2) +
         '</td><td>' + hex(b[4] | b[5] << 8, 4) + '</td><td>' + hex(b[6] | b[7] << 8, 4) + '</td><td>' +
         [...b.slice(8, 16)].map((c) => '<i title="' + hex(c, 2) + '" style="background:' + epColour(c) + '"></i>').join('') + '</td></tr>';
       lines += nl;
       if (b[1] & 1) break;                  // reload: the end of the LPT
       a = (a + 16) & 0xFFFF;
     }
-    html += '</table><div>Összesen ' + lines + ' sor</div>';
+    html += T('</table><div>Összesen ') + lines + T(' sor</div>');
     $('dbg-lpt').innerHTML = html;
   }
 
@@ -6188,7 +6196,7 @@ registerProcessor('ep-output', EPOutput);
   }
   function monAddr(t, what) {
     const a = dbgParseAddr(t);
-    if (!a) throw new Error('hibás ' + (what || 'cím') + ': ' + t);
+    if (!a) throw new Error(T('hibás ') + (what || T('cím')) + ': ' + t);
     return a;
   }
   function monBytes(args) {
@@ -6197,7 +6205,7 @@ registerProcessor('ep-output', EPOutput);
       const m = /^"(.*)"$/.exec(t);
       if (m) { for (const ch of m[1]) out.push(ch.charCodeAt(0) & 0xFF); continue; }
       const v = parseInt(t.replace(/^(0x|\$|#)/i, ''), 16);
-      if (isNaN(v) || v > 255) throw new Error('hibás bájt: ' + t);
+      if (isNaN(v) || v > 255) throw new Error(T('hibás bájt: ') + t);
       out.push(v);
     }
     return out;
@@ -6214,28 +6222,28 @@ registerProcessor('ep-output', EPOutput);
   }
 
   const MON_HELP = [
-    '.  A <cím> <utasítás>   assembler (pl. A 4000 LD A,5); utána a következő cím jön',
-    'D [kezdet [vég]] ["fájl"]  disassembly (fájlba is)',
-    'M [kezdet [vég]] ["fájl"]  memória dump (fájlba is)',
-    '> <cím> <bájtok…>       memória írása (hex vagy "szöveg")',
-    'F <kezdet> <vég> <minta…>  feltöltés mintával',
-    'C <kezdet> <vég> <cél>  összehasonlítás',
-    'H <kezdet> <vég> <minta…>  keresés (hex vagy "szöveg")',
-    'SR <kezdet> <vég> <minta…> , <csere…>  keresés és csere',
-    'T <kezdet> <vég> <cél>  másolás',
-    'R                       regiszterek',
-    '; <pc> [af [bc [de [hl [sp [ix [iy]]]]]]]   regiszterek beállítása',
+    T('.  A <cím> <utasítás>   assembler (pl. A 4000 LD A,5); utána a következő cím jön'),
+    T('D [kezdet [vég]] ["fájl"]  disassembly (fájlba is)'),
+    T('M [kezdet [vég]] ["fájl"]  memória dump (fájlba is)'),
+    T('> <cím> <bájtok…>       memória írása (hex vagy "szöveg")'),
+    T('F <kezdet> <vég> <minta…>  feltöltés mintával'),
+    T('C <kezdet> <vég> <cél>  összehasonlítás'),
+    T('H <kezdet> <vég> <minta…>  keresés (hex vagy "szöveg")'),
+    T('SR <kezdet> <vég> <minta…> , <csere…>  keresés és csere'),
+    T('T <kezdet> <vég> <cél>  másolás'),
+    T('R                       regiszterek'),
+    T('; <pc> [af [bc [de [hl [sp [ix [iy]]]]]]]   regiszterek beállítása'),
     ';; <af\'> [bc\' [de\' [hl\' [im [i [r]]]]]]',
-    'G [cím]                 folytatás (cím: onnan)',
-    'X / Z / Y               folytatás / lépés / átlépés',
-    'IO                      I/O regiszterek',
-    'O <port> <érték>        port írása',
-    'L <cím>                 fájl betöltése a címre (fájlválasztó)',
-    'S <kezdet> <vég> [név]  memória mentése fájlba (letöltés)',
-    'V <cím>                 összehasonlítás egy fájllal (fájlválasztó)',
-    'I                       beállítások, állapot',
-    'CLS                     a kimenet törlése',
-    'Címek: hex (C000), szegmens:offset (FC:0000), címke, címke+10'
+    T('G [cím]                 folytatás (cím: onnan)'),
+    T('X / Z / Y               folytatás / lépés / átlépés'),
+    T('IO                      I/O regiszterek'),
+    T('O <port> <érték>        port írása'),
+    T('L <cím>                 fájl betöltése a címre (fájlválasztó)'),
+    T('S <kezdet> <vég> [név]  memória mentése fájlba (letöltés)'),
+    T('V <cím>                 összehasonlítás egy fájllal (fájlválasztó)'),
+    T('I                       beállítások, állapot'),
+    T('CLS                     a kimenet törlése'),
+    T('Címek: hex (C000), szegmens:offset (FC:0000), címke, címke+10')
   ];
 
   function monExec(line) {
@@ -6247,14 +6255,14 @@ registerProcessor('ep-output', EPOutput);
     const tok = monTokens(line);
     const cmd = tok[0].toUpperCase();
     const args = tok.slice(1);
-    const stopped = () => { if (!dbgStopped) throw new Error('előbb állítsd meg a gépet'); };
+    const stopped = () => { if (!dbgStopped) throw new Error(T('előbb állítsd meg a gépet')); };
     switch (cmd) {
       case '?': case 'HELP': MON_HELP.forEach(monPrint); break;
       case 'CLS': $('dbg-mon-out').textContent = ''; break;
       case 'A': case '.': {
-        if (!args.length) throw new Error('A <cím> <utasítás>');
+        if (!args.length) throw new Error(T('A <cím> <utasítás>'));
         const a = monAddr(args[0]);
-        if (a.phys) throw new Error('az assembler CPU címet vár');
+        if (a.phys) throw new Error(T('az assembler CPU címet vár'));
         if (args.length < 2) { $('dbg-mon-in').value = 'A ' + hex(a.addr, 4) + ' '; return; }
         // symbols in the operands -> hex
         const src = line.replace(/^\S+\s+\S+\s*/, '').replace(/[A-Za-z_.@?][\w.@?$]*/g, (w) => {
@@ -6262,7 +6270,7 @@ registerProcessor('ep-output', EPOutput);
           return v === undefined ? w : hex(v, 4);
         });
         const next = api.dbgAssemble('A ' + hex(a.addr, 4) + ' ' + src.toUpperCase());
-        if (next < 0) throw new Error(lastError() || 'szintaxis hiba');
+        if (next < 0) throw new Error(lastError() || T('szintaxis hiba'));
         monPrint(dbgDisLine(a.addr));
         $('dbg-mon-in').value = 'A ' + hex(next, 4) + ' ';
         dbgRefresh();
@@ -6288,7 +6296,7 @@ registerProcessor('ep-output', EPOutput);
         monNextD = a;
         if (file) {
           download(new TextEncoder().encode(lines.join('\n') + '\n'), file || 'disasm.txt');
-          monPrint(lines.length + ' sor: ' + file);
+          monPrint(lines.length + T(' sor: ') + file);
         }
         break;
       }
@@ -6298,7 +6306,7 @@ registerProcessor('ep-output', EPOutput);
         const print = file ? (t) => lines.push(t) : monPrint;
         let a = args.length ? monAddr(args[0]) : { addr: monNextM >= 0 ? monNextM : 0, phys: false };
         let len = args.length > 1 ? monAddr(args[1]).addr - a.addr + 1 : 128;
-        if (len <= 0 || len > 65536) throw new Error('hibás tartomány');
+        if (len <= 0 || len > 65536) throw new Error(T('hibás tartomány'));
         for (let i = 0; i < len; i += 16) {
           let s = monFmt(a, i) + ' ', asc = '';
           for (let j = 0; j < 16 && i + j < len; j++) {
@@ -6311,7 +6319,7 @@ registerProcessor('ep-output', EPOutput);
         monNextM = a.addr + len;
         if (file) {
           download(new TextEncoder().encode(lines.join('\n') + '\n'), file);
-          monPrint(lines.length + ' sor: ' + file);
+          monPrint(lines.length + T(' sor: ') + file);
         }
         break;
       }
@@ -6323,7 +6331,7 @@ registerProcessor('ep-output', EPOutput);
       }
       case 'F': {
         const a = monAddr(args[0]), e = monAddr(args[1]).addr, pat = monBytes(args.slice(2));
-        if (!pat.length) throw new Error('nincs minta');
+        if (!pat.length) throw new Error(T('nincs minta'));
         for (let i = 0; a.addr + i <= e; i++) monWrite(a, i, pat[i % pat.length]);
         dbgRefresh();
         break;
@@ -6333,7 +6341,7 @@ registerProcessor('ep-output', EPOutput);
         const buf = [];
         for (let i = 0; a.addr + i <= e; i++) buf.push(monRead(a, i));
         buf.forEach((v, i) => monWrite(d, i, v));
-        monPrint(buf.length + ' bájt másolva');
+        monPrint(buf.length + T(' bájt másolva'));
         dbgRefresh();
         break;
       }
@@ -6344,18 +6352,18 @@ registerProcessor('ep-output', EPOutput);
           const x = monRead(a, i), y = monRead(d, i);
           if (x !== y && n++ < 200) monPrint(monFmt(a, i) + ' ' + hex(x, 2) + '  ' + monFmt(d, i) + ' ' + hex(y, 2));
         }
-        monPrint(n ? n + ' eltérés' : 'egyezik');
+        monPrint(n ? n + T(' eltérés') : T('egyezik'));
         break;
       }
       case 'H': case 'SR': {
         // SR: the replacement follows a comma
         const parts = line.split(',');
         const lt = monTokens(parts[0]).slice(1);
-        if (lt.length < 3) throw new Error(cmd + ' <kezdet> <vég> <minta…>' + (cmd === 'SR' ? ' , <csere…>' : ''));
+        if (lt.length < 3) throw new Error(cmd + T(' <kezdet> <vég> <minta…>') + (cmd === 'SR' ? T(' , <csere…>') : ''));
         const a = monAddr(lt[0]), e = monAddr(lt[1]).addr;
         const pat = monBytes(lt.slice(2));
         const rep = cmd === 'SR' ? monBytes(monTokens(parts.slice(1).join(','))) : null;
-        if (cmd === 'SR' && !rep.length) throw new Error('SR <kezdet> <vég> <minta…> , <csere…>');
+        if (cmd === 'SR' && !rep.length) throw new Error(T('SR <kezdet> <vég> <minta…> , <csere…>'));
         let n = 0;
         for (let i = 0; a.addr + i + pat.length - 1 <= e; i++) {
           if (pat.every((v, k) => monRead(a, i + k) === v)) {
@@ -6364,7 +6372,7 @@ registerProcessor('ep-output', EPOutput);
             if (rep) rep.forEach((v, k) => monWrite(a, i + k, v));
           }
         }
-        monPrint(n + (rep ? ' csere' : ' találat'));
+        monPrint(n + (rep ? T(' csere') : T(' találat')));
         if (rep) dbgRefresh();
         break;
       }
@@ -6382,7 +6390,7 @@ registerProcessor('ep-output', EPOutput);
         args.forEach((t, i) => {
           if (i >= order.length) return;
           const v = parseInt(t, 16);
-          if (isNaN(v)) throw new Error('hibás érték: ' + t);
+          if (isNaN(v)) throw new Error(T('hibás érték: ') + t);
           api.dbgSetReg(order[i], v);
         });
         dbgRefresh();
@@ -6400,7 +6408,7 @@ registerProcessor('ep-output', EPOutput);
       case 'IO': api.dbgIoRegs().split('\n').forEach(monPrint); break;
       case 'O': {
         const p = parseInt(args[0], 16), v = parseInt(args[1], 16);
-        if (isNaN(p) || isNaN(v)) throw new Error('O <port> <érték>');
+        if (isNaN(p) || isNaN(v)) throw new Error(T('O <port> <érték>'));
         api.dbgOut(p, v);
         break;
       }
@@ -6414,12 +6422,12 @@ registerProcessor('ep-output', EPOutput);
           const b = new Uint8Array(await f.arrayBuffer());
           if (cmd === 'L') {
             b.forEach((v, i) => monWrite(a, i, v));
-            monPrint(f.name + ': ' + b.length + ' bájt betöltve ' + monFmt(a, 0) + '-' + monFmt(a, b.length - 1));
+            monPrint(f.name + ': ' + b.length + T(' bájt betöltve ') + monFmt(a, 0) + '-' + monFmt(a, b.length - 1));
             dbgRefresh();
           } else {
             let n = 0;
-            b.forEach((v, i) => { const x = monRead(a, i); if (x !== v && n++ < 200) monPrint(monFmt(a, i) + ' ' + hex(x, 2) + '  fájl: ' + hex(v, 2)); });
-            monPrint(n ? n + ' eltérés' : 'egyezik (' + b.length + ' bájt)');
+            b.forEach((v, i) => { const x = monRead(a, i); if (x !== v && n++ < 200) monPrint(monFmt(a, i) + ' ' + hex(x, 2) + T('  fájl: ') + hex(v, 2)); });
+            monPrint(n ? n + T(' eltérés') : T('egyezik (') + b.length + T(' bájt)'));
           }
         };
         inp.click();
@@ -6431,16 +6439,16 @@ registerProcessor('ep-output', EPOutput);
         const buf = new Uint8Array(Math.max(0, e - a.addr + 1));
         for (let i = 0; i < buf.length; i++) buf[i] = monRead(a, i);
         download(buf, name);
-        monPrint(buf.length + ' bájt: ' + name);
+        monPrint(buf.length + T(' bájt: ') + name);
         break;
       }
       case 'I': {
-        monPrint('Gép: ' + machine.name + (dbgStopped ? ' (megállítva)' : ' (fut)'));
-        monPrint('Címkék: ' + dbgSymAddr.size + '  Töréspontok: ' + dbgBps.length);
-        monPrint('Előzmények: ' + (dbgHistOn ? 'be' : 'ki') + '  Profiler: ' + (dbgProfOn ? 'be' : 'ki') + '  I/O napló: ' + (dbgIoLogOn ? 'be' : 'ki'));
+        monPrint(T('Gép: ') + machine.name + (dbgStopped ? T(' (megállítva)') : T(' (fut)')));
+        monPrint(T('Címkék: ') + dbgSymAddr.size + T('  Töréspontok: ') + dbgBps.length);
+        monPrint(T('Előzmények: ') + (dbgHistOn ? T('be') : T('ki')) + '  Profiler: ' + (dbgProfOn ? T('be') : T('ki')) + T('  I/O napló: ') + (dbgIoLogOn ? T('be') : T('ki')));
         break;
       }
-      default: throw new Error('ismeretlen parancs: ' + tok[0] + ' (? = súgó)');
+      default: throw new Error(T('ismeretlen parancs: ') + tok[0] + T(' (? = súgó)'));
     }
   }
 
@@ -6455,7 +6463,7 @@ registerProcessor('ep-output', EPOutput);
     regs: () => dbgRegObj(),
     setReg: (name, v) => {
       const i = DBG_REGS.indexOf(String(name).toUpperCase().replace('_', "'"));
-      if (i < 0) throw new Error('ismeretlen regiszter: ' + name);
+      if (i < 0) throw new Error(T('ismeretlen regiszter: ') + name);
       api.dbgSetReg(i, v);
     },
     peek: (a) => dbgPeek(a & 0xFFFF),
@@ -6474,14 +6482,14 @@ registerProcessor('ep-output', EPOutput);
     assemble: (a, text) => api.dbgAssemble('A ' + hex(a, 4) + ' ' + String(text).toUpperCase()),
     bp: (a, cond) => {
       const b = typeof a === 'string' ? dbgMakeBp('x', a, cond) : { type: 'x', addr: a & 0xFFFF, cond: cond || '', on: true, hits: 0 };
-      if (!b) throw new Error('cím: C000, C000-FFFF vagy FF:0000-3FFF');
+      if (!b) throw new Error(T('cím: C000, C000-FFFF vagy FF:0000-3FFF'));
       dbgBps.push(b); dbgApplyBps(); dbgRenderBps();
     },
     watch: (type, a, cond) => {
-      if (!DBG_BP_NAMES[type]) throw new Error('típus: r w rw ior iow iorw');
+      if (!DBG_BP_NAMES[type]) throw new Error(T('típus: r w rw ior iow iorw'));
       const b = typeof a === 'string' ? dbgMakeBp(type, a, cond)
         : { type, addr: type.startsWith('io') ? a & 0xFF : a & 0xFFFF, cond: cond || '', on: true, hits: 0 };
-      if (!b) throw new Error('cím: C000, C000-FFFF vagy FF:0000-3FFF (port: 5F vagy 50-5F)');
+      if (!b) throw new Error(T('cím: C000, C000-FFFF vagy FF:0000-3FFF (port: 5F vagy 50-5F)'));
       dbgBps.push(b);
       dbgApplyBps(); dbgRenderBps();
     },
@@ -6530,7 +6538,7 @@ registerProcessor('ep-output', EPOutput);
       try {
         dbgOnFrameFn(us);
       } catch (e) {
-        dbgScriptLog('onFrame hiba: ' + e.message);
+        dbgScriptLog(T('onFrame hiba: ') + e.message);
         dbgOnFrameFn = null;
       }
     }
@@ -6541,7 +6549,7 @@ registerProcessor('ep-output', EPOutput);
       try {
         done = w.fn ? !!w.fn() : emulatedUs >= w.at;
       } catch (e) {
-        dbgScriptLog('until hiba: ' + e.message);
+        dbgScriptLog(T('until hiba: ') + e.message);
         done = true;
       }
       if (done) w.resolve();
@@ -6569,17 +6577,17 @@ registerProcessor('ep-output', EPOutput);
     dbgOnBreakFn = null;
     dbgOnFrameFn = null;
     dbgWaits = [];
-    dbgScriptLog('szkript leállítva (onBreak, onFrame, várakozások)');
+    dbgScriptLog(T('szkript leállítva (onBreak, onFrame, várakozások)'));
   }
 
-  const DBG_JS_PLACEHOLDER = `// JavaScript az ep objektummal, pl.:
+  const DBG_JS_PLACEHOLDER = T(`// JavaScript az ep objektummal, pl.:
 // ep.onBreak(info => { ep.log(ep.hex(ep.regs().HL, 4)); return true; })  // true: fut tovább
 // ep.bp(0x0038)   ep.watch('w', 0xBFF0)   ep.poke(0x4000, 0xC9)   ep.step()
-// await ep.type('LIST\\n');  await ep.wait(1000);  ep.onFrame(() => ep.poke(0x1234, 5))`;
-  const DBG_LUA_PLACEHOLDER = `-- Lua, az ep128emu szkript API-jával (a desktop emulátor README-je szerint):
+// await ep.type('LIST\\n');  await ep.wait(1000);  ep.onFrame(() => ep.poke(0x1234, 5))`);
+  const DBG_LUA_PLACEHOLDER = T(`-- Lua, az ep128emu szkript API-jával (a desktop emulátor README-je szerint):
 -- breakPointCallback(t, a, v), setBreakPoint(típus, cím, prioritás), clearBreakPoints(),
 -- readMemory/writeMemory, readMemoryRaw, getPC(), getA() … setA(n) …, readIOPort,
--- getMemoryPage(n), getNextOpcodeAddr(a), mprint(...)`;
+-- getMemoryPage(n), getNextOpcodeAddr(a), mprint(...)`);
   const DBG_SCRIPT_EXAMPLES = {
     luaexos: `-- Az ep128emu README példája (Enterprise): megáll, amikor a 102-es
 -- csatornát megnyitják, és kiírja a nevet
@@ -6706,7 +6714,7 @@ ep.log('CTRL+ESC megnyomva');`
       const type = $('dbg-bp-type').value;
       if (type === 'ras') {
         const n = parseInt($('dbg-bp-addr').value, 10);
-        if (isNaN(n) || n < 0 || n > 400) { setMessage('A raszter-töréspont a képsor száma decimálisan (0–400), a függőleges szinkrontól számolva', true); return; }
+        if (isNaN(n) || n < 0 || n > 400) { setMessage(T('A raszter-töréspont a képsor száma decimálisan (0–400), a függőleges szinkrontól számolva'), true); return; }
         dbgBps = dbgBps.filter((b) => b.type !== 'ras');
         dbgBps.push({ type, addr: n, cond: $('dbg-bp-cond').value.trim(), on: true, hits: 0 });
         dbgApplyBps(); dbgRenderBps();
@@ -6716,12 +6724,12 @@ ep.log('CTRL+ESC megnyomva');`
       const b = dbgMakeBp(type, $('dbg-bp-addr').value, cond);
       if (!b) {
         setMessage(type.startsWith('io')
-          ? 'A port hexadecimális szám (pl. 5F) vagy tartomány (pl. 50-5F)'
-          : 'A cím hexadecimális CPU cím (pl. C000) vagy címke, tartomány (pl. C000-FFFF), vagy szegmens:cím a szegmensen belül (pl. FF:0000-3FFF)', true);
+          ? T('A port hexadecimális szám (pl. 5F) vagy tartomány (pl. 50-5F)')
+          : T('A cím hexadecimális CPU cím (pl. C000) vagy címke, tartomány (pl. C000-FFFF), vagy szegmens:cím a szegmensen belül (pl. FF:0000-3FFF)'), true);
         return;
       }
       if (cond) {
-        try { new Function('return (' + cond + ');'); } catch (e) { setMessage('Hibás feltétel: ' + e.message, true); return; }
+        try { new Function('return (' + cond + ');'); } catch (e) { setMessage(T('Hibás feltétel: ') + e.message, true); return; }
       }
       dbgBps.push(b);
       dbgApplyBps();
@@ -6742,7 +6750,7 @@ ep.log('CTRL+ESC megnyomva');`
       const text = await f.text();
       const n = dbgLoadSymbols(text);
       try { localStorage.setItem('ep128web.dbgSyms', text.length < 2000000 ? text : ''); } catch (er) { }
-      setMessage(f.name + ': ' + n + ' címke');
+      setMessage(f.name + ': ' + n + T(' címke'));
       dbgRefresh();
     };
     $('dbg-sym-clear').onclick = () => {
@@ -6766,7 +6774,7 @@ ep.log('CTRL+ESC megnyomva');`
       try {
         if (monExec(line) === 'keep') return;
       } catch (er) {
-        monPrint('Hiba: ' + er.message);
+        monPrint(T('Hiba: ') + er.message);
       }
     });
     $('dbg-script-lang').onchange = (e) => {
@@ -6785,9 +6793,9 @@ ep.log('CTRL+ESC megnyomva');`
         // breakPointCallback stays active until Stop
         const r = api.luaRun(code);
         const out = dbgLuaPoll();
-        if (r === 1) dbgScriptLog('(breakPointCallback aktív)');
-        else if (r < 0) dbgScriptLog('Hiba: ' + lastError());
-        else if (!/^Hiba:/m.test(out)) dbgScriptLog('(kész)');
+        if (r === 1) dbgScriptLog(T('(breakPointCallback aktív)'));
+        else if (r < 0) dbgScriptLog(T('Hiba: ') + lastError());
+        else if (!/^Hiba:/m.test(out)) dbgScriptLog(T('(kész)'));
         dbgRenderBps();
         dbgRefresh();
         return;
@@ -6798,13 +6806,13 @@ ep.log('CTRL+ESC megnyomva');`
       try {
         run = new AsyncFunction('ep', code);
       } catch (e) {
-        dbgScriptLog('Hiba: ' + e.message);
+        dbgScriptLog(T('Hiba: ') + e.message);
         return;
       }
       run(ep).then((r) => {
         if (r !== undefined) dbgScriptLog(String(r));
         dbgRefresh();
-      }, (e) => dbgScriptLog('Hiba: ' + (e && e.message || e)));
+      }, (e) => dbgScriptLog(T('Hiba: ') + (e && e.message || e)));
       dbgRefresh();
     };
     $('dbg-script-stop').onclick = dbgScriptStop;
@@ -6822,7 +6830,7 @@ ep.log('CTRL+ESC megnyomva');`
     $('dbg-trace-on').onchange = (e) => { dbgTraceOn = e.target.checked; api.dbgTraceEnable(dbgTraceOn ? 1 : 0); dbgRenderTab(); };
     $('dbg-trace-save').onclick = () => {
       const l = dbgTraceLines(65536, true);
-      dbgDownload('nyomkovetes.txt', new Blob(['; ' + machine.name + ' – az utolsó ' + l.length + ' utasítás (a regiszterek az utasítás előtt)\n' + l.join('\n') + '\n'], { type: 'text/plain;charset=utf-8' }));
+      dbgDownload('nyomkovetes.txt', new Blob(['; ' + machine.name + T(' – az utolsó ') + l.length + T(' utasítás (a regiszterek az utasítás előtt)\n') + l.join('\n') + '\n'], { type: 'text/plain;charset=utf-8' }));
     };
     $('dbg-src-load').onclick = () => $('dbg-src-file').click();
     $('dbg-src-file').onchange = async (e) => {
@@ -6832,7 +6840,7 @@ ep.log('CTRL+ESC megnyomva');`
       const t = await f.text();
       const n = dbgLoadListing(t);
       try { localStorage.setItem('ep128web.dbgListing', t); } catch (er) { }
-      setMessage(f.name + ': ' + n + ' cím a listában');
+      setMessage(f.name + ': ' + n + T(' cím a listában'));
       dbgRefresh();
       dbgRenderTab();
     };
@@ -6843,7 +6851,7 @@ ep.log('CTRL+ESC megnyomva');`
       e.target.value = '';
       if (!t) return;
       const box = $('dbg-script');
-      if (box.value.trim() && !confirm('Lecseréled a szkriptet a példára?')) return;
+      if (box.value.trim() && !confirm(T('Lecseréled a szkriptet a példára?'))) return;
       box.value = t;
     };
     $('dbg-script-save').onclick = () => {
@@ -6880,7 +6888,7 @@ ep.log('CTRL+ESC megnyomva');`
     let t = 'mon';
     try { t = localStorage.getItem('ep128web.dbgTab') || 'mon'; } catch (e) { }
     dbgSelectTab(t);
-    monPrint('ep128emu monitor – ? = súgó');
+    monPrint(T('ep128emu monitor – ? = súgó'));
     let on = false;
     try { on = localStorage.getItem('ep128web.debugger') === '1'; } catch (e) { }
     if (on) dbgShow(true);
@@ -6943,12 +6951,12 @@ ep.log('CTRL+ESC megnyomva');`
         us = 0;
         do {
           const done = autoTask ? runAutoTask(20000) : 0;
-          if (done < 20000) check(api.run(20000 - done), 'emuláció');
+          if (done < 20000) check(api.run(20000 - done), T('emuláció'));
           api.audioClear();
           us += 20000;
         } while (performance.now() - t0 < 14 && !api.dbgState());
       } else {
-        check(api.run(us), 'emuláció');
+        check(api.run(us), T('emuláció'));
         if (speed !== 1) api.audioClear();
       }
     } catch (e) {
@@ -6957,8 +6965,8 @@ ep.log('CTRL+ESC megnyomva');`
       paused = true;
       ready = false;
       $('btn-pause').classList.add('on');
-      setMessage('Az emulátor hibára futott (' + String(e.message || e).slice(0, 80) +
-                 ') – töltsd újra az oldalt. A pendrive tartalma megmarad.', true);
+      setMessage(T('Az emulátor hibára futott (') + StringT(T(String(e.message || e))).slice(0, 80) +
+                 T(') – töltsd újra az oldalt. A pendrive tartalma megmarad.'), true);
       return;
     }
     emulatedUs += us;
@@ -7008,7 +7016,7 @@ ep.log('CTRL+ESC megnyomva');`
     }
 
     if (speedAccMs >= 500) {
-      $('st-speed').textContent = 'Sebesség: ' + Math.round(speedAccUs / speedAccMs / 10) + '%';
+      $('st-speed').textContent = T('Sebesség: ') + Math.round(speedAccUs / speedAccMs / 10) + '%';
       speedAccUs = 0;
       speedAccMs = 0;
       updateStatus();
@@ -7019,7 +7027,7 @@ ep.log('CTRL+ESC megnyomva');`
     if (tapeName) {
       const pos = api.tapePosition(), len = api.tapeLength();
       const fmt = (t) => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
-      $('st-tape').textContent = 'Magnó: ' + fmt(pos) + ' / ' + fmt(len);
+      $('st-tape').textContent = T('Magnó: ') + fmt(pos) + ' / ' + fmt(len);
     } else {
       $('st-tape').textContent = '';
     }
@@ -7133,7 +7141,7 @@ ep.log('CTRL+ESC megnyomva');`
     for (const d of ['/roms', '/files', '/tmp', '/disk', '/diskb', '/tape']) ensureDir(d);
 
     await setupAudio();
-    check(api.init(sampleRate), 'indítás');
+    check(api.init(sampleRate), T('indítás'));
 
     const w = api.frameWidth(), h = api.frameHeight();
     canvas.width = w;
@@ -7158,6 +7166,7 @@ ep.log('CTRL+ESC megnyomva');`
         else if (key === 'usbfiles') usbSaved = value;
         else if (key.startsWith('disk:')) restoreDisk(key, value);
         else if (key.startsWith('qs:') && +key.slice(3) < QS_SLOTS) quickSaves[+key.slice(3)] = value;
+        else if (key === 'resume') resumeState = value;
         else if (key === 'cardflash') {
           try { M.FS.mkdir('/card'); } catch (e) { }
           M.FS.writeFile('/card/flash.bin', value);
@@ -7201,6 +7210,7 @@ ep.log('CTRL+ESC megnyomva');`
     canvas.focus({ preventScroll: true });
     requestAnimationFrame(frame);
     setupPwa();
+    resumeAfterReload();
     if (share) runShare(share);
   }
 
@@ -7242,12 +7252,12 @@ ep.log('CTRL+ESC megnyomva');`
     try {
       cfg = JSON.parse(await file.text(), (k, v) => (v && typeof v === 'object' && typeof v.$u8 === 'string' ? unb64(v.$u8) : v));
     } catch (e) {
-      throw new Error('nem olvasható JSON fájl');
+      throw new Error(T('nem olvasható JSON fájl'));
     }
-    if (!cfg || cfg.format !== CFG_FORMAT || !cfg.settings) throw new Error('nem Ep128web beállításfájl');
+    if (!cfg || cfg.format !== CFG_FORMAT || !cfg.settings) throw new Error(T('nem Ep128web beállításfájl'));
     const n = Object.keys(cfg.data || {}).length;
-    if (!window.confirm('A mostani beállítások' + (n ? ' és a fájlban lévő lemezek/mentések' : '') +
-                        ' felülíródnak, és az oldal újratöltődik. Mehet?')) return;
+    if (!window.confirm(T('A mostani beállítások') + (n ? T(' és a fájlban lévő lemezek/mentések') : '') +
+                        T(' felülíródnak, és az oldal újratöltődik. Mehet?'))) return;
     const keys = [];
     for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
     for (const k of keys) if (k.startsWith('ep128web.')) localStorage.removeItem(k);
@@ -7261,11 +7271,11 @@ ep.log('CTRL+ESC megnyomva');`
     location.reload();
   }
   function setupSettingsIO() {
-    $('cfg-export').onclick = () => cfgExport($('cfg-data').checked).catch((e) => setMessage('Exportálás: ' + (e.message || e), true));
+    $('cfg-export').onclick = () => cfgExport($('cfg-data').checked).catch((e) => setMessage(T('Exportálás: ') + T(T(String(e.message || e))), true));
     $('cfg-import').onchange = (e) => {
       const f = e.target.files[0];
       e.target.value = '';
-      if (f) cfgImport(f).catch((err) => setMessage('Importálás: ' + (err.message || err), true));
+      if (f) cfgImport(f).catch((err) => setMessage(T('Importálás: ') + T(T(String(err.message || err))), true));
     };
   }
 
@@ -7315,7 +7325,7 @@ ep.log('CTRL+ESC megnyomva');`
         await loadFiles([new File([await zipStream(unb64url(q.get('f')), 'in')], name)]);
       } else if (q.get('url')) {
         const url = q.get('url');
-        setMessage('Program letöltése…');
+        setMessage(T('Program letöltése…'));
         const r = await fetch(url);
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const name = q.get('n') || decodeURIComponent(new URL(url, location.href).pathname.split('/').pop()) || 'program';
@@ -7323,7 +7333,7 @@ ep.log('CTRL+ESC megnyomva');`
         shareSrc = { url, name };
       }
     } catch (e) {
-      setMessage('A link programja nem tölthető be: ' + (e.message || e), true);
+      setMessage(T('A link programja nem tölthető be: ') + T(T(String(e.message || e))), true);
     }
   }
   async function shareLink() {
@@ -7340,18 +7350,52 @@ ep.log('CTRL+ESC megnyomva');`
         q.set('n', shareSrc.file.name);
         q.set('f', z);
       } else {
-        note = ' (a program túl nagy a linkhez, csak a gép beállításai vannak benne)';
+        note = T(' (a program túl nagy a linkhez, csak a gép beállításai vannak benne)');
       }
     } else {
-      note = ' (program nélkül: tölts be egyet, és az is belekerül)';
+      note = T(' (program nélkül: tölts be egyet, és az is belekerül)');
     }
     const link = location.origin + location.pathname + '#' + q.toString();
     try {
       await navigator.clipboard.writeText(link);
-      setMessage('A link a vágólapon' + note);
+      setMessage(T('A link a vágólapon') + note);
     } catch (e) {
-      window.prompt('A megosztható link' + note + ':', link);
+      window.prompt(T('A megosztható link') + note + ':', link);
     }
+  }
+
+  // --- language: the page reloads in the new language; the machine's state
+  // is kept (stored as 'resume', loaded after the restart)
+  let resumeState = null;
+  function setupLang() {
+    const sel = $('lang');
+    if (!sel || !window.I18N) return;
+    for (const l of window.I18N.LANGS) {
+      const o = document.createElement('option');
+      o.value = l.id;
+      o.textContent = l.flag + ' ' + l.name;
+      sel.append(o);
+    }
+    sel.value = window.I18N.lang;
+    sel.onchange = async () => {
+      try { localStorage.setItem('ep128web.lang', sel.value); } catch (e) { }
+      if (ready) {
+        try {
+          if (api.saveSnapshot('/tmp/resume.ep128s') === 0) {
+            await db.put('resume', { machine: machine.id, slots: tvcSlots.slice(), fx: fxOn,
+                                     bytes: M.FS.readFile('/tmp/resume.ep128s'), card: saveCardState() });
+          }
+        } catch (e) { }
+      }
+      location.reload();             // the disks are saved on pagehide, as always
+    };
+  }
+  function resumeAfterReload() {
+    if (!resumeState) return;
+    const st = resumeState;
+    resumeState = null;
+    db.del('resume');
+    try { loadSavedState(st); } catch (e) { console.warn(e); }
   }
 
   // --- installable app (PWA): offline worker, install button, files opened from the OS ---
@@ -7385,6 +7429,6 @@ ep.log('CTRL+ESC megnyomva');`
 
   main().catch((e) => {
     console.error(e);
-    setMessage('Hiba: ' + (e.message || e), true);
+    setMessage(T('Hiba: ') + T(T(String(e.message || e))), true);
   });
 })();

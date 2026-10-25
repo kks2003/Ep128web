@@ -543,3 +543,4 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 #crt { min-height: 28px; }
 #dbg-bp-addr { width: 10em; }
 #debugger:focus { outline: none; }
+#lang { margin-left: 10px; font-size: 13px; font-weight: 400; min-height: 26px; vertical-align: middle; }
