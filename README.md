@@ -179,6 +179,7 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
 - A PC körül mutat, vagy a megadott címtől (címke is megadható).
 - Kattintás: kurzor (futás a kurzorig).
 - Bal szélre kattintás vagy F9: végrehajtási töréspont be/ki.
+- Alt+D: a debuggerre ugrik (ha zárva van, kinyitja), Alt+E: vissza az emulátor képére (a beviteli mezőkből is).
 - Megjegyzések a sorok végén (`;`):
   - IN/OUT: a port neve (NICK, DAVE, lapregiszter, TVC lapozás, CRTC, paletta, a bővítőhelyen lévő kártya…).
   - Az aktuális (PC) sorban a kiírandó érték is, a lapozás kibontva: TVC port 02 → `P0=SYS P1=U1 P2=VID P3=CART`, port 0C → VID lapok, port 06 → GRAPHICS mód, EP B0–B3 → a szegmens neve. `OUT (C),r` és az OUTI-félék portját a C regiszterből veszi.
@@ -199,6 +200,10 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
 **Töréspontok**
 - Fajták: végrehajtás, memória-olvasás/-írás, port-IN/-OUT, raszter (megáll a megadott képsor elején; a sor decimálisan, a függőleges szinkrontól számolva; egyszerre egy).
 - Végrehajtási töréspontnál a gép az utasítás előtt áll meg, figyelésnél a hozzáférő utasítás után. A panel kiírja a címet és az értéket.
+- Cím: egy cím (`C000`) vagy címke, tartomány (`C000-FFFF`), vagy szegmens:cím a szegmensen belül
+  (`FF:0000-3FFF`). Ez utóbbi csak akkor áll meg, ha az adott szegmens van belapozva, bármelyik lapon:
+  pl. TVC-n memória írás `FF:0000-3FFF` = minden írás a videómemóriába. Port: `5F` vagy `50-5F`.
+  A szkriptből is: `ep.watch('w', 'FF:0000-3FFF')`, `ep.bp('C000-FFFF')`.
 - Feltétel: JavaScript-kifejezés, pl. `A == 3 && HL > 0x4000`, `VALUE == 0xA8`, `mem(0x1234) == 0`, `HITS == 10`. Hamis feltételnél a gép azonnal fut tovább.
 - A töréspontok találatszámot mutatnak, ki-be kapcsolhatók, és a böngésző megjegyzi őket.
 

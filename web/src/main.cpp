@@ -1219,6 +1219,16 @@ EMSCRIPTEN_KEEPALIVE void ep_dbg_set_bp(int addr, int enabled)
   WebDebug::setBreakPoint(uint16_t(addr & 0xFFFF), enabled != 0);
 }
 
+// execution breakpoints on a range of CPU addresses, or on segment:offset
+// addresses (segment >= 0, offsets 0000-3FFF)
+EMSCRIPTEN_KEEPALIVE void ep_dbg_set_bp_range(int segment, int first, int last)
+{
+  if (segment >= 0)
+    WebDebug::setSegmentBreakPoint(uint8_t(segment), uint16_t(first & 0x3FFF), uint16_t(last & 0x3FFF));
+  else
+    WebDebug::setBreakPointRange(uint16_t(first & 0xFFFF), uint16_t(last & 0xFFFF));
+}
+
 EMSCRIPTEN_KEEPALIVE void ep_dbg_clear_bps()
 {
   WebDebug::clearBreakPoints();
@@ -1240,6 +1250,29 @@ EMSCRIPTEN_KEEPALIVE void ep_dbg_watch_add(int isIO, int addr, int r, int w)
   else
     debugWatchPoints.addMemoryBreakPoint(uint16_t(addr & 0xFFFF),
                                          r != 0, w != 0, false, false, 0);
+  applyDebugWatchPoints();
+}
+
+// memory or I/O watchpoints on an address range; memory: segment >= 0
+// for segment:offset addresses (offsets 0000-3FFF)
+EMSCRIPTEN_KEEPALIVE void ep_dbg_watch_range(int isIO, int segment, int first, int last, int r, int w)
+{
+  if (isIO) {
+    for (int a = first & 0xFF; a <= (last & 0xFF); a++) {
+      WebDebug::setWatchPoint(true, uint16_t(a), r != 0, w != 0);
+      debugWatchPoints.addIOBreakPoint(uint16_t(a), r != 0, w != 0, 0);
+    }
+  }
+  else if (segment >= 0) {
+    for (int a = first & 0x3FFF; a <= (last & 0x3FFF); a++)
+      debugWatchPoints.addMemoryBreakPoint(uint8_t(segment), uint16_t(a), r != 0, w != 0, false, false, 0);
+  }
+  else {
+    for (int a = first & 0xFFFF; a <= (last & 0xFFFF); a++) {
+      WebDebug::setWatchPoint(false, uint16_t(a), r != 0, w != 0);
+      debugWatchPoints.addMemoryBreakPoint(uint16_t(a), r != 0, w != 0, false, false, 0);
+    }
+  }
   applyDebugWatchPoints();
 }
 
