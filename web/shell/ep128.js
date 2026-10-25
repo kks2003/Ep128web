@@ -2535,6 +2535,10 @@ registerProcessor('ep-output', EPOutput);
 
   async function loadFiles(fileList) {
     resumeAudio();
+    {
+      const list = Array.from(fileList);
+      shareSrc = list.length === 1 && !['rom', 'bin'].includes(extOf(list[0].name)) ? { file: list[0] } : null;
+    }
     try {
       // read everything, expanding ZIP archives
       const files = [];
@@ -3683,6 +3687,7 @@ registerProcessor('ep-output', EPOutput);
       });
 
       await loadFiles([file]);
+      shareSrc = { cat: item.file_name || fileName };
       setMessage('Program betöltve: ' + (item.title || fileName));
     } catch (e) {
       console.error(e);
@@ -3910,6 +3915,7 @@ registerProcessor('ep-output', EPOutput);
     setupSpeed();
     setupQuickSaves();
     setupSettingsIO();
+    $('btn-share').onclick = () => shareLink().catch((e) => setMessage('Link: ' + (e.message || e), true));
 
     const wrap = $('screen-wrap');
     wrap.addEventListener('dragover', (e) => { e.preventDefault(); wrap.classList.add('drag'); });
@@ -6993,6 +6999,7 @@ ep.log('CTRL+ESC megnyomva');`
     restoreDiskActive();
     renderDrives();
 
+    const share = readShareHash();
     let id = null;
     try { id = localStorage.getItem('ep128web.machine'); } catch (e) { }
     id = MACHINE_ALIASES[id] || id;
@@ -7006,6 +7013,7 @@ ep.log('CTRL+ESC megnyomva');`
     canvas.focus({ preventScroll: true });
     requestAnimationFrame(frame);
     setupPwa();
+    if (share) runShare(share);
   }
 
   // --- settings export / import ---
@@ -7071,6 +7079,91 @@ ep.log('CTRL+ESC megnyomva');`
       e.target.value = '';
       if (f) cfgImport(f).catch((err) => setMessage('Importálás: ' + (err.message || err), true));
     };
+  }
+
+  // --- shareable link: #m=machine&s=TVC slots&fx=1, and the program:
+  // p=catalog file name, url=address of a file, or f=the file itself
+  // (deflate-raw, base64url) with n=its name
+  let shareSrc = null;
+  const SHARE_MAX = 60000;          // characters of an embedded file
+  async function zipStream(u8, how) {
+    const s = new Blob([u8]).stream().pipeThrough(how === 'in' ? new DecompressionStream('deflate-raw') : new CompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(s).arrayBuffer());
+  }
+  const b64url = (u8) => b64(u8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const unb64url = (str) => unb64(str.replace(/-/g, '+').replace(/_/g, '/'));
+  // the parameters of the link the page was opened with (removed from the
+  // address, so that a reload does not start the program again)
+  function readShareHash() {
+    if (location.hash.length < 3) return null;
+    const q = new URLSearchParams(location.hash.slice(1));
+    if (!['m', 'p', 'f', 'url'].some((k) => q.has(k))) return null;
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { }
+    const m = q.get('m');
+    if (m && MACHINES.some((x) => x.id === m)) {
+      try { localStorage.setItem('ep128web.machine', m); } catch (e) { }
+    }
+    if (q.has('s')) {
+      const v = q.get('s').split(',').map(Number);
+      if (validTvcSlots(v)) {
+        tvcSlots = v;
+        try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(v)); } catch (e) { }
+      }
+    }
+    if (q.has('fx')) {
+      fxOn = q.get('fx') === '1';
+      try { localStorage.setItem('ep128web.2dfx', fxOn ? '1' : '0'); } catch (e) { }
+    }
+    return q;
+  }
+  async function runShare(q) {
+    try {
+      if (q.get('p')) {
+        const name = q.get('p');
+        for (let i = 0; i < 50 && !catalogState.items.length; i++) await new Promise((r) => setTimeout(r, 200));
+        await launchCatalogItem(catalogState.items.find((x) => x.file_name === name) || { file_name: name, title: name });
+      } else if (q.get('f')) {
+        const name = q.get('n') || 'program';
+        await loadFiles([new File([await zipStream(unb64url(q.get('f')), 'in')], name)]);
+      } else if (q.get('url')) {
+        const url = q.get('url');
+        setMessage('Program letöltése…');
+        const r = await fetch(url);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const name = q.get('n') || decodeURIComponent(new URL(url, location.href).pathname.split('/').pop()) || 'program';
+        await loadFiles([new File([await r.blob()], name)]);
+        shareSrc = { url, name };
+      }
+    } catch (e) {
+      setMessage('A link programja nem tölthető be: ' + (e.message || e), true);
+    }
+  }
+  async function shareLink() {
+    const q = new URLSearchParams();
+    q.set('m', machine.id);
+    if (machine.type === 1) q.set('s', tvcSlots.join(','));
+    if (fxOn) q.set('fx', '1');
+    let note = '';
+    if (shareSrc && shareSrc.cat) q.set('p', shareSrc.cat);
+    else if (shareSrc && shareSrc.url) { q.set('url', shareSrc.url); q.set('n', shareSrc.name); }
+    else if (shareSrc && shareSrc.file) {
+      const z = b64url(await zipStream(new Uint8Array(await shareSrc.file.arrayBuffer())));
+      if (z.length <= SHARE_MAX) {
+        q.set('n', shareSrc.file.name);
+        q.set('f', z);
+      } else {
+        note = ' (a program túl nagy a linkhez, csak a gép beállításai vannak benne)';
+      }
+    } else {
+      note = ' (program nélkül: tölts be egyet, és az is belekerül)';
+    }
+    const link = location.origin + location.pathname + '#' + q.toString();
+    try {
+      await navigator.clipboard.writeText(link);
+      setMessage('A link a vágólapon' + note);
+    } catch (e) {
+      window.prompt('A megosztható link' + note + ':', link);
+    }
   }
 
   // --- installable app (PWA): offline worker, install button, files opened from the OS ---

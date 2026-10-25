@@ -57,6 +57,15 @@ is megnyithatók (Chrome/Edge asztali változatban).
   magnóra ír (fejblokk a névvel, adatblokk 256 bájtos szektorokkal,
   szektoronkénti CRC).
 
+### Megosztható link
+
+A „🔗 Link” gomb a vágólapra másol egy linket, amely megnyitva ugyanazt a gépet
+(TVC-n ugyanazokkal a bővítőkártyákkal, 2dfx-szel) indítja, és betölti a
+legutóbb betöltött programot: katalógusprogramnál a nevét teszi a linkbe, kisebb
+saját fájlnál (tömörítve kb. 45 KB-ig) magát a fájlt. Kézzel is írható link:
+`#m=tvc64-12&url=https://…/jatek.cas` – a megadott címről tölti le a programot
+(ha a szerver engedi a letöltést más oldalról).
+
 ### Beállítások exportálása / importálása
 
 A „Beállítások” panel „Exportálás” gombja egy `.json` fájlba menti az oldal
