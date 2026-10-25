@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" fill="#c8102e"/>
-  <rect x="96" y="120" width="320" height="236" rx="22" fill="#000" stroke="#fff" stroke-width="16"/>
-  <text x="256" y="226" text-anchor="middle" font-family="DejaVu Sans Mono, Menlo, monospace" font-weight="bold" font-size="92" fill="#3ef03e">EP</text>
-  <text x="256" y="318" text-anchor="middle" font-family="DejaVu Sans Mono, Menlo, monospace" font-weight="bold" font-size="76" fill="#ffd23e">TVC</text>
-  <rect x="196" y="364" width="120" height="22" fill="#fff"/>
-  <rect x="150" y="386" width="212" height="18" rx="9" fill="#fff"/>
-</svg>
