@@ -4076,6 +4076,65 @@ registerProcessor('ep-output', EPOutput);
   try { const t = localStorage.getItem('ep128web.dbgSyms'); if (t) dbgLoadSymbols(t); } catch (e) { }
   const dbgLabel = (a) => dbgSyms.get(a & 0xFFFF);
 
+  // a breakpoint is one address or a range (end, inclusive), optionally
+  // segment:offset (seg, offsets 0000-3FFF in the segment)
+  const dbgBpEnd = (b) => (b.end === undefined ? b.addr : b.end);
+  // the breakpoint covers the CPU address 'a' (I/O: the port), with the
+  // current paging for segment breakpoints
+  function dbgBpCovers(b, a, pages) {
+    if (b.seg !== undefined) {
+      if (!pages || pages[(a >> 14) & 3] !== b.seg) return false;
+      a &= 0x3FFF;
+    }
+    return a >= b.addr && a <= dbgBpEnd(b);
+  }
+  // breakpoint address text: C000, C000-FFFF, FF:0000-3FFF, port 5F, 50-5F
+  function dbgParseBpAddr(text, io) {
+    const t = String(text).trim().replace(/\s+/g, '');
+    let m = /^([0-9a-f]{1,2}):([0-9a-f]{1,4})(?:-([0-9a-f]{1,4}))?$/i.exec(t);
+    if (m) {
+      if (io) return null;
+      const a = parseInt(m[2], 16), e = m[3] === undefined ? a : parseInt(m[3], 16);
+      if (a > 0x3FFF || e > 0x3FFF || e < a) return null;
+      return { seg: parseInt(m[1], 16), addr: a, end: e };
+    }
+    const one = (x) => {
+      const r = dbgParseAddr(x);
+      return r && !r.phys && r.addr <= (io ? 0xFF : 0xFFFF) ? r.addr : null;
+    };
+    // a range first; if it is none, one address (a label - offset too)
+    m = /^([^-]+)-(.+)$/.exec(t);
+    if (m) {
+      const a = one(m[1]), e = one(m[2]);
+      if (a !== null && e !== null && e >= a) return { addr: a, end: e };
+    }
+    const a = one(t);
+    return a === null ? null : { addr: a, end: a };
+  }
+  function dbgBpAddrText(b) {
+    if (b.type === 'ras') return 'sor ' + b.addr;
+    const w = b.type.startsWith('io') ? 2 : 4, end = dbgBpEnd(b);
+    return (b.seg !== undefined ? hex(b.seg, 2) + ':' : '') + hex(b.addr, w) + (end !== b.addr ? '-' + hex(end, w) : '');
+  }
+  // a breakpoint object from the breakpoint UI's or the script's address
+  function dbgMakeBp(type, text, cond) {
+    const r = dbgParseBpAddr(text, type.startsWith('io'));
+    if (!r) return null;
+    const b = { type, addr: r.addr, cond: cond || '', on: true, hits: 0 };
+    if (r.end !== r.addr) b.end = r.end;
+    if (r.seg !== undefined) b.seg = r.seg;
+    return b;
+  }
+  // an execution breakpoint is on the CPU address (disassembly marks)
+  function dbgExecBpAt(a) {
+    let pages = null;
+    return dbgBps.some((b) => {
+      if (!b.on || b.type !== 'x') return false;
+      if (b.seg !== undefined && !pages) pages = dbgRegObj().pages;
+      return dbgBpCovers(b, a, pages);
+    });
+  }
+
   function dbgApplyBps() {
     if (!api || !api.dbgClearBps) return;
     api.dbgClearBps();
@@ -4085,20 +4144,28 @@ registerProcessor('ep-output', EPOutput);
     api.dbgRaster(ras ? ras.addr : -1);
     for (const b of dbgBps) {
       if (!b.on || b.type === 'ras') continue;
-      if (b.type === 'x') api.dbgSetBp(b.addr, 1);
-      else {
+      const seg = b.seg === undefined ? -1 : b.seg, end = dbgBpEnd(b);
+      if (b.type === 'x') {
+        if (seg < 0 && end === b.addr) api.dbgSetBp(b.addr, 1);
+        else api.dbgSetBpRange(seg, b.addr, end);
+      } else {
         const io = b.type.startsWith('io') ? 1 : 0;
         const t = io ? b.type.slice(2) : b.type;
-        api.dbgWatchAdd(io, b.addr, t.includes('r') ? 1 : 0, t.includes('w') ? 1 : 0);
+        api.dbgWatchRange(io, io ? -1 : seg, b.addr, end, t.includes('r') ? 1 : 0, t.includes('w') ? 1 : 0);
       }
     }
     try {
-      localStorage.setItem('ep128web.dbgBps', JSON.stringify(dbgBps.map((b) => ({ type: b.type, addr: b.addr, cond: b.cond || '', on: b.on }))));
+      localStorage.setItem('ep128web.dbgBps', JSON.stringify(dbgBps.map((b) => {
+        const o = { type: b.type, addr: b.addr, cond: b.cond || '', on: b.on };
+        if (b.end !== undefined) o.end = b.end;
+        if (b.seg !== undefined) o.seg = b.seg;
+        return o;
+      })));
     } catch (e) { }
   }
 
   function dbgToggleExecBp(addr) {
-    const i = dbgBps.findIndex((b) => b.type === 'x' && b.addr === addr);
+    const i = dbgBps.findIndex((b) => b.type === 'x' && b.addr === addr && b.seg === undefined && dbgBpEnd(b) === addr);
     if (i >= 0) dbgBps.splice(i, 1);
     else dbgBps.push({ type: 'x', addr, cond: '', on: true, hits: 0 });
     dbgApplyBps();
@@ -4899,7 +4966,7 @@ registerProcessor('ep-output', EPOutput);
       if (i === cur) d.className = 'pc';
       const a = addrOf.get(i);
       if (a !== undefined) {
-        if (dbgBps.some((b) => b.on && b.type === 'x' && b.addr === a)) d.classList.add('bp');
+        if (dbgExecBpAt(a)) d.classList.add('bp');
         d.onclick = () => dbgToggleExecBp(a);
         d.style.cursor = 'pointer';
       }
@@ -5113,7 +5180,7 @@ registerProcessor('ep-output', EPOutput);
       }
       if (l.addr === pc) d.classList.add('pc');
       if (l.addr === dbgCursor) d.classList.add('cur');
-      if (dbgBps.some((b) => b.on && b.type === 'x' && b.addr === l.addr)) d.classList.add('bp');
+      if (dbgExecBpAt(l.addr)) d.classList.add('bp');
       d.onclick = (e) => {
         if (e.offsetX < 14) dbgToggleExecBp(l.addr);
         else {
@@ -5198,8 +5265,8 @@ registerProcessor('ep-output', EPOutput);
       x.textContent = '✕';
       x.title = 'Törlés';
       x.onclick = () => { dbgBps.splice(i, 1); dbgApplyBps(); dbgRenderBps(); dbgRenderDis(); };
-      const a = b.type === 'ras' ? 'sor ' + b.addr : b.type.startsWith('io') ? hex(b.addr, 2) : hex(b.addr, 4);
-      const lbl = (b.type.startsWith('io') || b.type === 'ras') ? '' : dbgLabel(b.addr);
+      const a = dbgBpAddrText(b);
+      const lbl = (b.type.startsWith('io') || b.type === 'ras' || b.seg !== undefined || dbgBpEnd(b) !== b.addr) ? '' : dbgLabel(b.addr);
       const t = document.createElement('span');
       t.textContent = a + (lbl ? ' ' + lbl : '') + '  ' + DBG_BP_NAMES[b.type] +
         (b.cond ? '  ha ' + b.cond : '') + (b.hits ? '  (' + b.hits + '×)' : '');
@@ -5289,7 +5356,8 @@ registerProcessor('ep-output', EPOutput);
       const types = info.why === 1 ? ['x'] : info.why === 4 ? ['r', 'rw'] : info.why === 5 ? ['w', 'rw'] :
                     info.why === 6 ? ['ior', 'iorw'] : info.why === 7 ? ['iow', 'iorw'] : ['ras'];
       const at = info.why === 1 ? info.pc : (info.why === 6 || info.why === 7 ? info.addr & 0xFF : info.addr);
-      const hit = dbgBps.filter((b) => b.on && types.includes(b.type) && b.addr === at);
+      const pages = dbgBps.some((b) => b.seg !== undefined) ? dbgRegObj().pages : null;
+      const hit = dbgBps.filter((b) => b.on && types.includes(b.type) && (info.why === 8 ? b.addr === at : dbgBpCovers(b, at, pages)));
       let stop = !hit.length;
       for (const b of hit) {
         b.hits = (b.hits || 0) + 1;
@@ -6385,10 +6453,17 @@ registerProcessor('ep-output', EPOutput);
     out: (port, v) => api.dbgOut(port, v),
     disasm: (a, n) => dbgDisasm(a, n || 1).map((l) => dbgSymText(l.text)),
     assemble: (a, text) => api.dbgAssemble('A ' + hex(a, 4) + ' ' + String(text).toUpperCase()),
-    bp: (a, cond) => { dbgBps.push({ type: 'x', addr: a & 0xFFFF, cond: cond || '', on: true, hits: 0 }); dbgApplyBps(); dbgRenderBps(); },
+    bp: (a, cond) => {
+      const b = typeof a === 'string' ? dbgMakeBp('x', a, cond) : { type: 'x', addr: a & 0xFFFF, cond: cond || '', on: true, hits: 0 };
+      if (!b) throw new Error('cím: C000, C000-FFFF vagy FF:0000-3FFF');
+      dbgBps.push(b); dbgApplyBps(); dbgRenderBps();
+    },
     watch: (type, a, cond) => {
       if (!DBG_BP_NAMES[type]) throw new Error('típus: r w rw ior iow iorw');
-      dbgBps.push({ type, addr: type.startsWith('io') ? a & 0xFF : a & 0xFFFF, cond: cond || '', on: true, hits: 0 });
+      const b = typeof a === 'string' ? dbgMakeBp(type, a, cond)
+        : { type, addr: type.startsWith('io') ? a & 0xFF : a & 0xFFFF, cond: cond || '', on: true, hits: 0 };
+      if (!b) throw new Error('cím: C000, C000-FFFF vagy FF:0000-3FFF (port: 5F vagy 50-5F)');
+      dbgBps.push(b);
       dbgApplyBps(); dbgRenderBps();
     },
     clearBps: () => { dbgBps = []; dbgApplyBps(); dbgRenderBps(); },
@@ -6618,14 +6693,18 @@ ep.log('CTRL+ESC megnyomva');`
         dbgApplyBps(); dbgRenderBps();
         return;
       }
-      const a = dbgParseAddr($('dbg-bp-addr').value);
-      if (!a || a.phys) { setMessage('A töréspont címe hexadecimális CPU cím (pl. C000) vagy címke', true); return; }
-      const addr = type.startsWith('io') ? a.addr & 0xFF : a.addr & 0xFFFF;
       const cond = $('dbg-bp-cond').value.trim();
+      const b = dbgMakeBp(type, $('dbg-bp-addr').value, cond);
+      if (!b) {
+        setMessage(type.startsWith('io')
+          ? 'A port hexadecimális szám (pl. 5F) vagy tartomány (pl. 50-5F)'
+          : 'A cím hexadecimális CPU cím (pl. C000) vagy címke, tartomány (pl. C000-FFFF), vagy szegmens:cím a szegmensen belül (pl. FF:0000-3FFF)', true);
+        return;
+      }
       if (cond) {
         try { new Function('return (' + cond + ');'); } catch (e) { setMessage('Hibás feltétel: ' + e.message, true); return; }
       }
-      dbgBps.push({ type, addr, cond, on: true, hits: 0 });
+      dbgBps.push(b);
       dbgApplyBps();
       dbgRenderBps();
       dbgRenderDis();
@@ -6998,6 +7077,8 @@ ep.log('CTRL+ESC megnyomva');`
       dbgClearBps: c('ep_dbg_clear_bps', null, []),
       dbgWatchClear: c('ep_dbg_watch_clear', null, []),
       dbgWatchAdd: c('ep_dbg_watch_add', null, ['number', 'number', 'number', 'number']),
+      dbgSetBpRange: c('ep_dbg_set_bp_range', null, ['number', 'number', 'number']),
+      dbgWatchRange: c('ep_dbg_watch_range', null, ['number', 'number', 'number', 'number', 'number', 'number']),
       dbgRegs: c('ep_dbg_regs', 'string', []),
       dbgSetReg: c('ep_dbg_set_reg', null, ['number', 'number']),
       dbgDisasm: c('ep_dbg_disasm', 'string', ['number', 'number']),

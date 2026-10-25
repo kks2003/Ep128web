@@ -55,6 +55,10 @@ namespace WebDebug {
   void clearStop();
 
   void setBreakPoint(uint16_t addr, bool enabled);
+  // execution breakpoints on an address range (CPU addresses), and on
+  // segment:offset addresses (the segment paged in at the PC)
+  void setBreakPointRange(uint16_t first, uint16_t last);
+  void setSegmentBreakPoint(uint8_t segment, uint16_t first, uint16_t last);
   void clearBreakPoints();
 
   // watchpoints that stop the machine (memory: CPU address, I/O: port)

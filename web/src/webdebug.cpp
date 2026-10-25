@@ -56,15 +56,28 @@ namespace WebDebug {
   static Ep128Emu::VirtualMachine *vmp = 0;
   static uint8_t  scrExec[8192], scrIoR[32], scrIoW[32];
   static int      scrExecCount = 0;
+  // execution breakpoints at segment:offset addresses: a 16 kB bit map for
+  // each segment that has one
+  static std::vector< uint8_t >   segExec[256];
+  static int      segExecCount = 0;
 
   static inline bool bit(const uint8_t *m, uint16_t a)
   {
     return bool(m[a >> 3] & (1 << (a & 7)));
   }
 
+  // the segment in the page of 'pc' has an execution breakpoint there
+  static bool segExecHit(uint16_t pc)
+  {
+    if (!vmp)
+      return false;
+    const std::vector< uint8_t >& m = segExec[vmp->getMemoryPage(pc >> 14)];
+    return !m.empty() && bit(&m[0], pc & 0x3FFF);
+  }
+
   static void updateActive()
   {
-    active = (reason != RUNNING || bpCount > 0 || scrExecCount > 0 || pending != RUNNING ||
+    active = (reason != RUNNING || bpCount > 0 || scrExecCount > 0 || segExecCount > 0 || pending != RUNNING ||
               skipOnce || stepInto || tempBreak >= 0 || histOn || profOn || traceOn);
   }
 
@@ -136,7 +149,7 @@ namespace WebDebug {
       }
       return stopAt(pc, STEP, 0, 0);
     }
-    if (bit(bpBits, pc) || (scrExecCount && bit(scrExec, pc))) {
+    if (bit(bpBits, pc) || (scrExecCount && bit(scrExec, pc)) || (segExecCount && segExecHit(pc))) {
       if (scriptCallback && !scriptCallback(0, pc, opcode(pc)))
         return run(pc);
       return stopAt(pc, BREAKPOINT, 0, 0);
@@ -251,10 +264,34 @@ namespace WebDebug {
     updateActive();
   }
 
+  void setBreakPointRange(uint16_t first, uint16_t last)
+  {
+    for (uint32_t a = first; a <= last; a++)
+      setBreakPoint(uint16_t(a), true);
+  }
+
+  void setSegmentBreakPoint(uint8_t segment, uint16_t first, uint16_t last)
+  {
+    std::vector< uint8_t >& m = segExec[segment];
+    if (m.empty())
+      m.assign(2048, 0);
+    for (uint32_t a = first & 0x3FFF; a <= uint32_t(last & 0x3FFF); a++) {
+      uint8_t b = uint8_t(1 << (a & 7));
+      if (!(m[a >> 3] & b)) {
+        m[a >> 3] |= b;
+        segExecCount++;
+      }
+    }
+    updateActive();
+  }
+
   void clearBreakPoints()
   {
     std::memset(bpBits, 0, sizeof(bpBits));
     bpCount = 0;
+    for (int i = 0; i < 256; i++)
+      std::vector< uint8_t >().swap(segExec[i]);
+    segExecCount = 0;
     updateActive();
   }
 
