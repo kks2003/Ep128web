@@ -95,8 +95,11 @@ az `ep128.js`-ben, a HTML-ben egyszerűen a szöveg), a fordításuk a
 `web/shell/i18n-strings.js` táblázatában van (`[magyar, angol, német, ukrán]`
 soronként; `@név` sorok: egész HTML-blokkok, `data-i18n-html="név"`). Ami
 nincs a táblázatban, magyarul marad; a hiányzókat a böngésző konzoljában a
-`I18N.missing` mutatja. A debugger referenciaszövegei (rendszerhívások,
-rendszerváltozók leírásai) és a C++ magból jövő üzenetek még magyarok.
+`I18N.missing` mutatja. A `{0}`-t tartalmazó sorok mintaként is illeszkednek
+(pl. a lemezkezelő hibaüzenetei, a debugger C++-ban készülő 2dfx / TVC256k++ /
+hangkártya nézete soronként, `Tlines()`). A debugger referenciaszövegei
+(rendszerhívások, rendszerváltozók leírásai) még magyarok; az ep128emu mag
+ritka hibaüzenetei angolul vannak.
 
 ### Gyorsmentés, visszatekerés, sebesség
 

@@ -6,6 +6,7 @@
   // the translation of a Hungarian text (i18n.js); F(): with {0}, {1}…
   const T = window.I18N ? window.I18N.T : (s) => s;
   const LOCALE = { hu: 'hu-HU', en: 'en-GB', de: 'de-DE', uk: 'uk-UA' }[window.I18N ? window.I18N.lang : 'hu'];
+  const Tlines = window.I18N ? window.I18N.Tlines : (s) => s;
   const F = window.I18N ? window.I18N.F : (s, ...a) => s.replace(/\{(\d+)\}/g, (x, i) => a[+i]);
 
   // --------------------------------------------------------------------------
@@ -5661,7 +5662,7 @@ registerProcessor('ep-output', EPOutput);
       }
       case 'ioregs': $('dbg-ioregs').textContent = api.dbgIoRegs(); break;
       case 'lpt': dbgRenderLpt(); break;
-      case 'sound': $('dbg-sound').textContent = api.dbgSound(); break;
+      case 'sound': $('dbg-sound').textContent = Tlines(api.dbgSound()); break;
       case 'basic': dbgRenderBasic(); break;
       case 'watch': dbgRenderWatch(); break;
       case 'calls': {
@@ -5677,11 +5678,11 @@ registerProcessor('ep-output', EPOutput);
       }
       case 'src': dbgRenderSrc(); break;
       case 'gfx': dbgRenderGfx(); break;
-      case 'fx': $('dbg-fx').textContent = api.dbg2dfx() + dbgFxLog(); break;
+      case 'fx': $('dbg-fx').textContent = Tlines(api.dbg2dfx()) + dbgFxLog(); break;
       case 'c256': {
         const t = api.dbgCard256();
         // without the card only the note, no register or sprite data
-        $('dbg-c256').textContent = t.startsWith('A TVC256k++') ? t : t +
+        $('dbg-c256').textContent = t.startsWith('A TVC256k++') ? Tlines(t) : Tlines(t) +
           T('\nB0/B1: P2/P3 lap  B2-B5: 8 MB-os lapok  B6: PSRAM MB  B7: ROM lap  C3/C4: firmware\n') +
           T('C5: meghajtó  C8-CA: PSRAM / flash / DSK érvényes  D0: USB  D4/D5: egér  E0-FF: vSID') + dbgCard256Overlay();
         break;
