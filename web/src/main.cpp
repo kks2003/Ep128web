@@ -1101,11 +1101,17 @@ extern volatile uint8_t registerBitmapBaseAddr;
 // the card's overlay: "mode spriteBase bitmapBase screenBase colorBase
 // fontBase" (card RAM addresses), then a line per sprite: "x y enabled
 // foreground colour phase fullColour"
+// the TVC256k++ card is in one of the TVC's expansion slots
+static bool card256Present()
+{
+  return machineType == 1 && TVC256kpp::current && TVC256kpp::current->isEnabled();
+}
+
 EMSCRIPTEN_KEEPALIVE const char *ep_dbg_card256_gfx()
 {
   static std::string out;
   out.clear();
-  if (machineType != 1 || !TVC256kpp::current)
+  if (!card256Present())
     return out.c_str();
   char    tmp[96];
   std::snprintf(tmp, sizeof(tmp), "%d %u %u %u %u %u\n", int(videoMode),
@@ -1319,11 +1325,11 @@ static int debugMemRead(int src, uint32_t a)
       return (d ? twodfx_emu_resource_byte(d, a) : -1);
     }
   case 3:
-    if (TVC256kpp::current && a < TVC256kpp::current->psramSize())
+    if (card256Present() && a < TVC256kpp::current->psramSize())
       return TVC256kpp::current->psram()[a];
     return -1;
   case 4:                               // TVC256k++: the card's fast RAM
-    if (TVC256kpp::current && a < 0x48000U)   // TVC_RAM_SIZE (card_shim.h)
+    if (card256Present() && a < 0x48000U)     // TVC_RAM_SIZE (card_shim.h)
       return TVC256kppFS::fastRam()[a];
     return -1;
   }
@@ -1356,11 +1362,11 @@ EMSCRIPTEN_KEEPALIVE void ep_dbg_poke(int addr, int value, int src)
   if (src == 0 || src == 1) {
     vm->writeMemory(src ? (a & 0x3FFFFF) : (a & 0xFFFF), uint8_t(value), src == 0);
   }
-  else if (src == 3 && TVC256kpp::current &&
+  else if (src == 3 && card256Present() &&
            a < TVC256kpp::current->psramSize()) {
     TVC256kpp::current->psram()[a] = uint8_t(value);
   }
-  else if (src == 4 && TVC256kpp::current && a < 0x48000U) {
+  else if (src == 4 && card256Present() && a < 0x48000U) {
     TVC256kppFS::fastRam()[a] = uint8_t(value);
   }
 }
