@@ -53,6 +53,7 @@
       <option value="webm">WebM</option>
     </select>
     <button id="btn-audio" title="Hang felvétele (.wav); újra megnyomva leáll és letöltődik">● Hang</button>
+    <button id="btn-demo" title="Demó felvétele (.ep128d): a gép állapota, majd a billentyűk és az egér; újra megnyomva leáll és letöltődik">● Demó</button>
     <span class="vol">
       <button id="btn-mute" class="mute" title="Némítás" aria-pressed="false">🔊</button>
       <input type="range" id="volume" min="0" max="100" value="70" title="Hangerő" aria-label="Hangerő">
@@ -133,7 +134,7 @@
     <button id="tb-text" aria-pressed="false">Aa Szöveg beírása</button>
     <button id="btn-load" title='load"*" + Enter (TVC)' hidden>load"*"</button>
     <button id="btn-run" title='RUN + Enter'>Run</button>
-    <button id="btn-mouse" title="Egér a TVC256k++ kártyának (kilépés: Esc)" hidden>🖱</button>
+    <button id="btn-mouse" title="Egér az Enterprise-nak, ill. a TVC256k++ kártyának (kilépés: Esc)" hidden>🖱</button>
     <button id="tb-full" title="Teljes képernyő">⛶</button>
     <button id="tb-qs" aria-pressed="false" title="Gyorsmentés és visszatekerés panel">💾</button>
   </div>
@@ -394,6 +395,10 @@
       <button id="tape-stop">■ Stop</button>
       <button id="tape-rew">⏮ Elejére</button>
       <button id="tape-rec">● Felvétel</button>
+      <button id="tape-prev" title="Vissza az előző jelölőhöz (ha nincs, 10 másodpercet)">⏪</button>
+      <button id="tape-next" title="Előre a következő jelölőhöz (ha nincs, 10 másodpercet)">⏩</button>
+      <button id="tape-mark" title="Jelölő a mostani helyre (a .tap letöltésébe bekerül)">＋ Jelölő</button>
+      <button id="tape-unmark" title="A legközelebbi jelölő törlése">− Jelölő</button>
       <button id="tape-new">Üres kazetta</button>
       <button id="tape-save" title="A kazetta letöltése ep128emu formátumban">Letöltés (.tap)</button>
       <button id="tape-wav" title="A kazetta letöltése hangfájlként: valódi gépbe vagy más emulátorba tölthető">Letöltés (.wav)</button>
