@@ -94,6 +94,8 @@ A panelt a kép alatti sor végén lévő 💾 gomb nyitja/csukja (alapból csuk
   bővítőkártyákkal, 2dfx-szel) készült, betöltéskor átvált arra. A TVC256k++
   és a 2dfx kártya állapota (regiszterek, RAM, PSRAM, sprite-ok, a 2dfx
   videomemóriája) is a mentés része.
+  Minden hely alatt látszik, mennyi helyet foglal (a fejlécben az összes), a
+  visszatekerésnél pedig, mennyi memóriát használ a puffer.
 - **Visszatekerés**: bekapcsolva másodpercenként pillanatképet tesz el az utolsó
   ~30 másodpercről; a „⏪ 5 mp” gomb 5 másodpercet ugrik vissza (többször is
   megnyomható). A beállítást az oldal megjegyzi.
