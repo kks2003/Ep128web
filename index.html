@@ -5,16 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610251026-be315d0">
+<link rel="stylesheet" href="style.css?v=202610251813-3e45e4e">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <meta name="theme-color" content="#1b1f45">
-<meta name="build" content="202610251026-be315d0">
+<meta name="build" content="202610251813-3e45e4e">
 </head>
 <body>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.25 11:26 · be315d0</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.25 19:13 · 3e45e4e</small>
+    <select id="lang" title="Nyelv / Language / Sprache / Мова" aria-label="Nyelv / Language"></select></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -64,7 +65,7 @@
         <p>Az emulátorhoz szükség van a gépek ROM-jaira (Enterprise: EXOS, BASIC,
         EXDOS…; TVC: rendszer- és bővítő ROM). Ezek szerzői jogi okokból nincsenek a csomagban.</p>
         <ol>
-          <li>Töltsd le az <b>ep128emu_roms-2.0.11.bin</b> fájlt:
+          <li data-i18n-html="romdl">Töltsd le az <b>ep128emu_roms-2.0.11.bin</b> fájlt:
             <a href="https://enterpriseforever.com/letoltesek-downloads/egyeb-misc/msg61025/" target="_blank" rel="noopener">enterpriseforever.com</a>
             vagy <a href="http://ep128.hu/Emu/ep128emu_roms-2.0.11.bin" target="_blank" rel="noopener">ep128.hu</a></li>
           <li>Húzd ide, vagy válaszd ki:
@@ -72,7 +73,7 @@
               <input type="file" id="file-roms" accept=".bin,.rom,.7z">
             </label></li>
         </ol>
-        <p class="small">A böngésző eltárolja (IndexedDB), legközelebb nem kell újra megadni.
+        <p class="small" data-i18n-html="romstore">A böngésző eltárolja (IndexedDB), legközelebb nem kell újra megadni.
         Egyenként is feltölthetők <code>.rom</code> fájlok (pl. <code>exos21.rom</code>, <code>basic21.rom</code>).</p>
       </div>
     </div>
@@ -341,7 +342,7 @@
         <input id="dbg-sym-filter" class="dbg-addr" placeholder="keresés">
         <span class="small" id="dbg-sym-count"></span>
       </div>
-      <div class="small">Formátumok: <code>címke EQU 1234h</code>, <code>címke: equ $1234</code>, <code>címke = 0x1234</code> (sjasmplus, pasmo, tniASM…), <code>1234 címke</code> vagy <code>címke 1234</code> soronként. A címkék a disassemblyben, a címmezőkben és a monitorban is használhatók.</div>
+      <div class="small" data-i18n-html="symfmt">Formátumok: <code>címke EQU 1234h</code>, <code>címke: equ $1234</code>, <code>címke = 0x1234</code> (sjasmplus, pasmo, tniASM…), <code>1234 címke</code> vagy <code>címke 1234</code> soronként. A címkék a disassemblyben, a címmezőkben és a monitorban is használhatók.</div>
       <div id="dbg-sym" class="dbg-mono"></div>
     </div>
     <div class="dbg-box dbg-tab" data-pane="script" hidden>
@@ -364,7 +365,7 @@
         </select>
         <button id="dbg-script-load" title="Szkript betöltése fájlból">Megnyitás</button><button id="dbg-script-save" title="Szkript mentése fájlba">Mentés</button>
         <input type="file" id="dbg-script-file" accept=".js,.lua,.txt,text/*" hidden>
-        <span class="small">Az <code>ep</code> objektum a böngésző konzolából is elérhető (<code>window.ep</code>).</span></div>
+        <span class="small" data-i18n-html="epconsole">Az <code>ep</code> objektum a böngésző konzolából is elérhető (<code>window.ep</code>).</span></div>
       <div id="dbg-script-out" class="dbg-mono"></div>
     </div>
   </section>
@@ -422,7 +423,7 @@
       <button id="tvc-slots-apply" title="A kártyák betöltése és hideg újraindítás">Portok betöltése, újraindítás</button>
       <button id="tvc-slots-default" title="FILE:, VT-DOS, GameCard, üres (betöltés a gombbal)">Alapbeállítás</button>
       <span class="name" id="tvc-slots-note"></span>
-      <span class="name">A VT-DOS, a FILE: és a TVC256k++ közül alapból a legnagyobb sorszámú portban lévő lesz
+      <span class="name" data-i18n-html="tvcports">A VT-DOS, a FILE: és a TVC256k++ közül alapból a legnagyobb sorszámú portban lévő lesz
         az alapértelmezett tároló (fent átállítható); a parancssoruk csak így működik. VT-DOS: <code>EXT 2</code>,
         TVC256k++: <code>EXT</code> + a port száma (pl. 3-as portban <code>EXT 3</code>).
         TVC256k++ flash drive: ejtsd rá a <code>flash-root-*.bin</code> / <code>.zip</code> fájlt.</span>
@@ -474,7 +475,7 @@
 
   <details id="help">
     <summary>Súgó</summary>
-    <ul>
+    <ul data-i18n-html="help">
       <li><b>Fájl betöltése</b> (vagy húzd a képre, akár több fájlt vagy egy <code>.zip</code>-et):
         <code>.tap</code>/<code>.wav</code> → magnó,
         <code>.img</code>/<code>.dsk</code> → A: lemez (TVC-n 360/720 kB-os nyers lemezkép is használható; szükség esetén EXDOS-os / VT-DOS-os gépre vált, és kilistázza),
@@ -482,10 +483,9 @@
         <code>.ep128s</code> → pillanatkép, <code>.ep128d</code> → demó,
         <code>.bin</code> → ROM-csomag. Minden más fájl a <code>FILE:</code> eszközre kerül,
         és a program automatikusan elindul; ha több indítható program van, választhatsz.</li>
-      <li><b>TVC-játékok</b>: nyisd meg a tvc.hu programletöltéseit, töltsd le a kiválasztott
-        játékot, majd a „Letöltött játék indítása…” gombbal válaszd ki a <code>.cas</code>
-        fájlt vagy a <code>.zip</code> csomagot. A böngésző biztonsági korlátozásai miatt
-        a letöltött fájlt külön ki kell választani.</li>
+      <li><b>TVC-játékok</b>: az oldal alján lévő Program katalógusban több mint 1400 TVC-program
+        közül választhatsz, kattintásra a megfelelő géppel indul. Más programot (pl. a tvc.hu-ról) a
+        „Fájl betöltése…” gombbal vagy a képre húzva tölthetsz be (<code>.cas</code>, <code>.zip</code>).</li>
       <li><b>Utántöltős programok</b>: tedd fel az összes fájlt egyszerre (vagy egy ZIP-ben).
         Az alapértelmezett eszköz a betöltés módjához igazodik (Enterprise-on
         <code>:DEF_DEV_FILE</code> / <code>:DEF_DEV_TAPE</code> / <code>:DEF_DEV_DISK</code>),
@@ -511,7 +511,7 @@
         A ⛶ gombbal a kép és a vezérlők együtt kerülnek teljes képernyőre.</li>
       <li>F11 = reset, Shift+F11 = hideg reset, F12 = turbó, Alt+D = a debuggerre, Alt+E = vissza az emulátorra.</li>
     </ul>
-    <p class="small">Az emulációs mag az <a href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu</a>
+    <p class="small" data-i18n-html="helpcore">Az emulációs mag az <a href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu</a>
     (Varga István, GPL v2) változatlan forráskódja, WebAssemblyre fordítva.</p>
   </details>
 
@@ -532,7 +532,9 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610251026-be315d0"></script>
-<script src="ep128.js?v=202610251026-be315d0"></script>
+<script src="i18n-strings.js?v=202610251813-3e45e4e"></script>
+<script src="i18n.js?v=202610251813-3e45e4e"></script>
+<script src="ep128emu.js?v=202610251813-3e45e4e"></script>
+<script src="ep128.js?v=202610251813-3e45e4e"></script>
 </body>
 </html>
