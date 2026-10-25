@@ -35,6 +35,11 @@
     </label>
     <button id="btn-snap" title="Pillanatkép mentése (.ep128s)">Állapot mentése</button>
     <button id="btn-shot" title="A képernyő mentése képként (.png)">📷 Kép</button>
+    <select id="crt" title="Képernyő-effekt: régi tévé / monitor hatás" aria-label="Képernyő-effekt">
+      <option value="off">Kép: éles</option>
+      <option value="scan">Kép: scanline</option>
+      <option value="crt">Kép: CRT</option>
+    </select>
     <button id="btn-video" title="Videó felvétele hanggal; újra megnyomva leáll és letöltődik">● Videó</button>
     <select id="video-fmt" title="A videó formátuma" aria-label="A videó formátuma" hidden>
       <option value="mp4">MP4</option>
@@ -52,6 +57,7 @@
  <div id="play">
   <div id="screen-wrap">
     <canvas id="screen" width="768" height="288" tabindex="0"></canvas>
+    <div id="crt-fx" aria-hidden="true"></div>
     <div id="overlay" hidden>
       <div class="box">
         <h2>Hiányzó ROM-ok</h2>

@@ -57,6 +57,14 @@ is megnyithatók (Chrome/Edge asztali változatban).
   magnóra ír (fejblokk a névvel, adatblokk 256 bájtos szektorokkal,
   szektoronkénti CRC).
 
+### Képernyő-effekt (CRT)
+
+A felső sor „Kép:” választójával: **éles** (alap), **scanline** (minden
+emulált sor után sötét sáv, mint egy tévén), **CRT** (scanline, enyhe
+izzás/elmosás, RGB árnyékmaszk, sötétebb sarkok, lekerekített képcső). A
+beállítást az oldal megjegyzi; a képernyőkép és a videofelvétel effekt nélkül
+készül.
+
 ### Megosztható link
 
 A „🔗 Link” gomb a vágólapra másol egy linket, amely megnyitva ugyanazt a gépet
