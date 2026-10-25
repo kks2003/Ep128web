@@ -179,6 +179,7 @@ A fejléc **🐞 Debugger** gombja nyitja meg a képernyő alatti panelt.
 - A PC körül mutat, vagy a megadott címtől (címke is megadható).
 - Kattintás: kurzor (futás a kurzorig).
 - Bal szélre kattintás vagy F9: végrehajtási töréspont be/ki.
+- Alt+D: a debuggerre ugrik (ha zárva van, kinyitja), Alt+E: vissza az emulátor képére (a beviteli mezőkből is).
 - Megjegyzések a sorok végén (`;`):
   - IN/OUT: a port neve (NICK, DAVE, lapregiszter, TVC lapozás, CRTC, paletta, a bővítőhelyen lévő kártya…).
   - Az aktuális (PC) sorban a kiírandó érték is, a lapozás kibontva: TVC port 02 → `P0=SYS P1=U1 P2=VID P3=CART`, port 0C → VID lapok, port 06 → GRAPHICS mód, EP B0–B3 → a szegmens neve. `OUT (C),r` és az OUTI-félék portját a C regiszterből veszi.

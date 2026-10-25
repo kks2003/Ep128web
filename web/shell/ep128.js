@@ -1239,6 +1239,25 @@ registerProcessor('ep-output', EPOutput);
     return (machine && machine.type === 1 ? KEYMAP_TVC : KEYMAP)[e.code];
   }
 
+  // Alt+D: to the debugger, Alt+E: to the emulator screen (also from the
+  // debugger's input fields; AltGr, which is Ctrl+Alt, is left alone)
+  window.addEventListener('keydown', (e) => {
+    if (!e.altKey || e.ctrlKey || e.metaKey || (e.code !== 'KeyD' && e.code !== 'KeyE')) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    releaseAllKeys();                   // the Alt key went to the machine
+    if (e.repeat) return;
+    if (e.code === 'KeyD') {
+      if (!dbgOpen) dbgShow(true);
+      const d = $('debugger');
+      d.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      d.focus({ preventScroll: true });
+    } else {
+      $('screen-wrap').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      canvas.focus({ preventScroll: true });
+    }
+  }, true);
+
   document.addEventListener('keydown', (e) => {
     if (isTextInput(e.target)) return;
     if (e.code === 'F11') {
