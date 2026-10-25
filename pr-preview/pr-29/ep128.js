@@ -3332,7 +3332,13 @@ registerProcessor('ep-output', EPOutput);
     }
     canvas.focus({ preventScroll: true });
   }
+  // the space a quick save takes in the browser's storage
+  function qsBytes(st) {
+    return st.bytes.length + (st.card ? st.card.length : 0) + (st.pic ? st.pic.length : 0);
+  }
   function renderQuickSaves() {
+    const used = quickSaves.reduce((a, st) => a + (st ? qsBytes(st) : 0), 0);
+    $('qs-total').textContent = used ? 'összesen ' + fmtSize(used) : '';
     const box = $('qs-slots');
     box.textContent = '';
     quickSaves.forEach((st, i) => {
@@ -3364,7 +3370,12 @@ registerProcessor('ep-output', EPOutput);
       });
       b('▶', 'Ennek az állapotnak a betöltése', () => qsLoad(i), !st);
       b('✕', 'Törlés', () => { quickSaves[i] = null; db.del('qs:' + i); renderQuickSaves(); }, !st);
-      d.append(pic, lab, btns);
+      const size = document.createElement('div');
+      size.className = 'qs-size';
+      size.textContent = st ? fmtSize(qsBytes(st)) : '';
+      size.title = st ? 'Gép: ' + fmtSize(st.bytes.length) + (st.card ? ', bővítőkártyák: ' + fmtSize(st.card.length) : '') +
+                        ', kép: ' + fmtSize(st.pic ? st.pic.length : 0) : '';
+      d.append(pic, lab, size, btns);
       box.append(d);
     });
   }
@@ -3379,7 +3390,7 @@ registerProcessor('ep-output', EPOutput);
     rewindNote();
   }
   function rewindNote() {
-    $('rw-note').textContent = rwOn ? (rwBuf.length ? rwBuf.length + ' mp visszatekerhető' : '') : '';
+    $('rw-note').textContent = rwOn ? (rwBuf.length ? rwBuf.length + ' mp visszatekerhető · ' + fmtSize(rwBytes) + ' memória' : '') : '';
     $('rw-back').disabled = !rwOn || rwBuf.length < 2;
   }
   function rewindTick(us) {
