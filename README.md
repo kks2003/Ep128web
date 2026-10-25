@@ -84,6 +84,20 @@ pendrive és a TVC256k++ flash tartalma is bekerül (a ROM-ok nem). Az
 „Importálás…” egy másik gépen vagy böngészőben visszaállítja mindezt (az oldal
 újratöltődik).
 
+### Nyelvek
+
+Az oldal magyarul, angolul, németül és ukránul használható: a fejlécben lévő
+választóval (alapból a böngésző nyelve, ha az a négy közül való, különben
+angol). Nyelvváltáskor az oldal újratöltődik, a futó gép állapota megmarad.
+
+Fejlesztőknek: a szövegek magyarul vannak a kódban (`T('…')`, `F('… {0} …', x)`
+az `ep128.js`-ben, a HTML-ben egyszerűen a szöveg), a fordításuk a
+`web/shell/i18n-strings.js` táblázatában van (`[magyar, angol, német, ukrán]`
+soronként; `@név` sorok: egész HTML-blokkok, `data-i18n-html="név"`). Ami
+nincs a táblázatban, magyarul marad; a hiányzókat a böngésző konzoljában a
+`I18N.missing` mutatja. A debugger referenciaszövegei (rendszerhívások,
+rendszerváltozók leírásai) és a C++ magból jövő üzenetek még magyarok.
+
 ### Gyorsmentés, visszatekerés, sebesség
 
 A panelt a kép alatti sor végén lévő 💾 gomb nyitja/csukja (alapból csukva).
