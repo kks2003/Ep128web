@@ -62,8 +62,8 @@ is megnyithatók (Chrome/Edge asztali változatban).
 A felső sor „Kép:” választójával: **éles** (alap), **scanline** (minden
 emulált sor után sötét sáv, mint egy tévén), **CRT** (scanline, enyhe
 izzás/elmosás, RGB árnyékmaszk, sötétebb sarkok, lekerekített képcső). A
-beállítást az oldal megjegyzi; a képernyőkép és a videofelvétel effekt nélkül
-készül.
+beállítást az oldal megjegyzi; a képernyőkép és a videofelvétel is a
+kiválasztott effekttel készül.
 
 ### Megosztható link
 

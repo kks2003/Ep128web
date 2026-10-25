@@ -2657,8 +2657,63 @@ registerProcessor('ep-output', EPOutput);
       recCanvas.width = canvas.width;
       recCanvas.height = canvas.height * 2;
     }
-    recCtx.imageSmoothingEnabled = false;
+    const fx = $('crt').value;
+    recCtx.imageSmoothingEnabled = fx === 'crt';
+    recCtx.filter = fx === 'crt' ? 'blur(0.5px) brightness(1.25) contrast(1.08) saturate(1.15)' : 'none';
     recCtx.drawImage(canvas, 0, 0, recCanvas.width, recCanvas.height);
+    recCtx.filter = 'none';
+    if (fx !== 'off') drawCrtLayers(recCtx, recCanvas.width, recCanvas.height, fx);
+  }
+
+  // the screen effect of the page (#crt-fx in style.css) drawn into a
+  // recording frame: each emulated line is two rows there, the second one
+  // is darkened; CRT: shadow mask, vignette and rounded corners as well
+  let crtLayers = null;
+  function drawCrtLayers(x, w, h, fx) {
+    const key = fx + w + 'x' + h;
+    if (!crtLayers || crtLayers.key !== key) {
+      const pat = (pw, ph, draw) => {
+        const c = document.createElement('canvas');
+        c.width = pw;
+        c.height = ph;
+        draw(c.getContext('2d'));
+        return x.createPattern(c, 'repeat');
+      };
+      const vig = x.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.hypot(w, h) / 2);
+      vig.addColorStop(0.6, 'rgba(0,0,0,0)');
+      vig.addColorStop(1, 'rgba(0,0,0,0.5)');
+      crtLayers = {
+        key,
+        scan: pat(1, 2, (c) => { c.fillStyle = fx === 'crt' ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.35)'; c.fillRect(0, 1, 1, 1); }),
+        mask: pat(3, 1, (c) => {
+          ['rgba(255,0,0,0.06)', 'rgba(0,255,0,0.06)', 'rgba(0,0,255,0.06)'].forEach((col, i) => { c.fillStyle = col; c.fillRect(i, 0, 1, 1); });
+        }),
+        vig
+      };
+    }
+    const l = crtLayers;
+    x.fillStyle = l.scan;
+    x.fillRect(0, 0, w, h);
+    if (fx !== 'crt') return;
+    x.fillStyle = l.mask;
+    x.fillRect(0, 0, w, h);
+    x.fillStyle = l.vig;
+    x.fillRect(0, 0, w, h);
+    // the rounded corners of the tube (18 / 24 px on a 1068 x 912 view)
+    const rx = w * 0.017, ry = h * 0.026;
+    x.fillStyle = '#000';
+    for (const [sx, sy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+      x.save();
+      x.translate(sx > 0 ? 0 : w, sy > 0 ? 0 : h);
+      x.scale(sx, sy);
+      x.beginPath();
+      x.moveTo(0, 0);
+      x.lineTo(rx, 0);
+      x.ellipse(rx, ry, rx, ry, 0, -Math.PI / 2, -Math.PI, true);
+      x.closePath();
+      x.fill();
+      x.restore();
+    }
   }
 
   function saveScreenshot() {
@@ -5530,9 +5585,10 @@ registerProcessor('ep-output', EPOutput);
       case 'fx': $('dbg-fx').textContent = api.dbg2dfx() + dbgFxLog(); break;
       case 'c256': {
         const t = api.dbgCard256();
-        $('dbg-c256').textContent = t + (t.startsWith('A TVC256k++') ? '' :
+        // without the card only the note, no register or sprite data
+        $('dbg-c256').textContent = t.startsWith('A TVC256k++') ? t : t +
           '\nB0/B1: P2/P3 lap  B2-B5: 8 MB-os lapok  B6: PSRAM MB  B7: ROM lap  C3/C4: firmware\n' +
-          'C5: meghajtó  C8-CA: PSRAM / flash / DSK érvényes  D0: USB  D4/D5: egér  E0-FF: vSID') + dbgCard256Overlay();
+          'C5: meghajtó  C8-CA: PSRAM / flash / DSK érvényes  D0: USB  D4/D5: egér  E0-FF: vSID' + dbgCard256Overlay();
         break;
       }
       case 'find': if (dbgFindCand) $('dbg-find-count').textContent = dbgFindCand.length + ' jelölt'; break;
