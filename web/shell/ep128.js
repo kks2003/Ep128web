@@ -2684,11 +2684,17 @@ registerProcessor('ep-output', EPOutput);
       recCanvas.height = canvas.height * 2;
     }
     const fx = $('crt').value;
+    if (screenFxOn) {
+      // the WebGL filter's picture, as shown on the page
+      recCtx.imageSmoothingEnabled = true;
+      recCtx.drawImage($('screen-gl'), 0, 0, recCanvas.width, recCanvas.height);
+      return;
+    }
     recCtx.imageSmoothingEnabled = fx === 'crt';
     recCtx.filter = fx === 'crt' ? 'blur(0.5px) brightness(1.25) contrast(1.08) saturate(1.15)' : 'none';
     recCtx.drawImage(canvas, 0, 0, recCanvas.width, recCanvas.height);
     recCtx.filter = 'none';
-    if (fx !== 'off') drawCrtLayers(recCtx, recCanvas.width, recCanvas.height, fx);
+    if (fx === 'scan' || fx === 'crt') drawCrtLayers(recCtx, recCanvas.width, recCanvas.height, fx);
   }
 
   // the screen effect of the page (#crt-fx in style.css) drawn into a
@@ -2809,18 +2815,33 @@ registerProcessor('ep-output', EPOutput);
     return r;
   }
 
-  // CRT effect: scanlines / scanlines + glow, shadow mask and vignette
+  // screen effect: CSS (pixelated, scanlines, CRT: style.css #crt-fx) or a
+  // WebGL filter (screenfx.js: curved CRT, PAL TV, monochrome monitors)
+  let screenFx = null, screenFxOn = false;
   function setupCrt() {
     const sel = $('crt');
     let v = 'off';
     try { v = localStorage.getItem('ep128web.crt') || 'off'; } catch (e) { }
+    // the WebGL filters: their options are disabled without WebGL
+    screenFx = window.EpScreenFX ? window.EpScreenFX.create($('screen-gl')) : null;
+    for (const o of Array.from(sel.options)) if (o.dataset.gl && !screenFx) o.disabled = true;
     const apply = () => {
-      const wrap = $('screen-wrap');
-      wrap.classList.toggle('fx-scan', sel.value === 'scan');
-      wrap.classList.toggle('fx-crt', sel.value === 'crt');
+      const wrap = $('screen-wrap'), m = sel.value;
+      screenFxOn = !!(screenFx && sel.selectedOptions[0] && sel.selectedOptions[0].dataset.gl);
+      wrap.classList.toggle('fx-scan', m === 'scan');
+      wrap.classList.toggle('fx-crt', m === 'crt');
+      wrap.classList.toggle('fx-pixel', m === 'pixel');
+      wrap.classList.toggle('fx-gl', screenFxOn);
+      if (screenFx) {
+        screenFx.setMode(screenFxOn ? m : '');
+        if (screenFxOn) screenFx.render(canvas);
+      }
     };
-    sel.value = ['off', 'scan', 'crt'].includes(v) ? v : 'off';
+    const valid = Array.from(sel.options).filter((o) => !o.disabled).map((o) => o.value);
+    sel.value = valid.includes(v) ? v : 'off';
     apply();
+    // a new size on the page (window, full screen) needs a new picture
+    if (window.ResizeObserver) new ResizeObserver(() => { if (screenFxOn) screenFx.render(canvas); }).observe($('screen-wrap'));
     sel.onchange = () => {
       apply();
       try { localStorage.setItem('ep128web.crt', sel.value); } catch (e) { }
@@ -7013,6 +7034,7 @@ ep.log('CTRL+ESC megnyomva');`
       const p = api.frameBuffer();
       imageData.data.set(M.HEAPU8.subarray(p, p + imageData.data.length));
       ctx.putImageData(imageData, -cropX, 0);
+      if (screenFxOn) screenFx.render(canvas);
       if (videoRec) drawRecCanvas();
     }
 

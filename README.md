@@ -57,13 +57,23 @@ is megnyithatók (Chrome/Edge asztali változatban).
   magnóra ír (fejblokk a névvel, adatblokk 256 bájtos szektorokkal,
   szektoronkénti CRC).
 
-### Képernyő-effekt (CRT)
+### Képernyő-effekt (CRT, régi tévé, monokróm monitor)
 
-A felső sor „Kép:” választójával: **éles** (alap), **scanline** (minden
-emulált sor után sötét sáv, mint egy tévén), **CRT** (scanline, enyhe
-izzás/elmosás, RGB árnyékmaszk, sötétebb sarkok, lekerekített képcső). A
-beállítást az oldal megjegyzi; a képernyőkép és a videofelvétel is a
-kiválasztott effekttel készül.
+A felső sor „Kép:” választójával:
+
+| | |
+| --- | --- |
+| **éles** | az alap: a kép simítva nagyítva |
+| **pixeles** | éles, négyzetes pixelek |
+| **scanline** | minden emulált sor után sötét sáv, mint egy tévén |
+| **CRT** | scanline, enyhe izzás, RGB árnyékmaszk, sötétebb sarkok |
+| **CRT, görbült képcső** | WebGL: domború képcső, a fényes képpontoknál szélesebb sugár (scanline), apertúrarács, fénylés, lekerekített sarkok |
+| **PAL tévé** | WebGL: kompozit / antennás tévé – a szín sávszélessége kicsi, ezért a színek szétfolynak, enyhe visszhang és zaj |
+| **zöld / borostyán / fehér monitor** | WebGL: monokróm monitorok foszforfénnyel |
+
+A beállítást az oldal megjegyzi; a képernyőkép és a videofelvétel is a
+kiválasztott effekttel készül. A WebGL-es szűrők (`web/shell/screenfx.js`) a
+vászon képét dolgozzák fel képkockánként; WebGL nélkül nem választhatók.
 
 ### Megosztható link
 

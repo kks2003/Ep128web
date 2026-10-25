@@ -38,8 +38,14 @@
     <button id="btn-shot" title="A képernyő mentése képként (.png)">📷 Kép</button>
     <select id="crt" title="Képernyő-effekt: régi tévé / monitor hatás" aria-label="Képernyő-effekt">
       <option value="off">Kép: éles</option>
+      <option value="pixel">Kép: pixeles</option>
       <option value="scan">Kép: scanline</option>
       <option value="crt">Kép: CRT</option>
+      <option value="crtgl" data-gl="1">Kép: CRT, görbült képcső</option>
+      <option value="tv" data-gl="1">Kép: PAL tévé</option>
+      <option value="green" data-gl="1">Kép: zöld monitor</option>
+      <option value="amber" data-gl="1">Kép: borostyán monitor</option>
+      <option value="white" data-gl="1">Kép: fehér monitor</option>
     </select>
     <button id="btn-video" title="Videó felvétele hanggal; újra megnyomva leáll és letöltődik">● Videó</button>
     <select id="video-fmt" title="A videó formátuma" aria-label="A videó formátuma" hidden>
@@ -58,6 +64,7 @@
  <div id="play">
   <div id="screen-wrap">
     <canvas id="screen" width="768" height="288" tabindex="0"></canvas>
+    <canvas id="screen-gl" aria-hidden="true"></canvas>
     <div id="crt-fx" aria-hidden="true"></div>
     <div id="overlay" hidden>
       <div class="box">
@@ -535,6 +542,7 @@
 <script src="i18n-strings.js?v=__BUILD_V__"></script>
 <script src="i18n.js?v=__BUILD_V__"></script>
 <script src="ep128emu.js?v=__BUILD_V__"></script>
+<script src="screenfx.js?v=__BUILD_V__"></script>
 <script src="ep128.js?v=__BUILD_V__"></script>
 </body>
 </html>
