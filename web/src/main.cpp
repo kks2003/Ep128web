@@ -311,6 +311,10 @@ namespace {
 
 extern "C" {
 
+// the demo being recorded (the machine's state, then the keyboard / mouse
+// events), or null
+static Ep128Emu::File *demoRecFile = (Ep128Emu::File *) 0;
+
 // debugger: memory and I/O watchpoints, set on each new machine
 static Ep128Emu::BreakPointList debugWatchPoints;
 
@@ -358,6 +362,12 @@ EMSCRIPTEN_KEEPALIVE int ep_set_machine_type(int type)
     if (luaScript) {
       delete luaScript;                 // it belongs to the old machine
       luaScript = (WebLuaScript *) 0;
+    }
+    if (demoRecFile) {
+      if (vm)
+        vm->stopDemo();
+      delete demoRecFile;               // the old machine's demo is dropped
+      demoRecFile = (Ep128Emu::File *) 0;
     }
     if (vm) {
       delete vm;
@@ -828,6 +838,70 @@ EMSCRIPTEN_KEEPALIVE double ep_tape_position()
 EMSCRIPTEN_KEEPALIVE double ep_tape_length()
 {
   return vm->getTapeLength();
+}
+
+// tape cue points (markers, stored in ep128emu .tap files): 0 add one at the
+// current position, 1 delete the nearest one, 2 delete all, 3 seek to the
+// previous one, 4 to the next one (by 10 s if there is none)
+EMSCRIPTEN_KEEPALIVE int ep_tape_cue(int cmd)
+{
+  try {
+    switch (cmd) {
+    case 0: vm->tapeAddCuePoint(); break;
+    case 1: vm->tapeDeleteNearestCuePoint(); break;
+    case 2: vm->tapeDeleteAllCuePoints(); break;
+    case 3: vm->tapeSeekToCuePoint(false, 10.0); break;
+    case 4: vm->tapeSeekToCuePoint(true, 10.0); break;
+    }
+    return 0;
+  }
+  catch (...) {
+    return handleException();
+  }
+}
+
+// demo recording: start = 1 starts it, 0 stops it and writes the demo file
+EMSCRIPTEN_KEEPALIVE int ep_demo_record(int start, const char *fileName)
+{
+  try {
+    if (start) {
+      if (demoRecFile) {
+        vm->stopDemo();
+        delete demoRecFile;
+        demoRecFile = (Ep128Emu::File *) 0;
+      }
+      demoRecFile = new Ep128Emu::File();
+      vm->recordDemo(*demoRecFile);
+      return 0;
+    }
+    if (!demoRecFile)
+      return -1;
+    Ep128Emu::File *f = demoRecFile;
+    demoRecFile = (Ep128Emu::File *) 0;
+    try {
+      vm->stopDemo();
+      f->writeFile(fileName);
+    }
+    catch (...) {
+      delete f;
+      throw;
+    }
+    delete f;
+    return 0;
+  }
+  catch (...) {
+    return handleException();
+  }
+}
+
+// bit 0: recording a demo, bit 1: playing one, bit 2: a recorded demo is
+// waiting to be saved (the recording stopped by itself, e.g. at tape I/O)
+EMSCRIPTEN_KEEPALIVE int ep_demo_state()
+{
+  if (!vm)
+    return 0;
+  bool rec = vm->getIsRecordingDemo();
+  return (rec ? 1 : 0) | (vm->getIsPlayingDemo() ? 2 : 0) | (demoRecFile && !rec ? 4 : 0);
 }
 
 EMSCRIPTEN_KEEPALIVE int ep_pc()

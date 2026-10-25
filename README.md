@@ -56,6 +56,25 @@ is megnyithatók (Chrome/Edge asztali változatban).
   kazettás hangfelvételt készít, ugyanúgy kódolva, ahogy a TVC ROM-ja a
   magnóra ír (fejblokk a névvel, adatblokk 256 bájtos szektorokkal,
   szektoronkénti CRC).
+- **Jelölők**: „＋ Jelölő” a szalag mostani helyére tesz egy jelölőt, „− Jelölő”
+  a legközelebbit törli; ⏪ / ⏩ az előző / következő jelölőhöz teker (ha nincs,
+  10 másodpercet). A jelölők az ep128emu .tap fájljában tárolódnak (a letöltött
+  .tap-ban megmaradnak); .wav kazettán nem használhatók.
+
+### Egér (Enterprise)
+
+A 🖱 gombbal a böngésző egere az Enterprise egere lesz (az ep128emu EnterMice /
+PS/2-kompatibilis egér-emulációja: bal, jobb, középső és 4./5. gomb, görgő);
+kilépés: Esc. TVC-n ugyanez a gomb a TVC256k++ kártya egerét kezeli.
+
+### Demó felvétele
+
+A „● Demó” elmenti a gép állapotát, majd rögzíti a billentyűket és az egeret;
+újra megnyomva leáll, és letöltődik egy `.ep128d` fájl. Betöltve (mint egy
+pillanatképet) a demó lejátssza magát. Felvétel közben a lemez, az IDE és a
+FILE: nem használható; magnó- vagy lemezműveletnél a felvétel magától leáll (a
+demó ekkor is letöltődik). A bővítőkártyák (TVC256k++, 2dfx) állapota nem
+kerül bele.
 
 ### Képernyő-effekt (CRT, régi tévé, monokróm monitor)
 
@@ -428,7 +447,7 @@ a PSRAM drive megszűnik, a flash drive útvonala visszaáll a gyökérre.
   minták, szűrő nélkül, mint a firmware-ben); a `$E0`–`$FF` regiszterek írhatók-olvashatók
   (a 27/28 az OSC3/ENV3 értéke). A firmware a reset után az első hangot csak a gate bit
   0 → 1 váltásánál indítja;
-- **egér**: a 🖱 gombbal (csak TVC-n, kártyával) a böngésző egere a kártya USB-egere lesz
+- **egér**: a 🖱 gombbal (TVC-n, ha a kártya be van téve) a böngésző egere a kártya USB-egere lesz
   (relatív mozgás, három gomb, sebesség-regiszter); kilépés: Esc. Az első mozdulattól a
   `REG_USB_INIT` jelzi, hogy van egér;
 - **reset**: a TVC resetje a kártyán csak a grafikát állítja alaphelyzetbe; a kártya teljes
@@ -531,8 +550,8 @@ Egyszeri beállítás a repóban:
 - `web/src/twodfx/` – a 2dfx kártya hordozható emulátora (MIT), `web/src/twodfx_bridge.cpp` – bekötése a VM-ekbe (`patches/zzzz-2dfx.patch`)
 - `build.sh` – fordítás `em++`-szal
 
-Eltérések a natív ep128emu-tól: a debuggerből nincs monitor-parancssor és Lua script, nincsenek
-OpenGL effektek és egér; TVC-n az automatikus szövegbeíróval az „í”
+Eltérések a natív ep128emu-tól: nincsenek OpenGL effektek (helyettük
+WebGL-szűrők); TVC-n az automatikus szövegbeíróval az „í”
 nem gépelhető; a kép 768×288-as (a váltottsoros módok
 két félképe egybe van hajtva). A ZX Spectrum és CPC gépek nincsenek
 lefordítva.
