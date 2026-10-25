@@ -6,17 +6,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
-<link rel="stylesheet" href="style.css?v=202610250950-1f77ec9">
+<link rel="stylesheet" href="style.css?v=202610251020-7409efc">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <meta name="theme-color" content="#1b1f45">
-<meta name="build" content="202610250950-1f77ec9">
+<meta name="build" content="202610251020-7409efc">
 </head>
 <body>
-<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #32 előnézete, nem az éles oldal · fordítva: 2026.10.25 10:50 · 1f77ec9 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #32 előnézete, nem az éles oldal · fordítva: 2026.10.25 11:20 · 7409efc · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
 <header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.25 10:50 · 1f77ec9</small></h1>
+  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.10.25 11:20 · 7409efc</small></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
@@ -24,7 +24,7 @@
     <button id="btn-reset" title="Meleg reset (F11)">Reset</button>
     <button id="btn-cold" title="Hideg reset / bekapcsolás (Shift+F11)">Hideg reset</button>
     <button id="btn-pause" title="Szünet (Pause)">Szünet</button>
-    <button id="btn-debug" title="Debugger: regiszterek, disassembly, memória, töréspontok">🐞 Debugger</button>
+    <button id="btn-debug" title="Debugger: regiszterek, disassembly, memória, töréspontok (Alt+D: a debuggerre, Alt+E: vissza az emulátorra)">🐞 Debugger</button>
     <button id="btn-share" title="Megosztható link másolása: a gép, a kártyák és a betöltött program (kis programnál magában a linkben)">🔗 Link</button>
     <button id="btn-install" hidden title="Telepítés alkalmazásként (offline is működik)">Telepítés</button>
     <button id="btn-turbo" title="Gyorsítás (F12)">Turbó</button>
@@ -158,7 +158,7 @@
     <span id="st-msg"></span>
   </section>
 
-  <section id="debugger" class="group" hidden>
+  <section id="debugger" class="group" tabindex="-1" hidden>
     <h3>Debugger <span id="dbg-machine" class="small"></span></h3>
     <div class="dbg-bar">
       <button id="dbg-run" title="Folytatás (F5)">▶ Folytatás</button>
@@ -511,7 +511,7 @@
         (a Shift, Ctrl és Alt egy leütésre ragad), az érintős joystick (a Joystick panel szerint,
         vagy kurzorbillentyűk + Space), és a szövegbeírás a telefon saját billentyűzetével.
         A ⛶ gombbal a kép és a vezérlők együtt kerülnek teljes képernyőre.</li>
-      <li>F11 = reset, Shift+F11 = hideg reset, F12 = turbó.</li>
+      <li>F11 = reset, Shift+F11 = hideg reset, F12 = turbó, Alt+D = a debuggerre, Alt+E = vissza az emulátorra.</li>
     </ul>
     <p class="small">Az emulációs mag az <a href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu</a>
     (Varga István, GPL v2) változatlan forráskódja, WebAssemblyre fordítva.</p>
@@ -534,7 +534,7 @@
   </section>
 </main>
 
-<script src="ep128emu.js?v=202610250950-1f77ec9"></script>
-<script src="ep128.js?v=202610250950-1f77ec9"></script>
+<script src="ep128emu.js?v=202610251020-7409efc"></script>
+<script src="ep128.js?v=202610251020-7409efc"></script>
 </body>
 </html>
