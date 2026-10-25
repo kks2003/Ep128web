@@ -22,7 +22,7 @@
              ['epfileio.rom', [0x10]], ['exdos14isdos10uk.rom', [0x20, 0x21]]]
     },
     {
-      id: 'ep128hu-exdos', name: 'EP128 (magyar) · EXDOS · 128K', ram: 128,
+      id: 'ep128hu-exdos', name: T('EP128 (magyar) · EXDOS · 128K'), ram: 128,
       roms: [['exos21.rom', [0x00, 0x01]], ['hun.rom', [0x04]],
              ['basic21.rom', [0x05]], ['epfileio.rom', [0x10]],
              ['exdos14isdos10uk-hfont.rom', [0x20, 0x21]]]
@@ -38,7 +38,7 @@
              ['epfileio.rom', [0x10]], ['exdos14isdos10uk.rom', [0x20, 0x21]]]
     },
     {
-      id: 'ep640hu', name: 'EP 640K · EXOS 2.32 (magyar) · EXDOS', ram: 640,
+      id: 'ep640hu', name: T('EP 640K · EXOS 2.32 (magyar) · EXDOS'), ram: 640,
       roms: [['exos232hun.rom', [0x00, 0x01, 0x02, 0x03]],
              ['epfileio.rom', [0x10]],
              ['exdos14isdos10uk-hfont.rom', [0x20, 0x21]]]
@@ -2409,14 +2409,17 @@ registerProcessor('ep-output', EPOutput);
     startAutostart('load "' + base + '"\n', null, false, tvcRedirectFor(SLOT_CARD256), prepare);
   }
 
-  // TVC256k++ card: the browser's mouse becomes the card's USB mouse while
-  // the pointer is locked to the screen (the button starts it, Esc ends it)
+  // the browser's mouse becomes the machine's mouse while the pointer is
+  // locked to the screen (the button starts it, Esc ends it): on the
+  // Enterprise the EnterMice / PS/2 mouse of ep128emu, on the TVC the
+  // TVC256k++ card's USB mouse
   function setupMouse() {
     const btn = $('btn-mouse');
     if (!btn) return;
     const toCard = (b) => (b & 1) | ((b & 4) >> 1) | ((b & 2) << 1);   // left, middle, right
     let buttons = 0;
     const locked = () => document.pointerLockElement === canvas;
+    const isEP = () => machine && machine.type === 0;
     btn.onclick = () => {
       if (!ready) return;
       canvas.focus({ preventScroll: true });
@@ -2424,30 +2427,76 @@ registerProcessor('ep-output', EPOutput);
     };
     document.addEventListener('pointerlockchange', () => {
       btn.classList.toggle('on', locked());
-      if (locked()) setMessage(T('Egér a TVC256k++ kártyán – kilépés: Esc'));
+      if (locked()) setMessage(isEP() ? T('Egér az Enterprise-on – kilépés: Esc') : T('Egér a TVC256k++ kártyán – kilépés: Esc'));
       else { buttons = 0; if (ready) api.setMouse(0, 0, 0, 0); setMessage(''); }
     });
     canvas.addEventListener('mousemove', (e) => {
       if (!locked() || !ready) return;
-      api.setMouse(e.movementX | 0, e.movementY | 0, buttons, 0);
+      // ep128emu takes the movement as previous - current position
+      if (isEP()) api.setMouse(-(e.movementX | 0), -(e.movementY | 0), buttons, 0);
+      else api.setMouse(e.movementX | 0, e.movementY | 0, buttons, 0);
     });
     const onButton = (e) => {
       if (!locked() || !ready) return;
-      buttons = toCard(e.buttons);
+      buttons = isEP() ? e.buttons & 0x1F : toCard(e.buttons);
       api.setMouse(0, 0, buttons, 0);
       e.preventDefault();
     };
     canvas.addEventListener('mousedown', onButton);
     canvas.addEventListener('mouseup', onButton);
     canvas.addEventListener('contextmenu', (e) => { if (locked()) e.preventDefault(); });
+    // the wheel (Enterprise): 1 up, 2 down, 4 left, 8 right
+    canvas.addEventListener('wheel', (e) => {
+      if (!locked() || !ready) return;
+      e.preventDefault();
+      if (!isEP()) return;
+      const w = (e.deltaY < 0 ? 1 : e.deltaY > 0 ? 2 : 0) | (e.deltaX < 0 ? 4 : e.deltaX > 0 ? 8 : 0);
+      if (w) api.setMouse(0, 0, buttons, w);
+    }, { passive: false });
     updateMouseButton();
   }
 
-  // the mouse button is shown on the TVC when the TVC256k++ card is installed
+  // the mouse button is shown on the Enterprise, and on the TVC when the
+  // TVC256k++ card is installed
   function updateMouseButton() {
     const btn = $('btn-mouse');
     if (!btn) return;
-    btn.hidden = !(machine && machine.type === 1 && tvcSlotOf(SLOT_CARD256) >= 0);
+    btn.hidden = !(machine && (machine.type === 0 || (machine.type === 1 && tvcSlotOf(SLOT_CARD256) >= 0)));
+    btn.title = machine && machine.type === 0 ? T('Egér az Enterprise-nak (kilépés: Esc)') : T('Egér a TVC256k++ kártyának (kilépés: Esc)');
+  }
+
+  // --- demo recording: the machine's state, then the keyboard and mouse
+  // events; the .ep128d file is loaded like a snapshot and plays itself ---
+  let demoRec = false;
+  function demoFileName() {
+    return 'demo-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.ep128d';
+  }
+  function saveDemo(auto) {
+    demoRec = false;
+    $('btn-demo').classList.remove('on');
+    if (api.demoRecord(0, '/tmp/demo.ep128d') !== 0) {
+      setMessage(T('A demó mentése nem sikerült'), true);
+      return;
+    }
+    download(M.FS.readFile('/tmp/demo.ep128d'), demoFileName());
+    try { M.FS.unlink('/tmp/demo.ep128d'); } catch (e) { }
+    setMessage(auto ? T('A demófelvétel leállt (magnó- vagy lemezművelet), a demó letöltődött')
+                    : T('A demó letöltődött; betöltve (mint egy pillanatképet) lejátssza magát'));
+  }
+  function toggleDemo() {
+    if (!ready) return;
+    if (demoRec) { saveDemo(false); return; }
+    if (check(api.demoRecord(1, ''), T('demó'))) return;
+    demoRec = true;
+    $('btn-demo').classList.add('on');
+    setMessage(T('Demó felvétele: a billentyűk és az egér; lemez és FILE: nem használható közben'));
+  }
+  // called with the status: the recording stops by itself at tape or disk I/O
+  function pollDemo() {
+    if (!demoRec) return;
+    const st = api.demoState();
+    if (st & 4) saveDemo(true);
+    else if (!(st & 1)) { demoRec = false; $('btn-demo').classList.remove('on'); }
   }
 
   function startProgram(name) {
@@ -3929,6 +3978,7 @@ registerProcessor('ep-output', EPOutput);
     $('btn-video').onclick = () => { toggleVideoRec(); canvas.focus({ preventScroll: true }); };
     setupVideoFormat();
     $('btn-audio').onclick = () => { toggleAudioRec(); canvas.focus({ preventScroll: true }); };
+    $('btn-demo').onclick = () => { toggleDemo(); canvas.focus({ preventScroll: true }); };
     $('btn-mute').onclick = () => { toggleMute(); canvas.focus({ preventScroll: true }); };
     $('volume').oninput = (e) => {
       applyVolume();
@@ -3956,6 +4006,15 @@ registerProcessor('ep-output', EPOutput);
     };
     $('tape-stop').onclick = () => { if (tapeName) api.tapeCommand(0); canvas.focus({ preventScroll: true }); };
     $('tape-rew').onclick = () => { if (tapeName) api.tapeCommand(2); canvas.focus({ preventScroll: true }); };
+    // markers (cue points of ep128emu .tap files); without one the seek is 10 s
+    const cue = (n) => () => {
+      if (tapeName) { check(api.tapeCue(n), T('kazetta')); updateStatus(); }
+      canvas.focus({ preventScroll: true });
+    };
+    $('tape-prev').onclick = cue(3);
+    $('tape-next').onclick = cue(4);
+    $('tape-mark').onclick = cue(0);
+    $('tape-unmark').onclick = cue(1);
     $('tape-rec').onclick = () => {
       if (tapeName) {
         // TVC: SAVE goes to the tape too
@@ -7055,6 +7114,7 @@ ep.log('CTRL+ESC megnyomva');`)
   }
 
   function updateStatus() {
+    pollDemo();
     if (tapeName) {
       const pos = api.tapePosition(), len = api.tapeLength();
       const fmt = (t) => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
@@ -7114,6 +7174,9 @@ ep.log('CTRL+ESC megnyomva');`)
       loadTvcCardFlash: c('ep_load_tvc_card_flash', 'number', ['string']),
       cardPutFile: c('ep_tvc_card_put_file', 'number', ['string', 'string']),
       setMouse: c('ep_set_mouse', null, ['number', 'number', 'number', 'number']),
+      tapeCue: c('ep_tape_cue', 'number', ['number']),
+      demoRecord: c('ep_demo_record', 'number', ['number', 'string']),
+      demoState: c('ep_demo_state', 'number', []),
       cardUsb: c('ep_tvc_card_usb', 'number', ['number']),
       cardSelectDrive: c('ep_tvc_card_select_drive', null, ['number']),
       usbList: c('ep_usb_list', 'string', ['string']),
