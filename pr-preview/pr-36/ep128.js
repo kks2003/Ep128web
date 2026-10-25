@@ -2822,11 +2822,19 @@ registerProcessor('ep-output', EPOutput);
     const sel = $('crt');
     let v = 'off';
     try { v = localStorage.getItem('ep128web.crt') || 'off'; } catch (e) { }
-    // the WebGL filters: their options are disabled without WebGL
-    screenFx = window.EpScreenFX ? window.EpScreenFX.create($('screen-gl')) : null;
-    for (const o of Array.from(sel.options)) if (o.dataset.gl && !screenFx) o.disabled = true;
+    // the WebGL filters: their options are disabled without WebGL; the WebGL
+    // context is only made when one of them is chosen first
+    const glOk = !!(window.EpScreenFX && window.WebGLRenderingContext);
+    for (const o of Array.from(sel.options)) if (o.dataset.gl && !glOk) o.disabled = true;
     const apply = () => {
-      const wrap = $('screen-wrap'), m = sel.value;
+      const wrap = $('screen-wrap');
+      const gl = !!(sel.selectedOptions[0] && sel.selectedOptions[0].dataset.gl);
+      if (gl && !screenFx) screenFx = window.EpScreenFX.create($('screen-gl'));
+      if (gl && !screenFx) {
+        for (const o of Array.from(sel.options)) if (o.dataset.gl) o.disabled = true;
+        sel.value = 'off';
+      }
+      const m = sel.value;
       screenFxOn = !!(screenFx && sel.selectedOptions[0] && sel.selectedOptions[0].dataset.gl);
       wrap.classList.toggle('fx-scan', m === 'scan');
       wrap.classList.toggle('fx-crt', m === 'crt');
