@@ -1,5 +1,95 @@
 [
   {
+    "title": "15-ös fejtörő",
+    "description": "A klasszikus 15-ös puzzle játék számítógépes megvalósítása.",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/fejtoro.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=fejtoro.zip",
+    "file_name": "fejtoro.zip",
+    "type": "Játék - Logikai - Kirakó",
+    "date": ""
+  },
+  {
+    "title": "21",
+    "description": "21-es kártyajáték megvalósítása TVC-n",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/21.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=21.zip",
+    "file_name": "21.zip",
+    "type": "Játék - Logikai - Kártya",
+    "date": ""
+  },
+  {
+    "title": "2D Grafika",
+    "description": "TVC Felhasználói - Rajzoló",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/2dgrafika.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=2dgrafika.zip",
+    "file_name": "2dgrafika.zip",
+    "type": "Felhasználói - Rajzoló",
+    "date": ""
+  },
+  {
+    "title": "3 játék",
+    "description": "2 játék van kész, egy kígyós és egy labirintusos",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/3jatek.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=3jatek.zip",
+    "file_name": "3jatek.zip",
+    "type": "Játék - Ügyességi",
+    "date": ""
+  },
+  {
+    "title": "32",
+    "description": "TVC Játék - Ügyességi",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/32.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=32.zip",
+    "file_name": "32.zip",
+    "type": "Játék - Ügyességi",
+    "date": "2025"
+  },
+  {
+    "title": "32/64k Forth (eredeti kazettás verzió)",
+    "description": "TVC Felhasználói - Programnyelv",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/forth.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=3264K-FORTH%20eredeti%208bit%20wav.zip",
+    "file_name": "3264K-FORTH eredeti 8bit wav.zip",
+    "type": "Felhasználói - Programnyelv",
+    "date": ""
+  },
+  {
+    "title": "3D Cube (Basic)",
+    "description": "TVC Demo - Kép/Animáció",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/3dcube.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=3dcube.zip",
+    "file_name": "3dcube.zip",
+    "type": "Demo - Kép/Animáció",
+    "date": "2019"
+  },
+  {
+    "title": "5 labdajáték",
+    "description": "TVC Játék - Ügyességi - Pong típusú",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/5labdajatek.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=5labdaj.zip",
+    "file_name": "5labdaj.zip",
+    "type": "Játék - Ügyességi - Pong típusú",
+    "date": "1987"
+  },
+  {
+    "title": "5 labdajáték (f3)",
+    "description": "A klasszikus Pong játék TVC-s megvalósítása több játékossal",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/5labdajatek.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=5labdajatek.zip",
+    "file_name": "5labdajatek.zip",
+    "type": "Játék - Ügyességi - Pong típusú",
+    "date": "1987"
+  },
+  {
+    "title": "8 bit sunset (64k+)",
+    "description": "10 soros basic programok verseyére készült \"SCHAU\" kategóriában első lett",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/8bitsunset.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=8bitsunset.zip",
+    "file_name": "8bitsunset.zip",
+    "type": "Demo - Kép/Animáció",
+    "date": "2022"
+  },
+  {
     "title": "A bolygó neve: Halál (f3)",
     "description": "Hova lehetne besorolni ezt a programot... Labirintus és lövöldözős.",
     "image_url": "https://tvc.homeserver.hu/html/gamepic/bnh.gif",
