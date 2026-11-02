@@ -7394,6 +7394,16 @@ ep.log('CTRL+ESC megnyomva');`)
     const m = q.get('m');
     if (m && MACHINES.some((x) => x.id === m)) {
       try { localStorage.setItem('ep128web.machine', m); } catch (e) { }
+    } else if (q.get('p')) {
+      // a catalog program without a machine (e.g. from the game pages of
+      // tvc.homeserver.hu): a TVC without a cartridge, the catalog item's
+      // title then picks 64k+ / VT-DOS / UPM and the cards
+      let cur = null;
+      try { cur = localStorage.getItem('ep128web.machine'); } catch (e) { }
+      const cm = MACHINES.find((x) => x.id === (MACHINE_ALIASES[cur] || cur));
+      if (!cm || cm.type !== 1 || cm.cart) {
+        try { localStorage.setItem('ep128web.machine', plainTvc().id); } catch (e) { }
+      }
     }
     if (q.has('s')) {
       const v = q.get('s').split(',').map(Number);
@@ -7413,7 +7423,8 @@ ep.log('CTRL+ESC megnyomva');`)
       if (q.get('p')) {
         const name = q.get('p');
         for (let i = 0; i < 50 && !catalogState.items.length; i++) await new Promise((r) => setTimeout(r, 200));
-        await launchCatalogItem(catalogState.items.find((x) => x.file_name === name) || { file_name: name, title: name });
+        await launchCatalogItem(catalogState.items.find((x) => x.file_name === name) ||
+                                { file_name: name, title: q.get('t') || name });   // t: the title (its tags pick the machine)
       } else if (q.get('f')) {
         const name = q.get('n') || 'program';
         await loadFiles([new File([await zipStream(unb64url(q.get('f')), 'in')], name)]);
