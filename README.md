@@ -102,6 +102,11 @@ legutóbb betöltött programot: katalógusprogramnál a nevét teszi a linkbe, 
 saját fájlnál (tömörítve kb. 45 KB-ig) magát a fájlt. Kézzel is írható link:
 `#m=tvc64-12&url=https://…/jatek.cas` – a megadott címről tölti le a programot
 (ha a szerver engedi a letöltést más oldalról).
+Katalógusprogram: `#p=jatek.zip&t=Játék neve (64k+)` – a tvc.homeserver.hu
+programjai közül tölti be; a cím jelölői ((64k+), (DOS), (UPM), (256k++),
+(2dfx)) választják ki a gépet és a kártyákat, gép nélkül megadva pedig TVC-n
+indul akkor is, ha legutóbb Enterprise volt kiválasztva. Így indítják a
+játékokat a tvc.homeserver.hu programoldalai.
 
 ### Beállítások exportálása / importálása
 
