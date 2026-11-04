@@ -118,6 +118,12 @@ pendrive és a TVC256k++ flash tartalma is bekerül (a ROM-ok nem). Az
 „Importálás…” egy másik gépen vagy böngészőben visszaállítja mindezt (az oldal
 újratöltődik).
 
+### Világos / sötét téma
+
+A nyelvválasztó melletti gomb vált a témák között: 🌓 automatikus (a gép vagy a
+telefon beállítását követi), ☀️ világos, 🌙 sötét (éjszakai mód). A választás
+megmarad.
+
 ### Nyelvek
 
 Az oldal magyarul, angolul, németül és ukránul használható: a fejlécben lévő
