@@ -69,6 +69,16 @@ letöltését külön kell betölteni.
   kártyára kerülő másolatban állítódik be a `LOAD` előtt; az eredeti fájl nem
   változik. Lemezképről (VT-DOS, UPM) betöltött programokra nem vonatkozik.
 
+### Vezérlés programból, MI-knek
+
+Az oldal programból is vezérelhető a `window.ep` objektumon keresztül: gép
+indítása, programok és ROM-ok betöltése, gépelés, a képernyő szövegének
+kiolvasása (EP: a karaktersorok; TVC: a ROM betűkészletével visszafejtve),
+megadott számú képkocka futtatása, a debugger teljes elérése és az állapot
+mentése / visszaállítása. Leírás (angolul, MI-knek és teszteknek):
+[docs/AUTOMATION.md](docs/AUTOMATION.md); röviden az oldal `llms.txt`
+fájljában is.
+
 ### Telepítés alkalmazásként, offline használat
 
 Az oldal telepíthető (PWA): Chrome/Edge alatt a „Telepítés” gomb (vagy a
