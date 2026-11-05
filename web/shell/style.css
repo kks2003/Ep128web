@@ -277,6 +277,11 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 .group button { padding: 3px 9px; min-height: 28px; font-size: 13px; }
 
 #help li { margin-bottom: 6px; }
+#help h4 { margin: 14px 0 4px; font-size: 14px; }
+#help .keys-h { margin: 10px 0 3px; font-weight: 600; font-size: 13px; }
+#help table.keys { border-collapse: collapse; font-size: 13px; }
+#help table.keys td { padding: 2px 12px 2px 0; vertical-align: top; }
+#help table.keys kbd { white-space: nowrap; font: 12px ui-monospace, Menlo, Consolas, monospace; background: var(--button); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; }
 .small { font-size: 12px; color: var(--muted); }
 #overlay .small { color: #c4c4bc; }
 
