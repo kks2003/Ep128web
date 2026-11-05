@@ -12,25 +12,25 @@
     if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   } catch (e) { }
 </script>
-<link rel="stylesheet" href="style.css?v=202611051525-a6674f5">
+<link rel="stylesheet" href="style.css?v=202611051705-c36eef5">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <meta name="theme-color" content="#1b1f45">
-<meta name="build" content="202611051525-a6674f5">
+<meta name="build" content="202611051705-c36eef5">
 </head>
 <body>
 <header id="bar">
   <button id="menu-toggle" aria-label="Menü" aria-expanded="false">☰</button>
   <nav id="menus">
     <div class="menu"><button class="menu-btn">Fájl</button><div class="drop">
-      <label class="file">Fájl betöltése…
+      <label class="file">Fájl betöltése… <kbd>Alt+L</kbd>
       <input type="file" id="file-any" multiple>
     </label>
       <button data-act="tab:catalog" data-tvc>Programkatalógus</button>
       <hr>
-      <button id="btn-snap" title="Pillanatkép mentése (.ep128s)">Állapot mentése</button>
-      <button data-act="tb-qs">Gyorsmentés és visszatekerés…</button>
+      <button id="btn-snap" title="Pillanatkép mentése (.ep128s)">Állapot mentése <kbd>Alt+S</kbd></button>
+      <button data-act="tb-qs">Gyorsmentés és visszatekerés… <kbd>Alt+1…4 / 5…8</kbd></button>
       <hr>
       <button data-act="cfg-export">Beállítások exportálása</button>
       <button data-act="cfg-import">Beállítások importálása…</button>
@@ -39,9 +39,9 @@
       <label class="sel item">Gép
         <select id="machine"></select>
       </label>
-      <button id="btn-reset" title="Meleg reset (F11)">Reset</button>
-      <button id="btn-cold" title="Hideg reset / bekapcsolás (Shift+F11)">Hideg reset</button>
-      <button data-act="btn-pause">Szünet / folytatás</button>
+      <button id="btn-reset" title="Meleg reset (F11)">Reset <kbd>F11</kbd></button>
+      <button id="btn-cold" title="Hideg reset / bekapcsolás (Shift+F11)">Hideg reset <kbd>Shift+F11</kbd></button>
+      <button data-act="btn-pause">Szünet / folytatás <kbd>Pause, F9</kbd></button>
       <hr>
       <label class="sel item">Sebesség
         <select id="speed" title="Sebesség (a hang csak 100%-on szól)" aria-label="Sebesség">
@@ -49,7 +49,7 @@
       <option value="2">200%</option><option value="4">400%</option>
     </select>
       </label>
-      <button data-act="btn-turbo">Turbó</button>
+      <button data-act="btn-turbo">Turbó <kbd>F12</kbd></button>
       <hr>
       <label class="item check" data-tvc title="A betöltött programok akkor is elindulnak, ha a fejlécükben nincs AutoRun jelzés"><input type="checkbox" id="tvc-autorun"> Automatikus indítás (TVC)</label>
     </div></div>
@@ -71,7 +71,10 @@
       <button class="radio" data-layout="below">A képernyő alatt</button>
       <button class="radio" data-layout="side">A képernyő mellett</button>
       <hr>
-      <button data-act="tb-full">Teljes képernyő</button>
+      <button data-act="tb-full">Teljes képernyő <kbd>F10</kbd></button>
+      <div class="head">Teljes képernyőn a kép</div>
+      <button class="radio" data-fsfit="keep">Arányos</button>
+      <button class="radio" data-fsfit="fill">Kitöltés (torzítva)</button>
       <button data-act="tb-kbd">Képernyő-billentyűzet</button>
       <button data-act="tb-joy">Érintős joystick</button>
       <button data-act="tb-text">Szöveg beírása</button>
@@ -82,8 +85,8 @@
       </label>
     </div></div>
     <div class="menu"><button class="menu-btn">Felvétel</button><div class="drop">
-      <button id="btn-shot" title="A képernyő mentése képként (.png)">📷 Kép</button>
-      <button id="btn-video" title="Videó felvétele hanggal; újra megnyomva leáll és letöltődik">● Videó</button>
+      <button id="btn-shot" title="A képernyő mentése képként (.png)">📷 Kép <kbd>Alt+P</kbd></button>
+      <button id="btn-video" title="Videó felvétele hanggal; újra megnyomva leáll és letöltődik (Alt+V)">● Videó</button>
       <label class="sel item" id="video-fmt-row">Videó formátuma
         <select id="video-fmt" title="A videó formátuma" aria-label="A videó formátuma" hidden>
       <option value="mp4">MP4</option>
@@ -94,7 +97,7 @@
       <button id="btn-demo" title="Demó felvétele (.ep128d): a gép állapota, majd a billentyűk és az egér; újra megnyomva leáll és letöltődik">● Demó</button>
     </div></div>
     <div class="menu"><button class="menu-btn">Eszközök</button><div class="drop">
-      <button id="btn-debug" title="Debugger: regiszterek, disassembly, memória, töréspontok (Alt+D: a debuggerre, Alt+E: vissza az emulátorra)">🐞 Debugger</button>
+      <button id="btn-debug" title="Debugger: regiszterek, disassembly, memória, töréspontok (Alt+D: a debuggerre, Alt+E: vissza az emulátorra)">🐞 Debugger <kbd>Alt+D</kbd></button>
       <button id="btn-share" title="Megosztható link másolása: a gép, a kártyák és a betöltött program (kis programnál magában a linkben)">🔗 Link</button>
       <button data-act="btn-mouse" data-needs="btn-mouse">🖱 Egér befogása</button>
       <button id="btn-install" hidden title="Telepítés alkalmazásként (offline is működik)">Telepítés</button>
@@ -104,16 +107,16 @@
       <a class="item" href="https://github.com/kks2003/Ep128web" target="_blank" rel="noopener">Ep128web a GitHubon</a>
       <a class="item" href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu (Varga István)</a>
       <hr>
-      <div class="about"><b>Enterprise 128 · TVC</b><span>ep128emu · web</span><small id="build" title="Fordítás ideje és verziója">2026.11.05 16:25 · a6674f5</small></div>
+      <div class="about"><b>Enterprise 128 · TVC</b><span>ep128emu · web</span><small id="build" title="Fordítás ideje és verziója">2026.11.05 18:05 · c36eef5</small></div>
     </div></div>
   </nav>
   <div id="quick">
     <button id="rec-ind" hidden title="Felvétel leállítása"></button>
-    <button id="btn-pause" title="Szünet (Pause)">Szünet</button>
+    <button id="btn-pause" title="Szünet / folytatás (Pause, F9)">Szünet</button>
     <button id="btn-turbo" title="Gyorsítás (F12)">Turbó</button>
     <label class="file" for="file-any" title="Fájl betöltése">📂</label>
     <span class="vol">
-      <button id="btn-mute" class="mute" title="Némítás" aria-pressed="false">🔊</button>
+      <button id="btn-mute" class="mute" title="Némítás (Alt+M)" aria-pressed="false">🔊</button>
       <input type="range" id="volume" min="0" max="100" value="70" title="Hangerő" aria-label="Hangerő">
     </span>
   </div>
@@ -191,10 +194,10 @@
     <button id="tb-kbd" aria-pressed="false">⌨ Billentyűzet</button>
     <button id="tb-joy" aria-pressed="false">🕹 Joystick</button>
     <button id="tb-text" aria-pressed="false">Aa Szöveg beírása</button>
-    <button id="btn-load" title='load"*" + Enter (TVC)' hidden>load"*"</button>
-    <button id="btn-run" title='RUN + Enter'>Run</button>
+    <button id="btn-load" title='load"*" + Enter (TVC, Alt+T)' hidden>load"*"</button>
+    <button id="btn-run" title='RUN + Enter (Alt+R)'>Run</button>
     <button id="btn-mouse" title="Egér az Enterprise-nak, ill. a TVC256k++ kártyának (kilépés: Esc)" hidden>🖱</button>
-    <button id="tb-full" title="Teljes képernyő">⛶</button>
+    <button id="tb-full" title="Teljes képernyő (F10)">⛶</button>
     <button id="tb-qs" aria-pressed="false" title="Gyorsmentés és visszatekerés panel">💾</button>
   </div>
 
@@ -228,7 +231,7 @@
       <div id="qs-slots"></div>
       <div class="qs-rw">
         <label title="Az utolsó ~30 másodperc megőrzése másodpercenként egy pillanatképben"><input type="checkbox" id="rw-on"> Visszatekerés</label>
-        <button id="rw-back" title="Vissza 5 másodpercet (többször is nyomható)">⏪ 5 mp</button>
+        <button id="rw-back" title="Vissza 5 másodpercet, többször is nyomható (Alt+B)">⏪ 5 mp</button>
         <span class="name" id="rw-note"></span>
       </div>
     </div>
@@ -605,7 +608,7 @@
         <code>LOAD</code> parancsot. Mentés kazettára: „Üres kazetta” → „● Felvétel”
         → BASIC-ben <code>SAVE "név"</code>, végül „Letöltés”.</li>
       <li>Enterprise-billentyűk: Esc = ESC, Backspace = ERASE, Del = DEL, Ins = INS,
-        End vagy Pause = STOP, Home = HOLD, Alt = ALT, F1–F8 = funkciógombok,
+        End = STOP, Home = HOLD, Alt = ALT, F1–F8 = funkciógombok,
         CapsLock = LOCK. A <code>:</code> az <code>'</code> helyén, a
         <code>@</code> a <code>`</code> helyén, a <code>^</code> az <code>=</code> helyén van.</li>
       <li><b>Videoton TVC</b>: a <code>.cas</code> programok a FILE: eszközre kerülnek, és
@@ -620,17 +623,17 @@
         (a Shift, Ctrl és Alt egy leütésre ragad), az érintős joystick (a Joystick panel szerint,
         vagy kurzorbillentyűk + Space), és a szövegbeírás a telefon saját billentyűzetével.
         A ⛶ gombbal a kép és a vezérlők együtt kerülnek teljes képernyőre.</li>
-      <li>F11 = reset, Shift+F11 = hideg reset, F12 = turbó, Alt+D = a debuggerre, Alt+E = vissza az emulátorra.</li>
     </ul>
+    <div id="help-keys" data-i18n-html="keys"><h4>Gyorsbillentyűk</h4><p class="keys-h">Emulátor</p><table class="keys"><tr><td><kbd>F11</kbd></td><td>Reset</td></tr><tr><td><kbd>Shift+F11</kbd></td><td>Hideg reset (bekapcsolás)</td></tr><tr><td><kbd>F12</kbd></td><td>Turbó be/ki</td></tr><tr><td><kbd>Pause, F9</kbd></td><td>Szünet / folytatás</td></tr><tr><td><kbd>F10, Alt+Enter</kbd></td><td>Teljes képernyő (kilépés még: Esc)</td></tr><tr><td><kbd>Alt+L</kbd></td><td>Fájl betöltése</td></tr><tr><td><kbd>Alt+S</kbd></td><td>Állapot mentése (.ep128s)</td></tr><tr><td><kbd>Alt+1 … Alt+4</kbd></td><td>Gyorsmentés az 1–4. helyre</td></tr><tr><td><kbd>Alt+5 … Alt+8</kbd></td><td>Az 1–4. gyorsmentés betöltése</td></tr><tr><td><kbd>Alt+B</kbd></td><td>Visszatekerés 5 másodpercet (ha be van kapcsolva)</td></tr><tr><td><kbd>Alt+P</kbd></td><td>Képernyőkép (.png)</td></tr><tr><td><kbd>Alt+V</kbd></td><td>Videófelvétel indítása / leállítása</td></tr><tr><td><kbd>Alt+M</kbd></td><td>Némítás</td></tr><tr><td><kbd>Alt+R</kbd></td><td>RUN + Enter</td></tr><tr><td><kbd>Alt+T</kbd></td><td>load&quot;*&quot; + Enter (TVC)</td></tr><tr><td><kbd>Alt+D</kbd></td><td>A debuggerre (megnyitja)</td></tr><tr><td><kbd>Alt+E</kbd></td><td>Vissza az emulátor képére</td></tr><tr><td><kbd>Esc</kbd></td><td>Menü bezárása; egér befogásának vége</td></tr></table><p class="keys-h">Debugger (ha benne van a fókusz)</p><table class="keys"><tr><td><kbd>F5</kbd></td><td>Folytatás</td></tr><tr><td><kbd>F11</kbd></td><td>Egy utasítás</td></tr><tr><td><kbd>F10</kbd></td><td>Átlépés (CALL, RST, DJNZ, LDIR egészben)</td></tr><tr><td><kbd>F4</kbd></td><td>Futás a kijelölt sorig</td></tr><tr><td><kbd>F9</kbd></td><td>Töréspont a kijelölt soron be/ki</td></tr><tr><td><kbd>↑ / ↓</kbd></td><td>Monitor: az előző parancsok</td></tr></table><p class="keys-h">A gépek billentyűi</p><table class="keys"><tr><td><kbd>Esc</kbd></td><td>ESC</td></tr><tr><td><kbd>End</kbd></td><td>STOP (TVC: Ctrl+Esc)</td></tr><tr><td><kbd>Backspace</kbd></td><td>ERASE (EP) / törlés (TVC)</td></tr><tr><td><kbd>Del, Ins, Home</kbd></td><td>DEL, INS, HOLD (EP)</td></tr><tr><td><kbd>Alt</kbd></td><td>ALT</td></tr><tr><td><kbd>F1 … F8</kbd></td><td>Funkcióbillentyűk (EP)</td></tr><tr><td><kbd>CapsLock</kbd></td><td>LOCK</td></tr></table><p class="keys-h">Joystick (a Joystick fülön állítható, melyik joystickot hajtja)</p><table class="keys"><tr><td><kbd>Num 8/4/6/2, Num 0</kbd></td><td>Irányok, tűz</td></tr><tr><td><kbd>← ↑ → ↓, jobb Ctrl</kbd></td><td>Irányok, tűz</td></tr><tr><td><kbd>W A S D, Space</kbd></td><td>Irányok, tűz</td></tr></table><p class="keys-h">Szöveg beírása mező</p><table class="keys"><tr><td><kbd>Enter</kbd></td><td>Beírja a szöveget + Enter</td></tr><tr><td><kbd>Shift+Enter</kbd></td><td>Új sor (több soros szöveg)</td></tr></table></div>
     <p class="small" data-i18n-html="helpcore">Az emulációs mag az <a href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu</a>
     (Varga István, GPL v2) változatlan forráskódja, WebAssemblyre fordítva.</p>
   </dialog>
 
-<script src="i18n-strings.js?v=202611051525-a6674f5"></script>
-<script src="i18n.js?v=202611051525-a6674f5"></script>
-<script src="ep128emu.js?v=202611051525-a6674f5"></script>
-<script src="screenfx.js?v=202611051525-a6674f5"></script>
-<script src="ep128.js?v=202611051525-a6674f5"></script>
-<script src="ui.js?v=202611051525-a6674f5"></script>
+<script src="i18n-strings.js?v=202611051705-c36eef5"></script>
+<script src="i18n.js?v=202611051705-c36eef5"></script>
+<script src="ep128emu.js?v=202611051705-c36eef5"></script>
+<script src="screenfx.js?v=202611051705-c36eef5"></script>
+<script src="ep128.js?v=202611051705-c36eef5"></script>
+<script src="ui.js?v=202611051705-c36eef5"></script>
 </body>
 </html>

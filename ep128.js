@@ -119,7 +119,7 @@
     Backspace: 0x2E,
     KeyJ: 0x30, KeyK: 0x32, Semicolon: 0x33, KeyL: 0x34, Quote: 0x35,
     BracketRight: 0x36,
-    End: 0x38, Pause: 0x38, ArrowDown: 0x39, ArrowRight: 0x3A, ArrowUp: 0x3B,
+    End: 0x38, ArrowDown: 0x39, ArrowRight: 0x3A, ArrowUp: 0x3B,
     Home: 0x3C, ArrowLeft: 0x3D, Enter: 0x3E, NumpadEnter: 0x3E,
     AltLeft: 0x3F, AltRight: 0x3F,
     KeyM: 0x40, Delete: 0x41, Comma: 0x42, Slash: 0x43, Period: 0x44,
@@ -127,11 +127,11 @@
     KeyI: 0x48, KeyO: 0x4A, Backquote: 0x4B, KeyP: 0x4C, BracketLeft: 0x4D,
   };
   const KEYMAP_TVC = Object.assign({}, KEYMAP, {
-    Escape: 0x38, IntlBackslash: 0x1F, End: undefined, Pause: undefined
+    Escape: 0x38, IntlBackslash: 0x1F, End: undefined
   });
-  // TVC: End and Pause press CTRL+ESC, the STOP of the TVC (Ctrl+Esc itself
+  // TVC: End presses CTRL+ESC, the STOP of the TVC (Ctrl+Esc itself
   // is taken by Windows for the Start menu)
-  const TVC_STOP_KEYS = new Set(['End', 'Pause']);
+  const TVC_STOP_KEYS = new Set(['End']);
   const TVC_STOP = [0x0F, 0x38];
 
   // --------------------------------------------------------------------------
@@ -1190,9 +1190,12 @@ registerProcessor('ep-output', EPOutput);
   const keyPressTime = new Map();
   let nextKeyEventUs = 0;
   let keyedSinceReset = false;  // TVC BASIC ignores the first key after reset
+  // Shift, Ctrl, Alt: they do not count as that first key (e.g. the Alt of
+  // Alt+R, which then types RUN)
+  const MODIFIER_KEYS = new Set([0x07, 0x45, 0x0F, 0x3F]);
 
   function keyDown(code) {
-    keyedSinceReset = true;
+    if (!MODIFIER_KEYS.has(code)) keyedSinceReset = true;
     keyQueue.push([code, 1]);
     processKeyQueue();
   }
@@ -1246,12 +1249,60 @@ registerProcessor('ep-output', EPOutput);
     return (machine && machine.type === 1 ? KEYMAP_TVC : KEYMAP)[e.code];
   }
 
+  // shortcuts of the page (the machine's own keys stay with the machine):
+  // Pause / F9 pause, F10 / Alt+Enter full screen, Alt+L load, Alt+S save
+  // state, Alt+P picture, Alt+V video, Alt+M mute, Alt+B rewind 5 s, Alt+R
+  // RUN, Alt+T load"*" (TVC), Alt+1..4 quick save to slot 1..4, Alt+5..8
+  // load slot 1..4 (not in text fields; the debugger has its own F keys)
+  const ALT_ACTIONS = {
+    Enter: () => toggleFullscreen(),
+    KeyL: () => $('file-any').click(),
+    KeyS: () => $('btn-snap').click(),
+    KeyP: () => $('btn-shot').click(),
+    KeyV: () => $('btn-video').click(),
+    KeyR: () => $('btn-run').click(),
+    KeyT: () => { if (machine && machine.type === 1) $('btn-load').click(); },
+    KeyM: () => toggleMute(),
+    KeyB: () => $('rw-back').click()
+  };
+  window.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || isTextInput(e.target)) return;
+    let act = null;
+    if (!e.altKey && !e.shiftKey && (e.code === 'F9' || e.code === 'F10' || e.code === 'Pause')) {
+      if (e.code !== 'Pause' && e.target.closest && e.target.closest('#debugger')) return;
+      act = e.code === 'F10' ? () => toggleFullscreen() : () => $('btn-pause').click();
+    } else if (e.altKey) {
+      const d = /^Digit([1-8])$/.exec(e.code);
+      if (d) act = +d[1] <= QS_SLOTS ? () => qsSave(+d[1] - 1) : () => qsLoad(+d[1] - 1 - QS_SLOTS);
+      else act = ALT_ACTIONS[e.code];
+    }
+    if (!act) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    swallowKeyUp(e);
+    if (e.altKey) releaseAllKeys();     // the Alt key went to the machine
+    if (!e.repeat) act();
+  }, true);
+  // the release of a shortcut's keys must not reach the machine: it would
+  // release the keys of a text being typed (e.g. Alt+R: RUN)
+  const swallowedUp = new Set();
+  function swallowKeyUp(e) {
+    swallowedUp.add(e.code);
+    if (e.altKey) { swallowedUp.add('AltLeft'); swallowedUp.add('AltRight'); }
+  }
+  window.addEventListener('keyup', (e) => {
+    if (!swallowedUp.has(e.code)) return;
+    swallowedUp.delete(e.code);
+    e.stopImmediatePropagation();
+  }, true);
+
   // Alt+D: to the debugger, Alt+E: to the emulator screen (also from the
   // debugger's input fields; AltGr, which is Ctrl+Alt, is left alone)
   window.addEventListener('keydown', (e) => {
     if (!e.altKey || e.ctrlKey || e.metaKey || (e.code !== 'KeyD' && e.code !== 'KeyE')) return;
     e.preventDefault();
     e.stopImmediatePropagation();
+    swallowKeyUp(e);
     releaseAllKeys();                   // the Alt key went to the machine
     if (e.repeat) return;
     if (e.code === 'KeyD') {
