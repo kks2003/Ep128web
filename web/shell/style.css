@@ -607,6 +607,10 @@ body.side #layout { max-width: none; grid-template-columns: minmax(0, 1fr) minma
 body.side #panel { position: sticky; top: 52px; max-height: calc(100vh - 62px); overflow: auto; }
 body.side #touch-bar, body.side #status { justify-content: center; }
 #left { min-width: 0; }
+/* the rows under the screen line up with the screen (ui.js sets --screen-w) */
+#play:not(:fullscreen) > #touch-bar, #play:not(:fullscreen) > #typer, #left > #status, #left > #qs-group {
+  max-width: var(--screen-w, 100%); margin-left: auto; margin-right: auto;
+}
 #left > #qs-group { margin-top: 6px; }
 #panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
 #panel .tabs {

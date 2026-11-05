@@ -103,6 +103,8 @@
 
   // --- the menu bar starts where the emulator's screen does (wide windows) ---
   function alignBar() {
+    // the rows under the screen (buttons, status, quick saves) are as wide as the screen
+    $('left').style.setProperty('--screen-w', $('screen-wrap').getBoundingClientRect().width + 'px');
     if (!wide()) { bar.style.paddingLeft = ''; return; }
     const x = Math.round($('screen-wrap').getBoundingClientRect().left);
     bar.style.paddingLeft = Math.max(12, x) + 'px';
