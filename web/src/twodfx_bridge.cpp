@@ -12,7 +12,7 @@ namespace TwoDfx {
 
   static twodfx_emu *dev = (twodfx_emu *) 0;
   static int        devMachine = -1;
-  static unsigned   rawLine = 0U;
+  static int        rawLine = 0;   // negative: lines before the card's line 0
   static uint8_t    ovIndex[768];
   static uint8_t    ovColour[768];
   static uint8_t    ovCoverage[768];
@@ -66,7 +66,7 @@ namespace TwoDfx {
     if (!dev)
       return;
     twodfx_emu_vsync(dev);
-    rawLine = unsigned(firstLine);
+    rawLine = firstLine;
   }
 
   void line(const uint8_t *palette, int rawX0, int activeStart, int activeEnd,
@@ -75,6 +75,10 @@ namespace TwoDfx {
     ovValid = false;
     if (!dev)
       return;
+    if (rawLine < 0) {
+      rawLine++;                        // before the card's line 0
+      return;
+    }
     twodfx_emu_hsync(dev, uint16_t(rawLine));
     if (activeStart < 0)
       activeStart = 0;
@@ -93,7 +97,7 @@ namespace TwoDfx {
       std::memset(ovCoverage, 0, shift);
       rawX0 = 0;
     }
-    size_t  n = twodfx_emu_overlay_raw_line(dev, unsigned(rawX0), rawLine,
+    size_t  n = twodfx_emu_overlay_raw_line(dev, unsigned(rawX0), unsigned(rawLine),
                                             ovIndex + shift, ovCoverage + shift,
                                             768 - shift);
     rawLine++;
