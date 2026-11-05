@@ -1619,7 +1619,8 @@ registerProcessor('ep-output', EPOutput);
   // --- classification of loaded files ---
 
   function extOf(name) {
-    return (name.match(/\.([^.]+)$/) || ['', ''])[1].toLowerCase();
+    const e = (name.match(/\.([^.]+)$/) || ['', ''])[1].toLowerCase();
+    return e === 'zi' ? 'zip' : e;     // .zi: a ZIP file too (as some TVC sites name them)
   }
 
   function fileKind(f) {
@@ -2263,7 +2264,7 @@ registerProcessor('ep-output', EPOutput);
         open.textContent = '📂';
         const inp = document.createElement('input');
         inp.type = 'file';
-        inp.accept = '.img,.dsk,.zip';
+        inp.accept = '.img,.dsk,.zip,.zi';
         inp.onchange = diskInput((f) => (d ? loadDiskFileB(f, i) : loadDiskFile(f, i)));
         open.append(inp);
         const dl = document.createElement('button');
@@ -2499,9 +2500,27 @@ registerProcessor('ep-output', EPOutput);
     else if (!(st & 1)) { demoRec = false; $('btn-demo').classList.remove('on'); }
   }
 
+  // TVC "Automatikus indítás" (Gép menu): the program header gets the AutoRun
+  // flag (FFh) before LOAD, so that programs without it start too. Only the
+  // copy on the FILE: device / the card is changed, never the user's file.
+  function tvcForceAutorun(path) {
+    try { if (localStorage.getItem('ep128web.tvcAutorun') !== '1') return; } catch (e) { return; }
+    let b;
+    try { b = M.FS.readFile(path); } catch (e) { return; }
+    // the 16-byte program header (00h, 01h = program, length, AutoRun) after
+    // the 128-byte CAS header (11h / 01h), or at the start of the file
+    let off = -1;
+    if (b.length >= 144 && (b[0] === 0x11 || b[0] === 0x01) && b[128] === 0 && b[129] === 1) off = 128;
+    else if (b.length >= 16 && b[0] === 0 && b[1] === 1) off = 0;
+    if (off < 0 || b[off + 4] === 0xFF) return;
+    b[off + 4] = 0xFF;
+    M.FS.writeFile(path, b);
+  }
+
   function startProgram(name) {
     let cmd;
     if (machine.type === 1 && tvcSlotOf(SLOT_CARD256) >= 0 && extOf(name) === 'cas') {
+      tvcForceAutorun('/files/' + name);
       if (tapeName) {
         api.setTape('');
         tapeName = '';
@@ -2521,6 +2540,7 @@ registerProcessor('ep-output', EPOutput);
         $('tape-name').textContent = T('nincs kazetta');
       }
       setTvcRedirect(tvcRedirectFor(SLOT_FILEIO));
+      tvcForceAutorun('/files/' + name);     // before the copy below, if one is made
       let base = name.replace(/\.cas$/i, '');
       if (!isTypable(base, 1)) {
         // the name cannot be typed: start it through a copy with a simple name
@@ -7485,8 +7505,8 @@ ep.log('CTRL+ESC megnyomva');`)
     let cur = document.documentElement.dataset.theme || 'auto';
     const show = () => {
       const t = THEMES.find((x) => x.id === cur) || THEMES[0];
-      btn.textContent = t.icon;
-      btn.title = T(t.title) + ' – ' + T('kattintásra vált');
+      btn.textContent = t.icon + ' ' + T(t.title);    // in the View menu
+      btn.title = T('kattintásra vált');
       const dark = cur === 'dark' || (cur === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
       const meta = document.querySelector('meta[name=theme-color]');
       if (meta) meta.content = dark ? '#161615' : '#1b1f45';

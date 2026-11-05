@@ -18,6 +18,8 @@ if [ -d patches ]; then
       if git -C "$E" apply --check "../$p" >/dev/null 2>&1; then
         echo "Applying patch: $p"
         git -C "$E" apply "../$p"
+      else
+        echo "WARNING: patch does not apply (skipped): $p" >&2
       fi
     fi
   done

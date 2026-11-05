@@ -21,7 +21,7 @@ index 4727ec4..5ef8381 100644
 @@ -713,6 +715,8 @@ namespace Ep128 {
    {
      if (newState)
-       TwoDfx::vsync(0);
+       TwoDfx::vsync(-5);  // the card's Y=38 is the first IS-BASIC line (ruler: OUT 248,80: OUT 249,1: OUT 248,209)
 +    if (newState)
 +      WebDebug::videoFrame();
      if (vm.getIsDisplayEnabled())
