@@ -1,0 +1,19 @@
+{
+  "name": "ep128web-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Ep128web: lets AI agents run and debug the Enterprise 128 / Videoton TVC emulator",
+  "type": "module",
+  "bin": { "ep128web-mcp": "server.js" },
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js"
+  },
+  "engines": { "node": ">=18" },
+  "license": "GPL-2.0-or-later",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "playwright": "^1.50.0",
+    "zod": "^3.25.0"
+  }
+}

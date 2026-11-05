@@ -7,6 +7,7 @@
 > ep128emu monitor commands) and saves / restores the machine state.
 
 - [Automation API (window.ep)](https://github.com/kks2003/Ep128web/blob/main/docs/AUTOMATION.md): every function with examples (Playwright, browser console, debugger scripts)
+- [MCP server](https://github.com/kks2003/Ep128web/blob/main/mcp/README.md): the same as MCP tools for Claude Desktop, Claude Code and other MCP clients
 - [README (Hungarian)](https://github.com/kks2003/Ep128web/blob/main/README.md): features, file types, keyboard shortcuts, building
 
 ## Essentials
