@@ -1619,7 +1619,8 @@ registerProcessor('ep-output', EPOutput);
   // --- classification of loaded files ---
 
   function extOf(name) {
-    return (name.match(/\.([^.]+)$/) || ['', ''])[1].toLowerCase();
+    const e = (name.match(/\.([^.]+)$/) || ['', ''])[1].toLowerCase();
+    return e === 'zi' ? 'zip' : e;     // .zi: a ZIP file too (as some TVC sites name them)
   }
 
   function fileKind(f) {
@@ -2263,7 +2264,7 @@ registerProcessor('ep-output', EPOutput);
         open.textContent = '📂';
         const inp = document.createElement('input');
         inp.type = 'file';
-        inp.accept = '.img,.dsk,.zip';
+        inp.accept = '.img,.dsk,.zip,.zi';
         inp.onchange = diskInput((f) => (d ? loadDiskFileB(f, i) : loadDiskFile(f, i)));
         open.append(inp);
         const dl = document.createElement('button');
