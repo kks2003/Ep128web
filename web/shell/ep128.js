@@ -7485,8 +7485,8 @@ ep.log('CTRL+ESC megnyomva');`)
     let cur = document.documentElement.dataset.theme || 'auto';
     const show = () => {
       const t = THEMES.find((x) => x.id === cur) || THEMES[0];
-      btn.textContent = t.icon;
-      btn.title = T(t.title) + ' – ' + T('kattintásra vált');
+      btn.textContent = t.icon + ' ' + T(t.title);    // in the View menu
+      btn.title = T('kattintásra vált');
       const dark = cur === 'dark' || (cur === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
       const meta = document.querySelector('meta[name=theme-color]');
       if (meta) meta.content = dark ? '#161615' : '#1b1f45';

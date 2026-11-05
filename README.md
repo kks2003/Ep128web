@@ -16,7 +16,8 @@ került egy kis webes frontend (canvas + Web Audio).
    csomagot ([enterpriseforever.com](https://enterpriseforever.com/letoltesek-downloads/egyeb-misc/msg61025/)
    vagy [ep128.hu](http://ep128.hu/Emu/ep128emu_roms-2.0.11.bin)), és húzd rá az
    oldalra. A böngésző eltárolja (IndexedDB), legközelebb már nem kell.
-4. Programot betölteni a „Fájl betöltése…” gombbal vagy a képre húzással lehet,
+4. Programot betölteni a Fájl menü „Fájl betöltése…” pontjával, a 📂 gombbal
+   vagy a képre húzással lehet,
    egyszerre több fájlt vagy egy `.zip` archívumot is:
 
 TVC-játékok a [tvc.hu programletöltései](http://www.tvc.hu/html/programok.html)
@@ -34,6 +35,23 @@ letöltését külön kell betölteni.
 | `.zip`, több fájl | minden fájl a `FILE:` eszközre kerül; ha több indítható program van, választani lehet |
 | `.ep128s` / `.ep128d` | ep128emu pillanatkép / demó |
 | `.bin` (ROM-csomag), `.rom` | ROM-ok telepítése |
+
+### A felület
+
+- **Menüsor** (asztali programokhoz hasonlóan): **Fájl** (betöltés, programkatalógus,
+  állapot mentése, gyorsmentés, beállítások exportja/importja), **Gép** (gépválasztás,
+  reset, hideg reset, szünet, sebesség, turbó, TVC: automatikus indítás), **Nézet**
+  (képernyő-effekt, a panel helye, teljes képernyő, képernyő-billentyűzet, érintős
+  joystick, szövegbeírás, téma, nyelv), **Felvétel** (kép, videó, hang, demó),
+  **Eszközök** (debugger, megosztható link, egér, telepítés), **Súgó**. Mellette a
+  gyorsgombok: szünet, turbó, 📂 betöltés, hangerő; felvétel közben piros jelzés az
+  idővel, rákattintva leáll. Telefonon a menük a ☰ gomb alatt vannak.
+- **Panel** fülekkel: Magnó · Lemezek (A:, B: három-három hellyel, FILE:, USB
+  pendrive) · Bővítők (TVC bővítőportok, cartridge, 2dfx) · Joystick · Katalógus
+  (csak TVC-n) · Beállítások. A panel alapból a képernyő alatt van, a Nézet →
+  Panel menüben a képernyő mellé tehető; a választás és az utolsó fül megmarad.
+- A **debugger** (Eszközök → Debugger, Alt+D) a panel alatt nyílik, teljes
+  szélességben; a **súgó** külön ablakban (Súgó menü).
 
 ### Telepítés alkalmazásként, offline használat
 
