@@ -1720,7 +1720,7 @@ registerProcessor('ep-output', EPOutput);
       db.put('pkg', f.bytes);
       setMessage(n + T(' ROM kicsomagolva'));
     }
-    if (!ready || machine && missingROMs(machine).length === 0)
+    if (machine && (!ready || missingROMs(machine).length === 0))
       applyMachine(machine);
   }
 
@@ -2358,7 +2358,7 @@ registerProcessor('ep-output', EPOutput);
         }
         load({ name, bytes });
       } catch (err) {
-        setMessage(StringT(T(String(err.message || err))), true);
+        setMessage(T(String(err.message || err)), true);
       }
       canvas.focus({ preventScroll: true });
     };
@@ -2727,7 +2727,7 @@ registerProcessor('ep-output', EPOutput);
       processLoadedFiles(files);
     } catch (e) {
       console.error(e);
-      setMessage(StringT(T(String(e.message || e))), true);
+      setMessage(T(String(e.message || e)), true);
     }
     canvas.focus({ preventScroll: true });
   }
@@ -4165,7 +4165,7 @@ registerProcessor('ep-output', EPOutput);
         setMessage(T('FILE: eszközre másolva: ') + files.map((f) => f.name).join(', ') +
           (startable.length ? T(' (indítás: kattints a nevére)') : ''));
       } catch (err) {
-        setMessage(StringT(T(String(err.message || err))), true);
+        setMessage(T(String(err.message || err)), true);
       }
       canvas.focus({ preventScroll: true });
     };
@@ -6350,6 +6350,7 @@ registerProcessor('ep-output', EPOutput);
   const monHist = [];
   let monHistPos = 0;
   function monPrint(t) {
+    if (monCapture) monCapture.push(t);
     const out = $('dbg-mon-out');
     out.textContent += t + '\n';
     if (out.textContent.length > 60000) out.textContent = out.textContent.slice(-50000);
@@ -6619,6 +6620,122 @@ registerProcessor('ep-output', EPOutput);
     out.textContent += t + '\n';
     if (out.textContent.length > 40000) out.textContent = out.textContent.slice(-30000);
   }
+  // --- the screen's text, for programs and AIs (ep.screenText) ---
+  function memRead(addr, n, src) {
+    const out = new Uint8Array(n);
+    for (let o = 0; o < n; o += 4096) {
+      const k = Math.min(4096, n - o), p = api.dbgMem(src ? addr + o : (addr + o) & 0xFFFF, k, src || 0);
+      out.set(M.HEAPU8.subarray(p, p + k), o);
+    }
+    return out;
+  }
+  // Enterprise: the character rows of the NICK's line parameter table (the
+  // IS-BASIC / EXOS text screen is a CH64/CH128/CH256 entry per row)
+  function epScreenLines() {
+    const m = /Nick\s+80:\s*([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/.exec(api.dbgIoRegs());
+    if (!m) return [];
+    let a = (parseInt(m[3], 16) << 4) | ((parseInt(m[4], 16) & 0x0F) << 12);
+    const lines = [];
+    for (let n = 0; n < 256; n++) {
+      const b = memRead(0x3F0000 + a, 16, 1);
+      const mode = (b[1] >> 1) & 7, lm = b[2] & 63, rm = b[3] & 63;
+      if (mode >= 3 && mode <= 5 && rm > lm) {
+        const mask = [0xFF, 0x7F, 0x3F][mode - 3];
+        const codes = memRead(0x3F0000 + (b[4] | b[5] << 8), rm - lm, 1);
+        lines.push(Array.from(codes, (c) => {
+          c &= mask;
+          return c >= 32 && c < 127 ? String.fromCharCode(c) : ' ';   // the cursor, graphics
+        }).join('').replace(/\s+$/, ''));
+      }
+      if (b[1] & 1) break;              // the last entry
+      a = (a + 16) & 0xFFFF;
+    }
+    return lines;
+  }
+  // TVC: it has no text mode, BASIC draws the characters into the picture;
+  // they are read back with the font of the system ROM, found by its 'V' and
+  // 'W': BASIC 1.x has 10 bytes per character, 2.x 9 (the cell's first line
+  // is then empty); characters are 8 x 10 pixels in all three graphics modes
+  let tvcFont = null;                   // { id, map: 10-line glyph -> character }
+  function tvcFontMap() {
+    if (tvcFont && tvcFont.id === machine.id) return tvcFont.map;
+    const V = [0x63, 0x63, 0x63, 0x63, 0x36, 0x1C, 0x08], W = [0x63, 0x63, 0x63, 0x6B, 0x6B, 0x3E, 0x14];
+    const at = (rom, i, pat) => pat.every((x, k) => rom[i + k] === x);
+    let map = null;
+    for (let seg = 0; seg < 4 && !map; seg++) {
+      const rom = memRead(seg * 16384, 16384, 1);
+      for (let i = 0; i + 20 <= rom.length && !map; i++) {
+        if (!at(rom, i, V)) continue;
+        // 10-byte entries: the glyph starts in their second byte
+        const stride = at(rom, i + 10, W) ? 10 : at(rom, i + 9, W) ? 9 : 0;
+        if (!stride) continue;
+        const base = i - (stride === 10 ? 1 : 0) - 0x56 * stride;
+        if (base + 0x20 * stride < 0) continue;
+        map = new Map();
+        for (let c = 0x20; c < 0x7F; c++) {
+          const e = base + c * stride, g = Array.from(rom.slice(e, e + stride));
+          const key = (stride === 9 ? [0, ...g] : g).join(',');
+          if (!map.has(key)) map.set(key, String.fromCharCode(c));
+        }
+      }
+    }
+    tvcFont = { id: machine.id, map };
+    return map;
+  }
+  function tvcScreenLines() {
+    const font = tvcFontMap();
+    if (!font) return [];
+    const io = api.dbgIoRegs();
+    const mode = +((/Mode:\s*(\d)/.exec(io) || [0, 1])[1]) & 3;
+    const vram = parseInt((/VRAM:\s*([0-9A-F]{2})/.exec(io) || [0, '00'])[1], 16);
+    const v = memRead((0xFC + (vram >> 4 & 3)) * 16384, 64 * 240, 1);
+    const ppb = [8, 4, 2, 2][mode], width = 64 * ppb;
+    const px = (line, x) => {
+      const b = v[line * 64 + ((x / ppb) | 0)], j = x % ppb;
+      if (ppb === 8) return b >> (7 - j) & 1;
+      if (ppb === 4) return (b >> (7 - j) & 1) | (b >> (3 - j) & 1) << 1;
+      return (j ? b : b >> 1) & 0x55;   // pixel 0: bits 7 5 3 1, pixel 1: bits 6 4 2 0
+    };
+    // the paper: the commonest colour of the picture
+    const count = new Map();
+    for (let l = 0; l < 240; l += 3) for (let x = 0; x < width; x += 3) { const c = px(l, x); count.set(c, (count.get(c) || 0) + 1); }
+    const paper = [...count].sort((p, q) => q[1] - p[1])[0][0];
+    const lines = [];
+    for (let row = 0; row < 24; row++) {
+      let t = '';
+      for (let col = 0; col < width / 8; col++) {
+        const g = [], inv = [];
+        for (let k = 0; k < 10; k++) {
+          let byte = 0;
+          for (let i = 0; i < 8; i++) if (px(row * 10 + k, col * 8 + i) !== paper) byte |= 0x80 >> i;
+          g.push(byte);
+          inv.push(byte ^ 0xFF);
+        }
+        t += font.get(g.join(',')) || font.get(inv.join(',')) || (g.some((x) => x) ? '?' : ' ');
+      }
+      lines.push(t.replace(/\s+$/, ''));
+    }
+    return lines;
+  }
+  function screenLines() {
+    if (!ready || !machine) return [];
+    const lines = machine.type === 1 ? tvcScreenLines() : epScreenLines();
+    while (lines.length && !lines[lines.length - 1]) lines.pop();
+    return lines;
+  }
+  // BASIC waits for a command: the last line with text is "ok" (EP and TVC)
+  function atPrompt() {
+    const t = screenLines().filter((l) => l.trim());
+    return !autoTask && t.length > 0 && /^ok$/i.test(t[t.length - 1].trim());
+  }
+  const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+  // the page has started (the module is loaded and a machine is chosen)
+  const pageStarted = async () => { while (!api || !machine) await sleepMs(50); };
+  // the TVC cards by name for ep.machine(id, {slots})
+  const EP_CARD_IDS = { empty: SLOT_EMPTY, vtdos: SLOT_VTDOS, upm: SLOT_UPM, file: SLOT_FILEIO,
+                        gamecard: 3, soundcard: 4, card256: SLOT_CARD256 };
+  let monCapture = null;                // ep.monitor(): the output of a command
+
   const ep = {
     hex,
     regs: () => dbgRegObj(),
@@ -6667,7 +6784,16 @@ registerProcessor('ep-output', EPOutput);
     sym: (name) => dbgSymAddr.get(String(name).toUpperCase()),
     label: (a) => dbgLabel(a),
     history: (n) => api.dbgHistory(n || 64).trim().split(/\s+/).filter(Boolean).map((h) => parseInt(h, 16)),
-    monitor: (cmd) => monExec(cmd),
+    // runs a monitor command; returns its output as text
+    monitor: (cmd) => {
+      monCapture = [];
+      try {
+        monExec(String(cmd));
+        return monCapture.join('\n');
+      } finally {
+        monCapture = null;
+      }
+    },
     log: (...a) => dbgScriptLog(a.map((x) => typeof x === 'string' ? x : JSON.stringify(x)).join(' ')),
     // names: a system call code, a known address (with the current paging), an I/O port
     callName: (code) => machine.type === 1 ? dbgTvcFnName(code & 255) : 'EXOS ' + (code & 255) + ': ' + (EXOS_FN[code & 255] || '?'),
@@ -6686,7 +6812,128 @@ registerProcessor('ep-output', EPOutput);
     // resolves at the first frame where fn() is true
     until: (fn) => new Promise((resolve) => dbgWaits.push({ fn, resolve })),
     reset: (cold) => reset(!!cold),
-    time: () => emulatedUs / 1000
+    time: () => emulatedUs / 1000,
+
+    // --- for programs and AIs (docs/AUTOMATION.md) ---
+    version: () => { const m = document.querySelector('meta[name="build"]'); return m ? m.content : ''; },
+    machines: () => MACHINES.map((m) => ({ id: m.id, name: m.name, type: m.type === 1 ? 'tvc' : 'ep' })),
+    // resolves when the emulator runs; unless {prompt: false}, also waits for
+    // BASIC's "ok" (pressing Space at the start-up logo)
+    ready: async (opts) => {
+      opts = opts || {};
+      await pageStarted();
+      const limit = performance.now() + (opts.timeout || 60000);
+      while (!ready) {
+        if (performance.now() > limit) {
+          const miss = machine ? missingROMs(machine) : [];
+          throw new Error(miss.length ? 'ROMs missing: ' + miss.join(', ') + ' (ep.load the ROM package)' : 'the emulator is not running');
+        }
+        await sleepMs(50);
+      }
+      if (opts.prompt === false) return true;
+      let keyAt = emulatedUs;
+      // the start-up logos wait for a key: it is pressed only if no key has
+      // been pressed since the reset (it never types into a running program)
+      let ownKeys = 0;                  // keys pressed here (repeated if too early)
+      const atLogo = () => (!keyedSinceReset || ownKeys > 0) && ownKeys < 10;
+      while (performance.now() <= limit) {
+        if (atPrompt()) return true;
+        if (!autoTask && !dbgStopped && emulatedUs - keyAt > 3e6 && atLogo()) {
+          keyAt = emulatedUs;
+          ownKeys++;
+          keyDown(KEYMAP.Space);
+          keyUp(KEYMAP.Space);
+        }
+        await sleepMs(50);
+      }
+      throw new Error('timeout: no BASIC prompt ("ok") on the screen');
+    },
+    // switches to a machine (ids: ep.machines()), cold start; opts: TVC
+    // cards {slots: [4 card names or ids]}, {fx: true} for the 2dfx card,
+    // {wait: false} not to wait for the prompt
+    machine: async (id, opts) => {
+      opts = opts || {};
+      await pageStarted();
+      const m = MACHINES.find((x) => x.id === id);
+      if (!m) throw new Error('unknown machine: ' + id + ' (see ep.machines())');
+      if (opts.slots) {
+        const v = opts.slots.map((c) => (typeof c === 'number' ? c : EP_CARD_IDS[String(c).toLowerCase()]));
+        if (!validTvcSlots(v)) throw new Error('slots: 4 of ' + Object.keys(EP_CARD_IDS).join(', '));
+        tvcSlots = v;
+        try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots)); } catch (e) { }
+      }
+      if (opts.fx !== undefined) {
+        fxOn = !!opts.fx;
+        try { localStorage.setItem('ep128web.2dfx', fxOn ? '1' : '0'); } catch (e) { }
+      }
+      autoTask = null;
+      releaseAllKeys();
+      applyMachine(m);
+      if (opts.wait !== false) await ep.ready(opts);
+      return machine.id;
+    },
+    // loads files as if dropped on the screen: a program (started as usual),
+    // a disk, a tape, a snapshot, ROMs; src: URL, ArrayBuffer, Uint8Array,
+    // Blob / File, or an array of {name, bytes}; resolves when the start
+    // command has been typed
+    load: async (src, name) => {
+      await pageStarted();
+      let files;
+      if (Array.isArray(src)) files = src.map((f) => new File([f.bytes], f.name));
+      else if (typeof src === 'string') {
+        const r = await fetch(src);
+        if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + src);
+        files = [new File([await r.blob()], name || decodeURIComponent(new URL(src, location.href).pathname.split('/').pop()) || 'program')];
+      } else if (src instanceof Blob) files = [src instanceof File && !name ? src : new File([src], name || src.name || 'program')];
+      else files = [new File([src], name || 'program')];
+      await loadFiles(files);
+      while (autoTask) await sleepMs(50);
+      return true;
+    },
+    // the text on the screen (EP: the character rows; TVC: read back with
+    // the ROM font), lines joined with \n
+    screenText: () => screenLines().join('\n'),
+    screenLines: () => screenLines(),
+    atPrompt: () => atPrompt(),
+    // resolves when the screen text matches (a RegExp or a string), at most
+    // after opts.timeout ms of real time (default 30 s)
+    waitText: async (what, opts) => {
+      const re = what instanceof RegExp ? what : null;
+      const limit = performance.now() + ((opts && opts.timeout) || 30000);
+      for (;;) {
+        const t = screenLines().join('\n');
+        if (re ? re.test(t) : t.includes(String(what))) return t;
+        if (performance.now() > limit) throw new Error('timeout waiting for ' + what + '; screen:\n' + t);
+        await sleepMs(50);
+      }
+    },
+    // the picture as a PNG data URL
+    screenshot: () => canvas.toDataURL('image/png'),
+    // runs n frames (20 ms each) at once, as fast as possible; returns the
+    // number run (fewer if the debugger stopped the machine)
+    runFrames: (n) => runFramesNow(Math.max(1, Math.floor(n) || 1)),
+    // presses a key for ms milliseconds of emulated time; key: a
+    // KeyboardEvent.code (e.g. 'Space', 'KeyA', 'Enter', 'ArrowUp', 'F1')
+    press: (key, ms) => {
+      const c = mapKey({ code: key });
+      if (c === undefined) return Promise.reject(new Error('no such key on this machine: ' + key));
+      keyDown(c);
+      return ep.wait(ms || 100).then(() => keyUp(c));
+    },
+    // everything in one: machine, running state, registers, stop reason
+    state: () => ({
+      machine: machine && machine.id, type: machine && machine.type === 1 ? 'tvc' : 'ep',
+      ready, paused, stopped: dbgStopped, typing: !!autoTask, timeMs: emulatedUs / 1000,
+      regs: ready ? dbgRegObj() : null, stop: dbgStopped ? dbgInfo() : null,
+      tvcSlots: machine && machine.type === 1 ? tvcSlots.slice() : null, fx: fxOn
+    }),
+    // the machine's state (with the TVC256k++ / 2dfx cards), to restore later
+    snapshot: () => {
+      check(api.saveSnapshot('/tmp/ai.ep128s'), T('mentés'));
+      return { machine: machine.id, slots: tvcSlots.slice(), fx: fxOn, time: Date.now(),
+               bytes: M.FS.readFile('/tmp/ai.ep128s'), card: saveCardState() };
+    },
+    restore: (st) => { loadSavedState(st); return true; }
   };
   window.ep = ep;
 
@@ -7126,7 +7373,7 @@ ep.log('CTRL+ESC megnyomva');`)
       paused = true;
       ready = false;
       $('btn-pause').classList.add('on');
-      setMessage(T('Az emulátor hibára futott (') + StringT(T(String(e.message || e))).slice(0, 80) +
+      setMessage(T('Az emulátor hibára futott (') + T(String(e.message || e)).slice(0, 80) +
                  T(') – töltsd újra az oldalt. A pendrive tartalma megmarad.'), true);
       return;
     }
@@ -7166,7 +7413,18 @@ ep.log('CTRL+ESC megnyomva');`)
       api.audioClear();
     }
 
-    // video
+    drawVideo();
+
+    if (speedAccMs >= 500) {
+      $('st-speed').textContent = T('Sebesség: ') + Math.round(speedAccUs / speedAccMs / 10) + '%';
+      speedAccUs = 0;
+      speedAccMs = 0;
+      updateStatus();
+    }
+  }
+
+  // the emulator's picture on the canvas (when a new frame is ready)
+  function drawVideo() {
     const fc = api.frameCount();
     if (fc !== lastFrameCount) {
       lastFrameCount = fc;
@@ -7176,13 +7434,37 @@ ep.log('CTRL+ESC megnyomva');`)
       if (screenFxOn) screenFx.render(canvas);
       if (videoRec) drawRecCanvas();
     }
+  }
 
-    if (speedAccMs >= 500) {
-      $('st-speed').textContent = T('Sebesség: ') + Math.round(speedAccUs / speedAccMs / 10) + '%';
-      speedAccUs = 0;
-      speedAccMs = 0;
-      updateStatus();
+  // ep.runFrames(): n frames of 20 ms emulated time at once, as fast as
+  // possible (without sound), with everything a frame does; stops early when
+  // the debugger stops the machine. Returns the number of frames run.
+  function runFramesNow(n) {
+    let i = 0;
+    while (i < n && ready && !paused && !dbgStopped) {
+      if (api.dbgState()) {
+        dbgHandleStops();
+        if (dbgStopped) break;
+      }
+      const done = autoTask ? runAutoTask(20000) : 0;
+      if (done < 20000) check(api.run(20000 - done), T('emuláció'));
+      api.audioClear();
+      i++;
+      emulatedUs += 20000;
+      tvcDefDevTick();
+      rewindTick(20000);
+      dbgFrameTick(20000);
+      dbgHandleStops();
+      if (!dbgStopped) dbgScriptFrame(20000);
+      ledAccUs += 20000;
+      for (let k = 0; ledAccUs >= 2000 && k < 1000; k++) {
+        ledAccUs -= 2000;
+        ledState = api.ledState();
+      }
+      processKeyQueue();
     }
+    drawVideo();
+    return i;
   }
 
   function updateStatus() {
