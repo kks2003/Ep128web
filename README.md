@@ -52,6 +52,11 @@ letöltését külön kell betölteni.
   Panel menüben a képernyő mellé tehető; a választás és az utolsó fül megmarad.
 - A **debugger** (Eszközök → Debugger, Alt+D) a panel alatt nyílik, teljes
   szélességben; a **súgó** külön ablakban (Súgó menü).
+- **Automatikus indítás (TVC)** a Gép menüben: bekapcsolva a betöltött `.cas`
+  programok akkor is elindulnak, ha a fejlécükben nincs AutoRun jelzés. A
+  programfejléc AutoRun bájtja (FFh) a FILE: eszközre, ill. a TVC256k++
+  kártyára kerülő másolatban állítódik be a `LOAD` előtt; az eredeti fájl nem
+  változik. Lemezképről (VT-DOS, UPM) betöltött programokra nem vonatkozik.
 
 ### Telepítés alkalmazásként, offline használat
 
