@@ -51,7 +51,7 @@ body { min-height: 100vh; display: flex; flex-direction: column; }
 .drop .radio.sel::before { content: '●'; color: var(--accent); }
 .drop label.radio { justify-content: flex-start; }
 
-.quick { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.quick { display: flex; align-items: center; gap: 4px; margin-left: 8px; padding-left: 10px; border-left: 1px solid var(--border); }
 .quick button { min-height: 30px; padding: 3px 9px; }
 .rec {
   display: none; align-items: center; gap: 6px; background: var(--accent); color: var(--accent-text);
@@ -73,6 +73,7 @@ body.side #panel { position: sticky; top: 52px; max-height: calc(100vh - 66px); 
 }
 body.side .screen { width: min(100%, calc((100vh - 170px) * 4 / 3)); }
 .underbar { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; }
+body.side .underbar, body.side .status { justify-content: center; }
 .status { display: flex; gap: 16px; color: var(--muted); font-size: 12px; padding-top: 6px; }
 
 /* --- tabs --- */
@@ -120,7 +121,7 @@ body:not(.side) .cat { grid-template-columns: repeat(auto-fill, minmax(170px, 1f
 </style>
 </head>
 <body>
-<div class="note">MINTA – csak a kinézet, az emulátor nem fut. A menük kattinthatók; a „Nézet → Panel” alatt próbálható a képernyő melletti / alatti elrendezés. <a href="./" style="color:#fff">vissza az emulátorhoz</a></div>
+<div class="note">MINTA – csak a kinézet, az emulátor nem fut. A menük kattinthatók; a „Nézet → Panel” alatt választható, hogy a panel a képernyő alatt (alapból) vagy mellette legyen. <a href="./" style="color:#fff">vissza az emulátorhoz</a></div>
 
 <div id="bar">
   <span class="title">Enterprise 128 · TVC <small>web</small></span>
@@ -222,6 +223,7 @@ body:not(.side) .cat { grid-template-columns: repeat(auto-fill, minmax(170px, 1f
       <button>⌨ Billentyűzet</button>
       <button>🕹 Joystick</button>
       <button>Aa Szöveg beírása</button>
+      <button title='load"*" + Enter (TVC)'>load"*"</button>
       <button>Run</button>
       <button>⛶</button>
       <button>💾</button>
@@ -352,7 +354,7 @@ body:not(.side) .cat { grid-template-columns: repeat(auto-fill, minmax(170px, 1f
   }
   let l = null;
   try { l = localStorage.getItem('ep128web.mockLayout'); } catch (e) { }
-  setLayout(l || (innerWidth >= 1200 ? 'side' : 'below'));
+  setLayout(l || 'below');
 
   function setTheme(t) {
     if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
