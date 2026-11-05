@@ -71,7 +71,7 @@
   // sets 'hidden' only when it changes (setting it again is a mutation too,
   // which would wake the observer below again)
   const setHidden = (el, h) => { if (el.hidden !== h) el.hidden = h; };
-  let cur = load('tab') || 'tape';
+  let cur = load('tab') || 'disk';
   function showTab(id) {
     const btn = tabs.find((b) => b.dataset.tab === id);
     if (!btn || btn.hidden) return;
