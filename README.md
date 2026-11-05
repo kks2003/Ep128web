@@ -46,9 +46,9 @@ letöltését külön kell betölteni.
   **Eszközök** (debugger, megosztható link, egér, telepítés), **Súgó**. Mellette a
   gyorsgombok: szünet, turbó, 📂 betöltés, hangerő; felvétel közben piros jelzés az
   idővel, rákattintva leáll. Telefonon a menük a ☰ gomb alatt vannak.
-- **Panel** fülekkel: Magnó · Lemezek (A:, B: három-három hellyel, FILE:, USB
+- **Panel** fülekkel: Lemezek (A:, B: három-három hellyel, FILE:, USB
   pendrive) · Bővítők (TVC bővítőportok, cartridge, 2dfx) · Joystick · Katalógus
-  (csak TVC-n) · Beállítások. A panel alapból a képernyő alatt van, a Nézet →
+  (csak TVC-n) · Magnó · Beállítások. A panel alapból a képernyő alatt van, a Nézet →
   Panel menüben a képernyő mellé tehető; a választás és az utolsó fül megmarad.
 - A **debugger** (Eszközök → Debugger, Alt+D) a panel alatt nyílik, teljes
   szélességben; a **súgó** külön ablakban (Súgó menü).
