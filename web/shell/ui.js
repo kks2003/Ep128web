@@ -123,6 +123,15 @@
   setLayout(load('layout') === 'side' ? 'side' : 'below');
   alignBar();
 
+  // --- the picture in full screen: keeping its proportions or filling the screen ---
+  function setFsFit(f) {
+    document.body.classList.toggle('fs-fill', f === 'fill');
+    for (const it of document.querySelectorAll('[data-fsfit]')) it.classList.toggle('chosen', it.dataset.fsfit === f);
+    store('fsFit', f);
+  }
+  for (const it of document.querySelectorAll('[data-fsfit]')) it.addEventListener('click', () => setFsFit(it.dataset.fsfit));
+  setFsFit(load('fsFit') === 'fill' ? 'fill' : 'keep');
+
   // --- recording indicator in the bar: the running video / sound / demo
   // recording with its time; a click stops it ---
   const recBtns = ['btn-video', 'btn-audio', 'btn-demo'].map($);
