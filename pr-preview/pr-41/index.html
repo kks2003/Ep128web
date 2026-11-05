@@ -13,15 +13,15 @@
     if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   } catch (e) { }
 </script>
-<link rel="stylesheet" href="style.css?v=202611051529-f613767">
+<link rel="stylesheet" href="style.css?v=202611051537-c0d0743">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <meta name="theme-color" content="#1b1f45">
-<meta name="build" content="202611051529-f613767">
+<meta name="build" content="202611051537-c0d0743">
 </head>
 <body>
-<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #41 előnézete, nem az éles oldal · fordítva: 2026.11.05 16:29 · f613767 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #41 előnézete, nem az éles oldal · fordítva: 2026.11.05 16:37 · c0d0743 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
 <header id="bar">
   <button id="menu-toggle" aria-label="Menü" aria-expanded="false">☰</button>
   <nav id="menus">
@@ -43,7 +43,7 @@
       </label>
       <button id="btn-reset" title="Meleg reset (F11)">Reset <kbd>F11</kbd></button>
       <button id="btn-cold" title="Hideg reset / bekapcsolás (Shift+F11)">Hideg reset <kbd>Shift+F11</kbd></button>
-      <button data-act="btn-pause">Szünet / folytatás <kbd>F9</kbd></button>
+      <button data-act="btn-pause">Szünet / folytatás <kbd>Pause, F9</kbd></button>
       <hr>
       <label class="sel item">Sebesség
         <select id="speed" title="Sebesség (a hang csak 100%-on szól)" aria-label="Sebesség">
@@ -88,7 +88,7 @@
     </div></div>
     <div class="menu"><button class="menu-btn">Felvétel</button><div class="drop">
       <button id="btn-shot" title="A képernyő mentése képként (.png)">📷 Kép <kbd>Alt+P</kbd></button>
-      <button id="btn-video" title="Videó felvétele hanggal; újra megnyomva leáll és letöltődik">● Videó</button>
+      <button id="btn-video" title="Videó felvétele hanggal; újra megnyomva leáll és letöltődik (Alt+V)">● Videó</button>
       <label class="sel item" id="video-fmt-row">Videó formátuma
         <select id="video-fmt" title="A videó formátuma" aria-label="A videó formátuma" hidden>
       <option value="mp4">MP4</option>
@@ -109,12 +109,12 @@
       <a class="item" href="https://github.com/kks2003/Ep128web" target="_blank" rel="noopener">Ep128web a GitHubon</a>
       <a class="item" href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu (Varga István)</a>
       <hr>
-      <div class="about"><b>Enterprise 128 · TVC</b><span>ep128emu · web</span><small id="build" title="Fordítás ideje és verziója">2026.11.05 16:29 · f613767</small></div>
+      <div class="about"><b>Enterprise 128 · TVC</b><span>ep128emu · web</span><small id="build" title="Fordítás ideje és verziója">2026.11.05 16:37 · c0d0743</small></div>
     </div></div>
   </nav>
   <div id="quick">
     <button id="rec-ind" hidden title="Felvétel leállítása"></button>
-    <button id="btn-pause" title="Szünet / folytatás (F9)">Szünet</button>
+    <button id="btn-pause" title="Szünet / folytatás (Pause, F9)">Szünet</button>
     <button id="btn-turbo" title="Gyorsítás (F12)">Turbó</button>
     <label class="file" for="file-any" title="Fájl betöltése">📂</label>
     <span class="vol">
@@ -196,8 +196,8 @@
     <button id="tb-kbd" aria-pressed="false">⌨ Billentyűzet</button>
     <button id="tb-joy" aria-pressed="false">🕹 Joystick</button>
     <button id="tb-text" aria-pressed="false">Aa Szöveg beírása</button>
-    <button id="btn-load" title='load"*" + Enter (TVC)' hidden>load"*"</button>
-    <button id="btn-run" title='RUN + Enter'>Run</button>
+    <button id="btn-load" title='load"*" + Enter (TVC, Alt+T)' hidden>load"*"</button>
+    <button id="btn-run" title='RUN + Enter (Alt+R)'>Run</button>
     <button id="btn-mouse" title="Egér az Enterprise-nak, ill. a TVC256k++ kártyának (kilépés: Esc)" hidden>🖱</button>
     <button id="tb-full" title="Teljes képernyő (F10)">⛶</button>
     <button id="tb-qs" aria-pressed="false" title="Gyorsmentés és visszatekerés panel">💾</button>
@@ -610,7 +610,7 @@
         <code>LOAD</code> parancsot. Mentés kazettára: „Üres kazetta” → „● Felvétel”
         → BASIC-ben <code>SAVE "név"</code>, végül „Letöltés”.</li>
       <li>Enterprise-billentyűk: Esc = ESC, Backspace = ERASE, Del = DEL, Ins = INS,
-        End vagy Pause = STOP, Home = HOLD, Alt = ALT, F1–F8 = funkciógombok,
+        End = STOP, Home = HOLD, Alt = ALT, F1–F8 = funkciógombok,
         CapsLock = LOCK. A <code>:</code> az <code>'</code> helyén, a
         <code>@</code> a <code>`</code> helyén, a <code>^</code> az <code>=</code> helyén van.</li>
       <li><b>Videoton TVC</b>: a <code>.cas</code> programok a FILE: eszközre kerülnek, és
@@ -625,17 +625,17 @@
         (a Shift, Ctrl és Alt egy leütésre ragad), az érintős joystick (a Joystick panel szerint,
         vagy kurzorbillentyűk + Space), és a szövegbeírás a telefon saját billentyűzetével.
         A ⛶ gombbal a kép és a vezérlők együtt kerülnek teljes képernyőre.</li>
-      <li>F11 = reset, Shift+F11 = hideg reset, F12 = turbó, F9 = szünet / folytatás, F10 vagy Alt+Enter = teljes képernyő, Alt+D = a debuggerre, Alt+E = vissza az emulátorra, Alt+L = fájl betöltése, Alt+S = állapot mentése, Alt+P = képernyőkép, Alt+M = némítás, Alt+B = visszatekerés 5 mp, Alt+1…4 = gyorsmentés az 1–4. helyre, Alt+5…8 = az 1–4. gyorsmentés betöltése.</li>
+      <li>F11 = reset, Shift+F11 = hideg reset, F12 = turbó, Pause vagy F9 = szünet / folytatás, F10 vagy Alt+Enter = teljes képernyő, Alt+D = a debuggerre, Alt+E = vissza az emulátorra, Alt+L = fájl betöltése, Alt+S = állapot mentése, Alt+P = képernyőkép, Alt+V = videófelvétel, Alt+R = RUN, Alt+T = load"*" (TVC), Alt+M = némítás, Alt+B = visszatekerés 5 mp, Alt+1…4 = gyorsmentés az 1–4. helyre, Alt+5…8 = az 1–4. gyorsmentés betöltése.</li>
     </ul>
     <p class="small" data-i18n-html="helpcore">Az emulációs mag az <a href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu</a>
     (Varga István, GPL v2) változatlan forráskódja, WebAssemblyre fordítva.</p>
   </dialog>
 
-<script src="i18n-strings.js?v=202611051529-f613767"></script>
-<script src="i18n.js?v=202611051529-f613767"></script>
-<script src="ep128emu.js?v=202611051529-f613767"></script>
-<script src="screenfx.js?v=202611051529-f613767"></script>
-<script src="ep128.js?v=202611051529-f613767"></script>
-<script src="ui.js?v=202611051529-f613767"></script>
+<script src="i18n-strings.js?v=202611051537-c0d0743"></script>
+<script src="i18n.js?v=202611051537-c0d0743"></script>
+<script src="ep128emu.js?v=202611051537-c0d0743"></script>
+<script src="screenfx.js?v=202611051537-c0d0743"></script>
+<script src="ep128.js?v=202611051537-c0d0743"></script>
+<script src="ui.js?v=202611051537-c0d0743"></script>
 </body>
 </html>
