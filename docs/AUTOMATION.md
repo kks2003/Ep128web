@@ -9,6 +9,8 @@ the whole machine state.
 - Live site: <https://kks2003.github.io/Ep128web/>
 - Use it from the browser console, from a script on the debugger's *Script* tab, or from
   a test / agent driving a browser (Playwright, Puppeteer, Selenium, Chrome DevTools).
+- For MCP clients (Claude Desktop, Claude Code…) there is a ready-made MCP server that
+  wraps this API as tools: [../mcp/README.md](../mcp/README.md).
 - All functions are synchronous unless marked **async** (they return a Promise).
 - The emulator needs the machines' ROMs (`ep128emu_roms-2.0.11.bin`); the page stores them
   in the browser (IndexedDB) once loaded. Without them `ep.ready()` throws

@@ -79,6 +79,12 @@ mentése / visszaállítása. Leírás (angolul, MI-knek és teszteknek):
 [docs/AUTOMATION.md](docs/AUTOMATION.md); röviden az oldal `llms.txt`
 fájljában is.
 
+**MCP szerver** (Claude Desktop, Claude Code és más MCP kliensek): az `mcp/`
+mappában. A háttérben megnyitja az emulátort egy böngészőben, és eszközként adja
+az MI-nek: gép indítása, fájl betöltése, gépelés, a képernyő szövege és képe,
+képkockák futtatása, memória, disassembly, töréspontok, lépés, monitor,
+állapotmentés. Telepítés és beállítás: [mcp/README.md](mcp/README.md).
+
 ### Telepítés alkalmazásként, offline használat
 
 Az oldal telepíthető (PWA): Chrome/Edge alatt a „Telepítés” gomb (vagy a
