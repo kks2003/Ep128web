@@ -276,8 +276,6 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 .dslot .file, .dslot button { padding: 3px 7px; min-height: 28px; font-size: 13px; }
 .group button { padding: 3px 9px; min-height: 28px; font-size: 13px; }
 
-#help { margin-top: 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; }
-#help summary { cursor: pointer; font-weight: 600; }
 #help li { margin-bottom: 6px; }
 .small { font-size: 12px; color: var(--muted); }
 #overlay .small { color: #c4c4bc; }
@@ -528,6 +526,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 #speed { min-height: 28px; }
 #btn-install[hidden] { display: none; }
 #tb-qs { margin-left: auto; }
+body.side #tb-qs { margin-left: 0; }
 #qs-group[hidden] { display: none; }
 /* --- CRT effect: layers over the screen; one dark band per emulated line --- */
 #crt-fx { position: absolute; inset: 0; pointer-events: none; display: none; }
@@ -557,3 +556,83 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 #screen-wrap.fx-gl #screen-gl { display: block; }
 #screen-wrap.fx-gl #screen { opacity: 0; }
 #screen-wrap.fx-pixel #screen { image-rendering: pixelated; }
+
+/* --- the menu bar (ui.js) --- */
+#bar { position: sticky; top: 0; z-index: 40; padding: 4px 12px; gap: 4px 6px; }
+#bar h1 { margin-right: 8px; font-size: 15px; }
+#menus { display: flex; gap: 2px; }
+.menu { position: relative; }
+.menu-btn { background: transparent; border-color: transparent; padding: 4px 10px; min-height: 30px; }
+.menu-btn:hover, .menu.open > .menu-btn { background: var(--button); border-color: var(--border); }
+.drop {
+  display: none; position: absolute; top: calc(100% + 2px); left: 0; min-width: 260px;
+  max-height: calc(100vh - 60px); overflow: auto; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); padding: 4px; z-index: 50;
+}
+.menu.open .drop { display: flex; }
+.drop > button, .drop > .file, .drop > .item {
+  display: flex; align-items: center; gap: 8px; width: 100%; justify-content: flex-start;
+  background: transparent; border: 0; border-radius: 5px; padding: 6px 10px; min-height: 30px;
+  text-align: left; white-space: nowrap; color: var(--text); text-decoration: none; font: inherit; cursor: pointer;
+}
+.drop > button:hover, .drop > .file:hover, .drop > a.item:hover, .drop > .check:hover { background: var(--button-hover); }
+.drop > button.on { background: var(--accent); color: var(--accent-text); }
+.drop > .sel.item { justify-content: space-between; color: var(--muted); cursor: default; }
+.drop > .sel.item select { max-width: min(250px, 62vw); min-height: 28px; padding: 2px 6px; }
+.drop hr { border: 0; border-top: 1px solid var(--border); margin: 4px 2px; width: auto; }
+.drop .head { color: var(--muted); font-size: 12px; padding: 4px 10px 2px; }
+.drop .radio::before { content: '○'; color: var(--muted); }
+.drop .radio.chosen::before { content: '●'; color: var(--accent); }
+#menu-toggle { display: none; }
+#quick { display: flex; align-items: center; gap: 4px; padding-left: 10px; margin-left: 4px; border-left: 1px solid var(--border); }
+#quick > button, #quick > .file { min-height: 30px; padding: 3px 9px; }
+#rec-ind { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 700; border-radius: 14px; }
+#video-fmt-row:has(> select[hidden]) { display: none; }
+@media (max-width: 760px) {
+  #menu-toggle { display: inline-block; }
+  #menus { display: none; order: 9; width: 100%; flex-direction: column; }
+  #bar.open #menus { display: flex; }
+  .menu-btn { width: 100%; text-align: left; }
+  .drop { position: static; box-shadow: none; margin: 2px 0 6px 10px; max-height: none; min-width: 0; }
+  .drop > .sel.item { flex-wrap: wrap; white-space: normal; }
+  #quick { border-left: 0; padding-left: 0; margin-left: 0; flex-wrap: wrap; }
+}
+
+/* --- the screen and the panel: the panel under the screen, or next to it --- */
+#layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; max-width: 1100px; margin: 0 auto; padding: 16px; }
+body.side #layout { max-width: none; grid-template-columns: minmax(0, 1fr) minmax(340px, 30vw); align-items: start; }
+body.side #panel { position: sticky; top: 52px; max-height: calc(100vh - 62px); overflow: auto; }
+body.side #touch-bar, body.side #status { justify-content: center; }
+#left { min-width: 0; }
+#left > #qs-group { margin-top: 6px; }
+#panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+#panel .tabs {
+  display: flex; gap: 2px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  border-bottom: 1px solid var(--border); padding: 6px 6px 0;
+}
+#panel .tabs::-webkit-scrollbar { display: none; }
+#panel .tabs button {
+  flex: 0 0 auto; background: transparent; border: 1px solid transparent; border-bottom: 0;
+  border-radius: 6px 6px 0 0; padding: 6px 12px; min-height: 32px; white-space: nowrap; color: var(--muted);
+}
+#panel .tabs button.act { background: var(--bg); border-color: var(--border); color: var(--text); font-weight: 600; }
+#panel .tab { display: none; padding: 10px; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); align-items: start; }
+#panel .tab.act { display: grid; }
+body.side #panel .tab { grid-template-columns: minmax(0, 1fr); }
+#panel .group { background: var(--bg); }
+#panel .catalog-panel { margin-top: 0; }
+#tab-catalog { grid-template-columns: minmax(0, 1fr) !important; }
+body.side .catalog-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+#dbg-wrap { max-width: 1100px; margin: 0 auto; padding: 0 16px 16px; }
+body.side #dbg-wrap { max-width: none; }
+#dbg-wrap #debugger { margin-top: 0; }
+
+/* --- the help window --- */
+#help {
+  width: min(780px, 94vw); max-height: 88vh; overflow: auto; padding: 12px 16px;
+  background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+}
+#help::backdrop { background: rgba(0, 0, 0, 0.5); }
+#help .dm-head { position: sticky; top: -12px; background: var(--panel); padding: 4px 0; display: flex; align-items: center; gap: 8px; }
+#help .dm-head b { flex: 1; font-size: 15px; }
