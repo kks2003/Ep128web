@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ep128emu web</title>
 <meta name="description" content="Enterprise 128 és Videoton TVC emulátor a böngészőben (ep128emu WebAssembly port)">
+<script>
+  // the colour theme before the first paint: auto (the system's), light, dark
+  try {
+    const t = localStorage.getItem('ep128web.theme');
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  } catch (e) { }
+</script>
 <link rel="stylesheet" href="style.css?v=__BUILD_V__">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
@@ -15,7 +22,8 @@
 <body>
 <header>
   <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">__BUILD__</small>
-    <select id="lang" title="Nyelv / Language / Sprache / Мова" aria-label="Nyelv / Language"></select></h1>
+    <select id="lang" title="Nyelv / Language / Sprache / Мова" aria-label="Nyelv / Language"></select>
+    <button id="btn-theme" title="Téma: automatikus (a rendszeré)" aria-label="Téma">🌓</button></h1>
   <nav id="toolbar">
     <label class="sel">Gép
       <select id="machine"></select>
