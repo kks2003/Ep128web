@@ -582,6 +582,8 @@ body.side #tb-qs { margin-left: 0; }
 .drop > .sel.item select { max-width: min(250px, 62vw); min-height: 28px; padding: 2px 6px; }
 .drop hr { border: 0; border-top: 1px solid var(--border); margin: 4px 2px; width: auto; }
 .drop .head { color: var(--muted); font-size: 12px; padding: 4px 10px 2px; }
+.drop .about { display: flex; flex-direction: column; padding: 4px 10px 6px; color: var(--muted); font-size: 12px; }
+.drop .about b { color: var(--text); font-size: 13px; }
 .drop .radio::before { content: '○'; color: var(--muted); }
 .drop .radio.chosen::before { content: '●'; color: var(--accent); }
 #menu-toggle { display: none; }

@@ -101,14 +101,25 @@
   new MutationObserver(updateTabs).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
   updateTabs();
 
+  // --- the menu bar starts where the emulator's screen does (wide windows) ---
+  function alignBar() {
+    if (!wide()) { bar.style.paddingLeft = ''; return; }
+    const x = Math.round($('screen-wrap').getBoundingClientRect().left);
+    bar.style.paddingLeft = Math.max(12, x) + 'px';
+  }
+  new ResizeObserver(alignBar).observe($('screen-wrap'));
+  window.addEventListener('resize', alignBar);
+
   // --- the panel under the screen (default) or next to it ---
   function setLayout(l) {
     document.body.classList.toggle('side', l === 'side');
     for (const it of document.querySelectorAll('[data-layout]')) it.classList.toggle('chosen', it.dataset.layout === l);
     store('layout', l);
+    if (typeof alignBar === 'function') requestAnimationFrame(alignBar);
   }
   for (const it of document.querySelectorAll('[data-layout]')) it.addEventListener('click', () => setLayout(it.dataset.layout));
   setLayout(load('layout') === 'side' ? 'side' : 'below');
+  alignBar();
 
   // --- recording indicator in the bar: the running video / sound / demo
   // recording with its time; a click stops it ---
