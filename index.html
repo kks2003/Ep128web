@@ -12,39 +12,50 @@
     if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   } catch (e) { }
 </script>
-<link rel="stylesheet" href="style.css?v=202611050944-131e5d8">
+<link rel="stylesheet" href="style.css?v=202611051525-a6674f5">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <meta name="theme-color" content="#1b1f45">
-<meta name="build" content="202611050944-131e5d8">
+<meta name="build" content="202611051525-a6674f5">
 </head>
 <body>
-<header>
-  <h1>Enterprise 128 · TVC <span>ep128emu · web</span> <small id="build" title="Fordítás ideje és verziója">2026.11.05 10:44 · 131e5d8</small>
-    <select id="lang" title="Nyelv / Language / Sprache / Мова" aria-label="Nyelv / Language"></select>
-    <button id="btn-theme" title="Téma: automatikus (a rendszeré)" aria-label="Téma">🌓</button></h1>
-  <nav id="toolbar">
-    <label class="sel">Gép
-      <select id="machine"></select>
+<header id="bar">
+  <button id="menu-toggle" aria-label="Menü" aria-expanded="false">☰</button>
+  <nav id="menus">
+    <div class="menu"><button class="menu-btn">Fájl</button><div class="drop">
+      <label class="file">Fájl betöltése…
+      <input type="file" id="file-any" multiple>
     </label>
-    <button id="btn-reset" title="Meleg reset (F11)">Reset</button>
-    <button id="btn-cold" title="Hideg reset / bekapcsolás (Shift+F11)">Hideg reset</button>
-    <button id="btn-pause" title="Szünet (Pause)">Szünet</button>
-    <button id="btn-debug" title="Debugger: regiszterek, disassembly, memória, töréspontok (Alt+D: a debuggerre, Alt+E: vissza az emulátorra)">🐞 Debugger</button>
-    <button id="btn-share" title="Megosztható link másolása: a gép, a kártyák és a betöltött program (kis programnál magában a linkben)">🔗 Link</button>
-    <button id="btn-install" hidden title="Telepítés alkalmazásként (offline is működik)">Telepítés</button>
-    <button id="btn-turbo" title="Gyorsítás (F12)">Turbó</button>
-    <select id="speed" title="Sebesség (a hang csak 100%-on szól)" aria-label="Sebesség">
+      <button data-act="tab:catalog" data-tvc>Programkatalógus</button>
+      <hr>
+      <button id="btn-snap" title="Pillanatkép mentése (.ep128s)">Állapot mentése</button>
+      <button data-act="tb-qs">Gyorsmentés és visszatekerés…</button>
+      <hr>
+      <button data-act="cfg-export">Beállítások exportálása</button>
+      <button data-act="cfg-import">Beállítások importálása…</button>
+    </div></div>
+    <div class="menu"><button class="menu-btn">Gép</button><div class="drop">
+      <label class="sel item">Gép
+        <select id="machine"></select>
+      </label>
+      <button id="btn-reset" title="Meleg reset (F11)">Reset</button>
+      <button id="btn-cold" title="Hideg reset / bekapcsolás (Shift+F11)">Hideg reset</button>
+      <button data-act="btn-pause">Szünet / folytatás</button>
+      <hr>
+      <label class="sel item">Sebesség
+        <select id="speed" title="Sebesség (a hang csak 100%-on szól)" aria-label="Sebesség">
       <option value="0.25">25%</option><option value="0.5">50%</option><option value="1" selected>100%</option>
       <option value="2">200%</option><option value="4">400%</option>
     </select>
-    <label class="file">Fájl betöltése…
-      <input type="file" id="file-any" multiple>
-    </label>
-    <button id="btn-snap" title="Pillanatkép mentése (.ep128s)">Állapot mentése</button>
-    <button id="btn-shot" title="A képernyő mentése képként (.png)">📷 Kép</button>
-    <select id="crt" title="Képernyő-effekt: régi tévé / monitor hatás" aria-label="Képernyő-effekt">
+      </label>
+      <button data-act="btn-turbo">Turbó</button>
+      <hr>
+      <label class="item check" data-tvc title="A betöltött programok akkor is elindulnak, ha a fejlécükben nincs AutoRun jelzés"><input type="checkbox" id="tvc-autorun"> Automatikus indítás (TVC)</label>
+    </div></div>
+    <div class="menu"><button class="menu-btn">Nézet</button><div class="drop">
+      <label class="sel item">Kép
+        <select id="crt" title="Képernyő-effekt: régi tévé / monitor hatás" aria-label="Képernyő-effekt">
       <option value="off">Kép: éles</option>
       <option value="pixel">Kép: pixeles</option>
       <option value="scan">Kép: scanline</option>
@@ -55,21 +66,61 @@
       <option value="amber" data-gl="1">Kép: borostyán monitor</option>
       <option value="white" data-gl="1">Kép: fehér monitor</option>
     </select>
-    <button id="btn-video" title="Videó felvétele hanggal; újra megnyomva leáll és letöltődik">● Videó</button>
-    <select id="video-fmt" title="A videó formátuma" aria-label="A videó formátuma" hidden>
+      </label>
+      <div class="head">Panel</div>
+      <button class="radio" data-layout="below">A képernyő alatt</button>
+      <button class="radio" data-layout="side">A képernyő mellett</button>
+      <hr>
+      <button data-act="tb-full">Teljes képernyő</button>
+      <button data-act="tb-kbd">Képernyő-billentyűzet</button>
+      <button data-act="tb-joy">Érintős joystick</button>
+      <button data-act="tb-text">Szöveg beírása</button>
+      <hr>
+      <button id="btn-theme" title="Téma: automatikus (a rendszeré)" aria-label="Téma">🌓</button>
+      <label class="sel item">Nyelv
+        <select id="lang" title="Nyelv / Language / Sprache / Мова" aria-label="Nyelv / Language"></select>
+      </label>
+    </div></div>
+    <div class="menu"><button class="menu-btn">Felvétel</button><div class="drop">
+      <button id="btn-shot" title="A képernyő mentése képként (.png)">📷 Kép</button>
+      <button id="btn-video" title="Videó felvétele hanggal; újra megnyomva leáll és letöltődik">● Videó</button>
+      <label class="sel item" id="video-fmt-row">Videó formátuma
+        <select id="video-fmt" title="A videó formátuma" aria-label="A videó formátuma" hidden>
       <option value="mp4">MP4</option>
       <option value="webm">WebM</option>
     </select>
-    <button id="btn-audio" title="Hang felvétele (.wav); újra megnyomva leáll és letöltődik">● Hang</button>
-    <button id="btn-demo" title="Demó felvétele (.ep128d): a gép állapota, majd a billentyűk és az egér; újra megnyomva leáll és letöltődik">● Demó</button>
+      </label>
+      <button id="btn-audio" title="Hang felvétele (.wav); újra megnyomva leáll és letöltődik">● Hang</button>
+      <button id="btn-demo" title="Demó felvétele (.ep128d): a gép állapota, majd a billentyűk és az egér; újra megnyomva leáll és letöltődik">● Demó</button>
+    </div></div>
+    <div class="menu"><button class="menu-btn">Eszközök</button><div class="drop">
+      <button id="btn-debug" title="Debugger: regiszterek, disassembly, memória, töréspontok (Alt+D: a debuggerre, Alt+E: vissza az emulátorra)">🐞 Debugger</button>
+      <button id="btn-share" title="Megosztható link másolása: a gép, a kártyák és a betöltött program (kis programnál magában a linkben)">🔗 Link</button>
+      <button data-act="btn-mouse" data-needs="btn-mouse">🖱 Egér befogása</button>
+      <button id="btn-install" hidden title="Telepítés alkalmazásként (offline is működik)">Telepítés</button>
+    </div></div>
+    <div class="menu"><button class="menu-btn">Súgó</button><div class="drop">
+      <button data-act="help">Súgó és billentyűk</button>
+      <a class="item" href="https://github.com/kks2003/Ep128web" target="_blank" rel="noopener">Ep128web a GitHubon</a>
+      <a class="item" href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu (Varga István)</a>
+      <hr>
+      <div class="about"><b>Enterprise 128 · TVC</b><span>ep128emu · web</span><small id="build" title="Fordítás ideje és verziója">2026.11.05 16:25 · a6674f5</small></div>
+    </div></div>
+  </nav>
+  <div id="quick">
+    <button id="rec-ind" hidden title="Felvétel leállítása"></button>
+    <button id="btn-pause" title="Szünet (Pause)">Szünet</button>
+    <button id="btn-turbo" title="Gyorsítás (F12)">Turbó</button>
+    <label class="file" for="file-any" title="Fájl betöltése">📂</label>
     <span class="vol">
       <button id="btn-mute" class="mute" title="Némítás" aria-pressed="false">🔊</button>
       <input type="range" id="volume" min="0" max="100" value="70" title="Hangerő" aria-label="Hangerő">
     </span>
-  </nav>
+  </div>
 </header>
 
-<main>
+<main id="layout">
+ <div id="left">
  <div id="play">
   <div id="screen-wrap">
     <canvas id="screen" width="768" height="288" tabindex="0"></canvas>
@@ -172,9 +223,156 @@
     <span id="st-tape"></span>
     <span id="st-msg"></span>
   </section>
+    <div class="group" id="qs-group" hidden>
+      <h3>Gyorsmentés <span id="qs-total" class="small" title="A gyorsmentések helye a böngésző tárhelyén"></span></h3>
+      <div id="qs-slots"></div>
+      <div class="qs-rw">
+        <label title="Az utolsó ~30 másodperc megőrzése másodpercenként egy pillanatképben"><input type="checkbox" id="rw-on"> Visszatekerés</label>
+        <button id="rw-back" title="Vissza 5 másodpercet (többször is nyomható)">⏪ 5 mp</button>
+        <span class="name" id="rw-note"></span>
+      </div>
+    </div>
+ </div>
+  <section id="panel">
+    <div class="tabs" role="tablist">
+      <button data-tab="tape">Magnó</button>
+      <button data-tab="disk">Lemezek</button>
+      <button data-tab="ext">Bővítők</button>
+      <button data-tab="joy">Joystick</button>
+      <button data-tab="catalog">Katalógus</button>
+      <button data-tab="cfg">Beállítások</button>
+    </div>
+    <div class="tab" id="tab-tape">
+      <div class="group">
+        <h3>Magnó</h3>
+        <span id="tape-name" class="name">nincs kazetta</span>
+        <button id="tape-play">▶ Lejátszás</button>
+        <button id="tape-stop">■ Stop</button>
+        <button id="tape-rew">⏮ Elejére</button>
+        <button id="tape-rec">● Felvétel</button>
+        <button id="tape-prev" title="Vissza az előző jelölőhöz (ha nincs, 10 másodpercet)">⏪</button>
+        <button id="tape-next" title="Előre a következő jelölőhöz (ha nincs, 10 másodpercet)">⏩</button>
+        <button id="tape-mark" title="Jelölő a mostani helyre (a .tap letöltésébe bekerül)">＋ Jelölő</button>
+        <button id="tape-unmark" title="A legközelebbi jelölő törlése">− Jelölő</button>
+        <button id="tape-new">Üres kazetta</button>
+        <button id="tape-save" title="A kazetta letöltése ep128emu formátumban">Letöltés (.tap)</button>
+        <button id="tape-wav" title="A kazetta letöltése hangfájlként: valódi gépbe vagy más emulátorba tölthető">Letöltés (.wav)</button>
+        <label class="file" title="TVC .cas programok átalakítása kazettás hangfájllá (.wav); .zip is lehet">CAS → WAV…
+          <input type="file" id="cas-wav" accept=".cas,.zip,.zi" multiple>
+        </label>
+        <label class="name"><input type="checkbox" id="tape-fast" checked> Gyors betöltés (turbó, amíg forog a szalag)</label>
+      </div>
+    </div>
+    <div class="tab" id="tab-disk">
+      <div class="group drive">
+        <h3>Lemez (A:)</h3>
+        <div class="dslots" id="drive-a"></div>
+      </div>
+      <div class="group drive">
+        <h3>Lemez (B:)</h3>
+        <div class="dslots" id="drive-b"></div>
+      </div>
+      <div class="group">
+        <h3>FILE: eszköz</h3>
+        <span id="files-list" class="name">üres</span>
+        <label class="file" title="Fájlok másolása a FILE: eszközre (indítás nélkül)">Betöltés…
+          <input type="file" id="files-file" multiple>
+        </label>
+        <button id="files-clear">Törlés</button>
+      </div>
+      <div class="group" id="usb-group" hidden>
+        <h3>USB pendrive (TVC256k++)</h3>
+        <label title="A pendrive a TVC256k++ kártya USB-portjában: bootoláskor ez lesz az aktív meghajtó, és a képre húzott programok is erre kerülnek">
+          <input type="checkbox" id="usb-on"> Bedugva</label>
+        <label class="slot">Méret <select id="usb-size">
+          <option value="32">32 MB</option><option value="64">64 MB</option>
+          <option value="128">128 MB</option><option value="256">256 MB</option></select></label>
+        <span class="name" id="usb-space"></span>
+        <div id="usb-browser">
+          <div id="usb-path"></div>
+          <ul id="usb-list"></ul>
+          <div id="usb-drop">Húzd ide a fájlokat (bármilyen típus; a ZIP kibontva, mappastruktúrával kerül fel)</div>
+        </div>
+        <button id="usb-add">Fájlok hozzáadása…</button>
+        <button id="usb-add-dir">Mappa hozzáadása…</button>
+        <button id="usb-mkdir">Új mappa</button>
+        <button id="usb-clear" title="A pendrive teljes tartalmának törlése">Pendrive törlése</button>
+        <input type="file" id="usb-file" multiple hidden>
+        <input type="file" id="usb-folder" webkitdirectory multiple hidden>
+        <span class="name" id="usb-note"></span>
+      </div>
+    </div>
+    <div class="tab" id="tab-ext">
+      <div class="group" id="tvc-cards-group">
+        <h3>TVC bővítőportok</h3>
+        <label class="slot">Port 0 <select id="tvc-slot0"></select></label>
+        <label class="slot">Port 1 <select id="tvc-slot1"></select></label>
+        <label class="slot">Port 2 <select id="tvc-slot2"></select></label>
+        <label class="slot">Port 3 <select id="tvc-slot3"></select></label>
+        <label class="slot" title="Melyik kártya legyen az alapértelmezett tároló (LOAD/SAVE, a parancssora: VT-DOS EXT 2, TVC256k++ EXT + port). Automatikus: a legnagyobb sorszámú portban lévő, mint a valódi gépen.">Alapértelmezett tároló <select id="tvc-defdev">
+          <option value="-1">automatikus (a legnagyobb port)</option><option value="1">VT-DOS</option><option value="2">FILE:</option><option value="5">TVC256k++</option></select></label>
+        <span class="name" id="tvc-defdev-note"></span>
+        <button id="tvc-slots-apply" title="A kártyák betöltése és hideg újraindítás">Portok betöltése, újraindítás</button>
+        <button id="tvc-slots-default" title="FILE:, VT-DOS, GameCard, üres (betöltés a gombbal)">Alapbeállítás</button>
+        <span class="name" id="tvc-slots-note"></span>
+        <span class="name" data-i18n-html="tvcports">A VT-DOS, a FILE: és a TVC256k++ közül alapból a legnagyobb sorszámú portban lévő lesz
+          az alapértelmezett tároló (fent átállítható); a parancssoruk csak így működik. VT-DOS: <code>EXT 2</code>,
+          TVC256k++: <code>EXT</code> + a port száma (pl. 3-as portban <code>EXT 3</code>).
+          TVC256k++ flash drive: ejtsd rá a <code>flash-root-*.bin</code> / <code>.zip</code> fájlt.</span>
+      </div>
+      <div class="group" id="ext-group">
+        <h3>Cartridge, 2dfx</h3>
+          <div class="slot" id="cart-group">
+            <b>Cartridge</b>
+            <span id="cart-name" class="name">nincs modul</span>
+            <button id="cart-eject">Kiadás</button>
+          </div>
+          <div class="slot" id="fx-group">
+            <label title="2dfx grafikus kártya (F8h/F9h portok), Enterprise-on és TVC-n"><input type="checkbox" id="fx-on"> <b>2dfx</b> grafikus kártya</label>
+            <span id="fx-note" class="name"></span>
+          </div>
+      </div>
+    </div>
+    <div class="tab" id="tab-joy">
+      <div class="group" id="joy-group">
+        <h3 title="TVC: az 1. port ugyanaz, mint a beépített kurzorjoystick">Joystick</h3>
+        <div id="joy-map"></div>
+        <span class="name" id="pad-status"></span>
+      </div>
+    </div>
+    <div class="tab" id="tab-catalog">
+    <section id="catalog" class="group catalog-panel">
+      <h3>Program katalógus</h3>
+      <div id="catalog-filters">
+        <input id="catalog-search" type="search" placeholder="Keresés…" aria-label="Keresés">
+        <select id="catalog-type" aria-label="Típus szűrő">
+          <option value="">Minden típus</option>
+        </select>
+        <select id="catalog-year" aria-label="Évjárat szűrő">
+          <option value="">Minden évjárat</option>
+          <option value="2000+" selected>2000-től</option>
+        </select>
+      </div>
+      <div id="catalog-status" class="small">Katalógus betöltése…</div>
+      <div id="catalog-grid" class="catalog-grid"></div>
+    </section>
+    </div>
+    <div class="tab" id="tab-cfg">
+      <div class="group" id="cfg-group">
+        <h3>Beállítások</h3>
+        <button id="cfg-export" title="A beállítások mentése egy fájlba (gép, kártyák, joystick, hangerő, debugger stb.)">Exportálás</button>
+        <label class="name" title="A lemezek, a gyorsmentések, a pendrive és a TVC256k++ flash tartalma is bekerül (a ROM-ok nem)"><input type="checkbox" id="cfg-data"> lemezekkel, gyorsmentésekkel együtt</label>
+        <label class="file" title="Korábban exportált beállítások visszatöltése (az oldal újratöltődik)">Importálás…
+          <input type="file" id="cfg-import" accept=".json,application/json">
+        </label>
+      </div>
+    </div>
+  </section>
 
+</main>
+<div id="dbg-wrap">
   <section id="debugger" class="group" tabindex="-1" hidden>
-    <h3>Debugger <span id="dbg-machine" class="small"></span></h3>
+    <h3 class="dbg-head">Debugger <span id="dbg-machine" class="small"></span><button id="dbg-close" title="Debugger bezárása">✕</button></h3>
     <div class="dbg-bar">
       <button id="dbg-run" title="Folytatás (F5)">▶ Folytatás</button>
       <button id="dbg-pause" title="Megállítás a következő utasításnál">⏸ Megállítás</button>
@@ -385,116 +583,9 @@
       <div id="dbg-script-out" class="dbg-mono"></div>
     </div>
   </section>
-
-  <section id="media">
-    <div class="group" id="qs-group" hidden>
-      <h3>Gyorsmentés <span id="qs-total" class="small" title="A gyorsmentések helye a böngésző tárhelyén"></span></h3>
-      <div id="qs-slots"></div>
-      <div class="qs-rw">
-        <label title="Az utolsó ~30 másodperc megőrzése másodpercenként egy pillanatképben"><input type="checkbox" id="rw-on"> Visszatekerés</label>
-        <button id="rw-back" title="Vissza 5 másodpercet (többször is nyomható)">⏪ 5 mp</button>
-        <span class="name" id="rw-note"></span>
-      </div>
-    </div>
-    <div class="group">
-      <h3>Magnó</h3>
-      <span id="tape-name" class="name">nincs kazetta</span>
-      <button id="tape-play">▶ Lejátszás</button>
-      <button id="tape-stop">■ Stop</button>
-      <button id="tape-rew">⏮ Elejére</button>
-      <button id="tape-rec">● Felvétel</button>
-      <button id="tape-prev" title="Vissza az előző jelölőhöz (ha nincs, 10 másodpercet)">⏪</button>
-      <button id="tape-next" title="Előre a következő jelölőhöz (ha nincs, 10 másodpercet)">⏩</button>
-      <button id="tape-mark" title="Jelölő a mostani helyre (a .tap letöltésébe bekerül)">＋ Jelölő</button>
-      <button id="tape-unmark" title="A legközelebbi jelölő törlése">− Jelölő</button>
-      <button id="tape-new">Üres kazetta</button>
-      <button id="tape-save" title="A kazetta letöltése ep128emu formátumban">Letöltés (.tap)</button>
-      <button id="tape-wav" title="A kazetta letöltése hangfájlként: valódi gépbe vagy más emulátorba tölthető">Letöltés (.wav)</button>
-      <label class="file" title="TVC .cas programok átalakítása kazettás hangfájllá (.wav); .zip is lehet">CAS → WAV…
-        <input type="file" id="cas-wav" accept=".cas,.zip" multiple>
-      </label>
-      <label class="name"><input type="checkbox" id="tape-fast" checked> Gyors betöltés (turbó, amíg forog a szalag)</label>
-    </div>
-    <div class="group drive">
-      <h3>Lemez (A:)</h3>
-      <div class="dslots" id="drive-a"></div>
-    </div>
-    <div class="group drive">
-      <h3>Lemez (B:)</h3>
-      <div class="dslots" id="drive-b"></div>
-    </div>
-    <div class="group">
-      <h3>FILE: eszköz</h3>
-      <span id="files-list" class="name">üres</span>
-      <label class="file" title="Fájlok másolása a FILE: eszközre (indítás nélkül)">Betöltés…
-        <input type="file" id="files-file" multiple>
-      </label>
-      <button id="files-clear">Törlés</button>
-    </div>
-    <div class="group" id="tvc-cards-group">
-      <h3>TVC bővítőportok</h3>
-      <label class="slot">Port 0 <select id="tvc-slot0"></select></label>
-      <label class="slot">Port 1 <select id="tvc-slot1"></select></label>
-      <label class="slot">Port 2 <select id="tvc-slot2"></select></label>
-      <label class="slot">Port 3 <select id="tvc-slot3"></select></label>
-      <label class="slot" title="Melyik kártya legyen az alapértelmezett tároló (LOAD/SAVE, a parancssora: VT-DOS EXT 2, TVC256k++ EXT + port). Automatikus: a legnagyobb sorszámú portban lévő, mint a valódi gépen.">Alapértelmezett tároló <select id="tvc-defdev">
-        <option value="-1">automatikus (a legnagyobb port)</option><option value="1">VT-DOS</option><option value="2">FILE:</option><option value="5">TVC256k++</option></select></label>
-      <span class="name" id="tvc-defdev-note"></span>
-      <button id="tvc-slots-apply" title="A kártyák betöltése és hideg újraindítás">Portok betöltése, újraindítás</button>
-      <button id="tvc-slots-default" title="FILE:, VT-DOS, GameCard, üres (betöltés a gombbal)">Alapbeállítás</button>
-      <span class="name" id="tvc-slots-note"></span>
-      <span class="name" data-i18n-html="tvcports">A VT-DOS, a FILE: és a TVC256k++ közül alapból a legnagyobb sorszámú portban lévő lesz
-        az alapértelmezett tároló (fent átállítható); a parancssoruk csak így működik. VT-DOS: <code>EXT 2</code>,
-        TVC256k++: <code>EXT</code> + a port száma (pl. 3-as portban <code>EXT 3</code>).
-        TVC256k++ flash drive: ejtsd rá a <code>flash-root-*.bin</code> / <code>.zip</code> fájlt.</span>
-    </div>
-    <div class="group" id="usb-group" hidden>
-      <h3>USB pendrive (TVC256k++)</h3>
-      <label title="A pendrive a TVC256k++ kártya USB-portjában: bootoláskor ez lesz az aktív meghajtó, és a képre húzott programok is erre kerülnek">
-        <input type="checkbox" id="usb-on"> Bedugva</label>
-      <label class="slot">Méret <select id="usb-size">
-        <option value="32">32 MB</option><option value="64">64 MB</option>
-        <option value="128">128 MB</option><option value="256">256 MB</option></select></label>
-      <span class="name" id="usb-space"></span>
-      <div id="usb-browser">
-        <div id="usb-path"></div>
-        <ul id="usb-list"></ul>
-        <div id="usb-drop">Húzd ide a fájlokat (bármilyen típus; a ZIP kibontva, mappastruktúrával kerül fel)</div>
-      </div>
-      <button id="usb-add">Fájlok hozzáadása…</button>
-      <button id="usb-add-dir">Mappa hozzáadása…</button>
-      <button id="usb-mkdir">Új mappa</button>
-      <button id="usb-clear" title="A pendrive teljes tartalmának törlése">Pendrive törlése</button>
-      <input type="file" id="usb-file" multiple hidden>
-      <input type="file" id="usb-folder" webkitdirectory multiple hidden>
-      <span class="name" id="usb-note"></span>
-    </div>
-    <div class="group" id="joy-group">
-      <div class="slot" id="cart-group">
-        <b>Cartridge</b>
-        <span id="cart-name" class="name">nincs modul</span>
-        <button id="cart-eject">Kiadás</button>
-      </div>
-      <div class="slot" id="fx-group">
-        <label title="2dfx grafikus kártya (F8h/F9h portok), Enterprise-on és TVC-n"><input type="checkbox" id="fx-on"> <b>2dfx</b> grafikus kártya</label>
-        <span id="fx-note" class="name"></span>
-      </div>
-      <h3 title="TVC: az 1. port ugyanaz, mint a beépített kurzorjoystick">Joystick</h3>
-      <div id="joy-map"></div>
-      <span class="name" id="pad-status"></span>
-    </div>
-    <div class="group" id="cfg-group">
-      <h3>Beállítások</h3>
-      <button id="cfg-export" title="A beállítások mentése egy fájlba (gép, kártyák, joystick, hangerő, debugger stb.)">Exportálás</button>
-      <label class="name" title="A lemezek, a gyorsmentések, a pendrive és a TVC256k++ flash tartalma is bekerül (a ROM-ok nem)"><input type="checkbox" id="cfg-data"> lemezekkel, gyorsmentésekkel együtt</label>
-      <label class="file" title="Korábban exportált beállítások visszatöltése (az oldal újratöltődik)">Importálás…
-        <input type="file" id="cfg-import" accept=".json,application/json">
-      </label>
-    </div>
-  </section>
-
-  <details id="help">
-    <summary>Súgó</summary>
+</div>
+  <dialog id="help">
+    <div class="dm-head"><b>Súgó</b><button id="help-close" title="Bezárás">✕</button></div>
     <ul data-i18n-html="help">
       <li><b>Fájl betöltése</b> (vagy húzd a képre, akár több fájlt vagy egy <code>.zip</code>-et):
         <code>.tap</code>/<code>.wav</code> → magnó,
@@ -503,7 +594,7 @@
         <code>.ep128s</code> → pillanatkép, <code>.ep128d</code> → demó,
         <code>.bin</code> → ROM-csomag. Minden más fájl a <code>FILE:</code> eszközre kerül,
         és a program automatikusan elindul; ha több indítható program van, választhatsz.</li>
-      <li><b>TVC-játékok</b>: az oldal alján lévő Program katalógusban több mint 1400 TVC-program
+      <li><b>TVC-játékok</b>: a Katalógus fülön (vagy Fájl → Programkatalógus) több mint 1400 TVC-program
         közül választhatsz, kattintásra a megfelelő géppel indul. Más programot (pl. a tvc.hu-ról) a
         „Fájl betöltése…” gombbal vagy a képre húzva tölthetsz be (<code>.cas</code>, <code>.zip</code>).</li>
       <li><b>Utántöltős programok</b>: tedd fel az összes fájlt egyszerre (vagy egy ZIP-ben).
@@ -533,29 +624,13 @@
     </ul>
     <p class="small" data-i18n-html="helpcore">Az emulációs mag az <a href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu</a>
     (Varga István, GPL v2) változatlan forráskódja, WebAssemblyre fordítva.</p>
-  </details>
+  </dialog>
 
-  <section id="catalog" class="group catalog-panel">
-    <h3>Program katalógus</h3>
-    <div id="catalog-filters">
-      <input id="catalog-search" type="search" placeholder="Keresés…" aria-label="Keresés">
-      <select id="catalog-type" aria-label="Típus szűrő">
-        <option value="">Minden típus</option>
-      </select>
-      <select id="catalog-year" aria-label="Évjárat szűrő">
-        <option value="">Minden évjárat</option>
-        <option value="2000+" selected>2000-től</option>
-      </select>
-    </div>
-    <div id="catalog-status" class="small">Katalógus betöltése…</div>
-    <div id="catalog-grid" class="catalog-grid"></div>
-  </section>
-</main>
-
-<script src="i18n-strings.js?v=202611050944-131e5d8"></script>
-<script src="i18n.js?v=202611050944-131e5d8"></script>
-<script src="ep128emu.js?v=202611050944-131e5d8"></script>
-<script src="screenfx.js?v=202611050944-131e5d8"></script>
-<script src="ep128.js?v=202611050944-131e5d8"></script>
+<script src="i18n-strings.js?v=202611051525-a6674f5"></script>
+<script src="i18n.js?v=202611051525-a6674f5"></script>
+<script src="ep128emu.js?v=202611051525-a6674f5"></script>
+<script src="screenfx.js?v=202611051525-a6674f5"></script>
+<script src="ep128.js?v=202611051525-a6674f5"></script>
+<script src="ui.js?v=202611051525-a6674f5"></script>
 </body>
 </html>
