@@ -1246,6 +1246,37 @@ registerProcessor('ep-output', EPOutput);
     return (machine && machine.type === 1 ? KEYMAP_TVC : KEYMAP)[e.code];
   }
 
+  // shortcuts of the page (the machine's own keys stay with the machine):
+  // F9 pause, F10 / Alt+Enter full screen, Alt+L load, Alt+S save state,
+  // Alt+P picture, Alt+M mute, Alt+B rewind 5 s, Alt+1..4 quick save to
+  // slot 1..4, Alt+5..8 load slot 1..4 (not in text fields; the debugger
+  // has its own F keys)
+  const ALT_ACTIONS = {
+    Enter: () => toggleFullscreen(),
+    KeyL: () => $('file-any').click(),
+    KeyS: () => $('btn-snap').click(),
+    KeyP: () => $('btn-shot').click(),
+    KeyM: () => toggleMute(),
+    KeyB: () => $('rw-back').click()
+  };
+  window.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || isTextInput(e.target)) return;
+    let act = null;
+    if (!e.altKey && !e.shiftKey && (e.code === 'F9' || e.code === 'F10')) {
+      if (e.target.closest && e.target.closest('#debugger')) return;
+      act = e.code === 'F9' ? () => $('btn-pause').click() : () => toggleFullscreen();
+    } else if (e.altKey) {
+      const d = /^Digit([1-8])$/.exec(e.code);
+      if (d) act = +d[1] <= QS_SLOTS ? () => qsSave(+d[1] - 1) : () => qsLoad(+d[1] - 1 - QS_SLOTS);
+      else act = ALT_ACTIONS[e.code];
+    }
+    if (!act) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (e.altKey) releaseAllKeys();     // the Alt key went to the machine
+    if (!e.repeat) act();
+  }, true);
+
   // Alt+D: to the debugger, Alt+E: to the emulator screen (also from the
   // debugger's input fields; AltGr, which is Ctrl+Alt, is left alone)
   window.addEventListener('keydown', (e) => {

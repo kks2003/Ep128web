@@ -52,6 +52,16 @@ letöltését külön kell betölteni.
   Panel menüben a képernyő mellé tehető; a választás és az utolsó fül megmarad.
 - A **debugger** (Eszközök → Debugger, Alt+D) a panel alatt nyílik, teljes
   szélességben; a **súgó** külön ablakban (Súgó menü).
+- **Teljes képernyő** (F10 vagy Alt+Enter): számítógépen csak a kép látszik,
+  telefonon az érintős vezérlők is; a Nézet menüben választható, hogy a kép
+  arányos maradjon vagy kitöltse a képernyőt (torzítva).
+- **Gyorsbillentyűk:** F11 reset, Shift+F11 hideg reset, F12 turbó, F9 szünet /
+  folytatás, F10 vagy Alt+Enter teljes képernyő, Alt+D debugger, Alt+E vissza az
+  emulátorra, Alt+L fájl betöltése, Alt+S állapot mentése, Alt+P képernyőkép,
+  Alt+M némítás, Alt+B visszatekerés 5 mp, Alt+1…4 gyorsmentés az 1–4. helyre,
+  Alt+5…8 az 1–4. gyorsmentés betöltése. A debuggerben: F5 folytatás, F11 lépés,
+  F10 átlépés, F4 futás a kurzorig, F9 töréspont. (F1–F8 az Enterprise
+  funkcióbillentyűi maradnak.)
 - **Automatikus indítás (TVC)** a Gép menüben: bekapcsolva a betöltött `.cas`
   programok akkor is elindulnak, ha a fejlécükben nincs AutoRun jelzés. A
   programfejléc AutoRun bájtja (FFh) a FILE: eszközre, ill. a TVC256k++

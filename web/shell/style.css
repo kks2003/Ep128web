@@ -582,6 +582,8 @@ body.side #tb-qs { margin-left: 0; }
 .drop > .sel.item select { max-width: min(250px, 62vw); min-height: 28px; padding: 2px 6px; }
 .drop hr { border: 0; border-top: 1px solid var(--border); margin: 4px 2px; width: auto; }
 .drop .head { color: var(--muted); font-size: 12px; padding: 4px 10px 2px; }
+.drop kbd { margin-left: auto; padding-left: 16px; color: var(--muted); font: 11px ui-monospace, Menlo, Consolas, monospace; }
+#bar .drop > button.on kbd { color: inherit; }
 .drop .about { display: flex; flex-direction: column; padding: 4px 10px 6px; color: var(--muted); font-size: 12px; }
 .drop .about b { color: var(--text); font-size: 13px; }
 .drop .radio::before { content: '○'; color: var(--muted); }
@@ -644,3 +646,14 @@ body.side #dbg-wrap { max-width: none; }
 #help::backdrop { background: rgba(0, 0, 0, 0.5); }
 #help .dm-head { position: sticky; top: -12px; background: var(--panel); padding: 4px 0; display: flex; align-items: center; gap: 8px; }
 #help .dm-head b { flex: 1; font-size: 15px; }
+
+/* full screen on a computer: only the picture (the touch controls stay on
+   phones and tablets); 'fill' stretches it to the whole screen */
+@media (pointer: fine) {
+  #play:fullscreen { padding: 0; gap: 0; display: flex; justify-content: center; align-items: center; }
+  #play:fullscreen > :not(#screen-wrap) { display: none !important; }
+  #play:fullscreen #screen-wrap { flex: 0 0 auto; width: min(100vw, calc(100vh * var(--screen-ar, 1.3333))); height: auto; max-width: 100%; max-height: 100%; }
+}
+body.fs-fill #play:fullscreen #screen-wrap {
+  aspect-ratio: auto; width: 100%; height: 100%; max-width: none; align-self: stretch; justify-self: stretch;
+}

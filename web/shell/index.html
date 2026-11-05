@@ -24,13 +24,13 @@
   <button id="menu-toggle" aria-label="Menü" aria-expanded="false">☰</button>
   <nav id="menus">
     <div class="menu"><button class="menu-btn">Fájl</button><div class="drop">
-      <label class="file">Fájl betöltése…
+      <label class="file">Fájl betöltése… <kbd>Alt+L</kbd>
       <input type="file" id="file-any" multiple>
     </label>
       <button data-act="tab:catalog" data-tvc>Programkatalógus</button>
       <hr>
-      <button id="btn-snap" title="Pillanatkép mentése (.ep128s)">Állapot mentése</button>
-      <button data-act="tb-qs">Gyorsmentés és visszatekerés…</button>
+      <button id="btn-snap" title="Pillanatkép mentése (.ep128s)">Állapot mentése <kbd>Alt+S</kbd></button>
+      <button data-act="tb-qs">Gyorsmentés és visszatekerés… <kbd>Alt+1…4 / 5…8</kbd></button>
       <hr>
       <button data-act="cfg-export">Beállítások exportálása</button>
       <button data-act="cfg-import">Beállítások importálása…</button>
@@ -39,9 +39,9 @@
       <label class="sel item">Gép
         <select id="machine"></select>
       </label>
-      <button id="btn-reset" title="Meleg reset (F11)">Reset</button>
-      <button id="btn-cold" title="Hideg reset / bekapcsolás (Shift+F11)">Hideg reset</button>
-      <button data-act="btn-pause">Szünet / folytatás</button>
+      <button id="btn-reset" title="Meleg reset (F11)">Reset <kbd>F11</kbd></button>
+      <button id="btn-cold" title="Hideg reset / bekapcsolás (Shift+F11)">Hideg reset <kbd>Shift+F11</kbd></button>
+      <button data-act="btn-pause">Szünet / folytatás <kbd>F9</kbd></button>
       <hr>
       <label class="sel item">Sebesség
         <select id="speed" title="Sebesség (a hang csak 100%-on szól)" aria-label="Sebesség">
@@ -49,7 +49,7 @@
       <option value="2">200%</option><option value="4">400%</option>
     </select>
       </label>
-      <button data-act="btn-turbo">Turbó</button>
+      <button data-act="btn-turbo">Turbó <kbd>F12</kbd></button>
       <hr>
       <label class="item check" data-tvc title="A betöltött programok akkor is elindulnak, ha a fejlécükben nincs AutoRun jelzés"><input type="checkbox" id="tvc-autorun"> Automatikus indítás (TVC)</label>
     </div></div>
@@ -71,7 +71,10 @@
       <button class="radio" data-layout="below">A képernyő alatt</button>
       <button class="radio" data-layout="side">A képernyő mellett</button>
       <hr>
-      <button data-act="tb-full">Teljes képernyő</button>
+      <button data-act="tb-full">Teljes képernyő <kbd>F10</kbd></button>
+      <div class="head">Teljes képernyőn a kép</div>
+      <button class="radio" data-fsfit="keep">Arányos</button>
+      <button class="radio" data-fsfit="fill">Kitöltés (torzítva)</button>
       <button data-act="tb-kbd">Képernyő-billentyűzet</button>
       <button data-act="tb-joy">Érintős joystick</button>
       <button data-act="tb-text">Szöveg beírása</button>
@@ -82,7 +85,7 @@
       </label>
     </div></div>
     <div class="menu"><button class="menu-btn">Felvétel</button><div class="drop">
-      <button id="btn-shot" title="A képernyő mentése képként (.png)">📷 Kép</button>
+      <button id="btn-shot" title="A képernyő mentése képként (.png)">📷 Kép <kbd>Alt+P</kbd></button>
       <button id="btn-video" title="Videó felvétele hanggal; újra megnyomva leáll és letöltődik">● Videó</button>
       <label class="sel item" id="video-fmt-row">Videó formátuma
         <select id="video-fmt" title="A videó formátuma" aria-label="A videó formátuma" hidden>
@@ -94,7 +97,7 @@
       <button id="btn-demo" title="Demó felvétele (.ep128d): a gép állapota, majd a billentyűk és az egér; újra megnyomva leáll és letöltődik">● Demó</button>
     </div></div>
     <div class="menu"><button class="menu-btn">Eszközök</button><div class="drop">
-      <button id="btn-debug" title="Debugger: regiszterek, disassembly, memória, töréspontok (Alt+D: a debuggerre, Alt+E: vissza az emulátorra)">🐞 Debugger</button>
+      <button id="btn-debug" title="Debugger: regiszterek, disassembly, memória, töréspontok (Alt+D: a debuggerre, Alt+E: vissza az emulátorra)">🐞 Debugger <kbd>Alt+D</kbd></button>
       <button id="btn-share" title="Megosztható link másolása: a gép, a kártyák és a betöltött program (kis programnál magában a linkben)">🔗 Link</button>
       <button data-act="btn-mouse" data-needs="btn-mouse">🖱 Egér befogása</button>
       <button id="btn-install" hidden title="Telepítés alkalmazásként (offline is működik)">Telepítés</button>
@@ -109,11 +112,11 @@
   </nav>
   <div id="quick">
     <button id="rec-ind" hidden title="Felvétel leállítása"></button>
-    <button id="btn-pause" title="Szünet (Pause)">Szünet</button>
+    <button id="btn-pause" title="Szünet / folytatás (F9)">Szünet</button>
     <button id="btn-turbo" title="Gyorsítás (F12)">Turbó</button>
     <label class="file" for="file-any" title="Fájl betöltése">📂</label>
     <span class="vol">
-      <button id="btn-mute" class="mute" title="Némítás" aria-pressed="false">🔊</button>
+      <button id="btn-mute" class="mute" title="Némítás (Alt+M)" aria-pressed="false">🔊</button>
       <input type="range" id="volume" min="0" max="100" value="70" title="Hangerő" aria-label="Hangerő">
     </span>
   </div>
@@ -194,7 +197,7 @@
     <button id="btn-load" title='load"*" + Enter (TVC)' hidden>load"*"</button>
     <button id="btn-run" title='RUN + Enter'>Run</button>
     <button id="btn-mouse" title="Egér az Enterprise-nak, ill. a TVC256k++ kártyának (kilépés: Esc)" hidden>🖱</button>
-    <button id="tb-full" title="Teljes képernyő">⛶</button>
+    <button id="tb-full" title="Teljes képernyő (F10)">⛶</button>
     <button id="tb-qs" aria-pressed="false" title="Gyorsmentés és visszatekerés panel">💾</button>
   </div>
 
@@ -228,7 +231,7 @@
       <div id="qs-slots"></div>
       <div class="qs-rw">
         <label title="Az utolsó ~30 másodperc megőrzése másodpercenként egy pillanatképben"><input type="checkbox" id="rw-on"> Visszatekerés</label>
-        <button id="rw-back" title="Vissza 5 másodpercet (többször is nyomható)">⏪ 5 mp</button>
+        <button id="rw-back" title="Vissza 5 másodpercet, többször is nyomható (Alt+B)">⏪ 5 mp</button>
         <span class="name" id="rw-note"></span>
       </div>
     </div>
@@ -620,7 +623,7 @@
         (a Shift, Ctrl és Alt egy leütésre ragad), az érintős joystick (a Joystick panel szerint,
         vagy kurzorbillentyűk + Space), és a szövegbeírás a telefon saját billentyűzetével.
         A ⛶ gombbal a kép és a vezérlők együtt kerülnek teljes képernyőre.</li>
-      <li>F11 = reset, Shift+F11 = hideg reset, F12 = turbó, Alt+D = a debuggerre, Alt+E = vissza az emulátorra.</li>
+      <li>F11 = reset, Shift+F11 = hideg reset, F12 = turbó, F9 = szünet / folytatás, F10 vagy Alt+Enter = teljes képernyő, Alt+D = a debuggerre, Alt+E = vissza az emulátorra, Alt+L = fájl betöltése, Alt+S = állapot mentése, Alt+P = képernyőkép, Alt+M = némítás, Alt+B = visszatekerés 5 mp, Alt+1…4 = gyorsmentés az 1–4. helyre, Alt+5…8 = az 1–4. gyorsmentés betöltése.</li>
     </ul>
     <p class="small" data-i18n-html="helpcore">Az emulációs mag az <a href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu</a>
     (Varga István, GPL v2) változatlan forráskódja, WebAssemblyre fordítva.</p>
