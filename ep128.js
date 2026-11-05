@@ -6711,7 +6711,10 @@ registerProcessor('ep-output', EPOutput);
           g.push(byte);
           inv.push(byte ^ 0xFF);
         }
-        t += font.get(g.join(',')) || font.get(inv.join(',')) || (g.some((x) => x) ? '?' : ' ');
+        // a filled rectangle (equal rows of adjacent pixels): the cursor
+        const rows = g.filter((x) => x), r0 = rows[0];
+        const block = rows.length >= 4 && rows.every((x) => x === r0) && ((r0 + (r0 & -r0)) & r0) === 0;
+        t += font.get(g.join(',')) || font.get(inv.join(',')) || (block ? ' ' : '?');
       }
       lines.push(t.replace(/\s+$/, ''));
     }
