@@ -4115,6 +4115,7 @@ registerProcessor('ep-output', EPOutput);
     setupQuickSaves();
     setupSettingsIO();
     setupLang();
+    setupTheme();
     setupCrt();
     $('btn-share').onclick = () => shareLink().catch((e) => setMessage('Link: ' + T(T(String(e.message || e))), true));
 
@@ -7471,6 +7472,37 @@ ep.log('CTRL+ESC megnyomva');`)
 
   // --- language: the page reloads in the new language; the machine's state
   // is kept (stored as 'resume', loaded after the restart)
+  // the colour theme: auto (follows the system), light, dark; set before
+  // the first paint by index.html
+  const THEMES = [
+    { id: 'auto', icon: '🌓', title: 'Téma: automatikus (a rendszeré)' },
+    { id: 'light', icon: '☀️', title: 'Téma: világos' },
+    { id: 'dark', icon: '🌙', title: 'Téma: sötét (éjszakai mód)' }
+  ];
+  function setupTheme() {
+    const btn = $('btn-theme');
+    if (!btn) return;
+    let cur = document.documentElement.dataset.theme || 'auto';
+    const show = () => {
+      const t = THEMES.find((x) => x.id === cur) || THEMES[0];
+      btn.textContent = t.icon;
+      btn.title = T(t.title) + ' – ' + T('kattintásra vált');
+      const dark = cur === 'dark' || (cur === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+      const meta = document.querySelector('meta[name=theme-color]');
+      if (meta) meta.content = dark ? '#161615' : '#1b1f45';
+    };
+    btn.onclick = () => {
+      cur = THEMES[(THEMES.findIndex((x) => x.id === cur) + 1) % THEMES.length].id;
+      if (cur === 'auto') delete document.documentElement.dataset.theme;
+      else document.documentElement.dataset.theme = cur;
+      try { localStorage.setItem('ep128web.theme', cur); } catch (e) { }
+      show();
+      setMessage(T((THEMES.find((x) => x.id === cur)).title));
+    };
+    if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', show);
+    show();
+  }
+
   let resumeState = null;
   function setupLang() {
     const sel = $('lang');
