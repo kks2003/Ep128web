@@ -55,13 +55,14 @@ letöltését külön kell betölteni.
 - **Teljes képernyő** (F10 vagy Alt+Enter): számítógépen csak a kép látszik,
   telefonon az érintős vezérlők is; a Nézet menüben választható, hogy a kép
   arányos maradjon vagy kitöltse a képernyőt (torzítva).
-- **Gyorsbillentyűk:** F11 reset, Shift+F11 hideg reset, F12 turbó, F9 szünet /
-  folytatás, F10 vagy Alt+Enter teljes képernyő, Alt+D debugger, Alt+E vissza az
-  emulátorra, Alt+L fájl betöltése, Alt+S állapot mentése, Alt+P képernyőkép,
-  Alt+M némítás, Alt+B visszatekerés 5 mp, Alt+1…4 gyorsmentés az 1–4. helyre,
+- **Gyorsbillentyűk:** F11 reset, Shift+F11 hideg reset, F12 turbó, Pause vagy F9
+  szünet / folytatás, F10 vagy Alt+Enter teljes képernyő, Alt+D debugger, Alt+E
+  vissza az emulátorra, Alt+L fájl betöltése, Alt+S állapot mentése, Alt+P
+  képernyőkép, Alt+V videófelvétel (indít / leállít), Alt+R RUN, Alt+T
+  `load"*"` (TVC), Alt+M némítás, Alt+B visszatekerés 5 mp, Alt+1…4 gyorsmentés az 1–4. helyre,
   Alt+5…8 az 1–4. gyorsmentés betöltése. A debuggerben: F5 folytatás, F11 lépés,
   F10 átlépés, F4 futás a kurzorig, F9 töréspont. (F1–F8 az Enterprise
-  funkcióbillentyűi maradnak.)
+  funkcióbillentyűi maradnak; a gép STOP billentyűje az End.)
 - **Automatikus indítás (TVC)** a Gép menüben: bekapcsolva a betöltött `.cas`
   programok akkor is elindulnak, ha a fejlécükben nincs AutoRun jelzés. A
   programfejléc AutoRun bájtja (FFh) a FILE: eszközre, ill. a TVC256k++
@@ -409,7 +410,7 @@ Felvétel a fejléc gombjaival:
   - Ha mindkettőt tudja, a gomb melletti választóval lehet váltani. Az alapértelmezés MP4, a választást az oldal megjegyzi.
 - **● Hang**: az emulált hang felvétele WAV-ként (16 bit, sztereó). Újra megnyomva leáll, és a fájl letöltődik. A felvételre a hangerő és a némítás nem hat.
 
-Enterprise-billentyűzet: Esc = ESC, Backspace = ERASE, Del = DEL, Ins = INS, End/Pause = STOP,
+Enterprise-billentyűzet: Esc = ESC, Backspace = ERASE, Del = DEL, Ins = INS, End = STOP,
 Home = HOLD, Alt = ALT, F1–F8 = funkciógombok, CapsLock = LOCK; F11 = reset,
 Shift+F11 = hideg reset, F12 = turbó. Joystickok: a Joystick panelen
 minden bemenethez (numerikus 8/4/6/2 + 0, nyilak + jobb Ctrl, W A S D + Space,
@@ -417,7 +418,7 @@ gamepad 1–4, érintős joystick) kiválasztható, melyik joystickot hajtja: TV
 1. portot (ugyanaz, mint a beépített kurzorjoystick), a 2. portot, vagy a GameCard
 3–4. joystickját; EP-n a két külső joystickot. Alapból: numerikus és gamepad 1 →
 1., gamepad 2 → 2., gamepad 3–4 → GameCard 3–4.; a beállítást a böngésző megjegyzi.
-TVC-n a PC Esc az ESC billentyűt, a magyar PC `í` billentyűje pedig az `í` karaktert adja; az End/Pause a CTRL+ESC (STOP) kombinációt nyomja, mert a Ctrl+Esc-et a Windows a Start menünek tartja meg.
+TVC-n a PC Esc az ESC billentyűt, a magyar PC `í` billentyűje pedig az `í` karaktert adja; az End a CTRL+ESC (STOP) kombinációt nyomja, mert a Ctrl+Esc-et a Windows a Start menünek tartja meg.
 
 ### Mobilon
 
