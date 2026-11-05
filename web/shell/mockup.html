@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Ep128web – új felület (minta)</title>
+<script>
+  try {
+    const t = localStorage.getItem('ep128web.theme');
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  } catch (e) { }
+</script>
+<link rel="stylesheet" href="style.css">
+<style>
+/* Ep128web: a mockup of the new layout (menu bar, tabs, side panel); it
+   does not run the emulator */
+body { min-height: 100vh; display: flex; flex-direction: column; }
+.note { background: #b45309; color: #fff; padding: 6px 16px; font-weight: 600; font-size: 13px; }
+
+/* --- menu bar --- */
+#bar {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  padding: 4px 10px; background: var(--panel); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 20;
+}
+#bar .title { font-weight: 700; margin-right: 10px; white-space: nowrap; }
+#bar .title small { color: var(--muted); font-weight: 400; }
+.menus { display: flex; gap: 2px; }
+.menu { position: relative; }
+.menu > button {
+  background: transparent; border-color: transparent; padding: 4px 10px; min-height: 30px;
+}
+.menu > button:hover, .menu.open > button { background: var(--button); border-color: var(--border); }
+.drop {
+  display: none; position: absolute; top: calc(100% + 2px); left: 0; min-width: 240px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25); padding: 4px; z-index: 30;
+}
+.menu.open .drop { display: block; }
+.drop button, .drop label.item {
+  display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 16px;
+  background: transparent; border: 0; border-radius: 5px; padding: 6px 10px; min-height: 30px;
+  text-align: left; white-space: nowrap; color: var(--text); font: inherit; cursor: pointer;
+}
+.drop button:hover, .drop label.item:hover { background: var(--button-hover); }
+.drop kbd { color: var(--muted); font: 12px ui-monospace, Menlo, Consolas, monospace; }
+.drop hr { border: 0; border-top: 1px solid var(--border); margin: 4px 2px; }
+.drop .head { color: var(--muted); font-size: 12px; padding: 4px 10px 2px; }
+.drop .radio::before { content: '○'; margin-right: 8px; color: var(--muted); }
+.drop .radio.sel::before { content: '●'; color: var(--accent); }
+.drop label.radio { justify-content: flex-start; }
+
+.quick { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.quick button { min-height: 30px; padding: 3px 9px; }
+.rec {
+  display: none; align-items: center; gap: 6px; background: var(--accent); color: var(--accent-text);
+  border-radius: 14px; padding: 2px 10px; font-weight: 700; font-size: 13px; cursor: pointer;
+}
+.rec.on { display: inline-flex; }
+.rec::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: #fff; animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: 0.2; } }
+#hamb { display: none; }
+
+/* --- layout: the screen and the panel --- */
+#layout { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 14px; max-width: 1100px; width: 100%; margin: 0 auto; }
+body.side #layout { max-width: none; grid-template-columns: minmax(0, 1fr) minmax(340px, 30vw); align-items: start; }
+body.side #panel { position: sticky; top: 52px; max-height: calc(100vh - 66px); overflow: auto; }
+
+.screen {
+  background: #000; border-radius: 6px; aspect-ratio: 4 / 3; width: 100%;
+  max-height: calc(100vh - 170px); margin: 0 auto; display: block;
+}
+body.side .screen { width: min(100%, calc((100vh - 170px) * 4 / 3)); }
+.underbar { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; }
+.status { display: flex; gap: 16px; color: var(--muted); font-size: 12px; padding-top: 6px; }
+
+/* --- tabs --- */
+#panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
+.tabs { display: flex; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--border); padding: 6px 6px 0; scrollbar-width: thin; }
+.tabs button {
+  background: transparent; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0;
+  padding: 6px 12px; white-space: nowrap; color: var(--muted);
+}
+.tabs button.act { background: var(--bg); border-color: var(--border); color: var(--text); font-weight: 600; margin-bottom: -1px; }
+.tab { display: none; padding: 12px 14px; }
+.tab.act { display: block; }
+.tab h4 { margin: 12px 0 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.tab h4:first-child { margin-top: 0; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; }
+.kv select { width: 100%; min-width: 0; }
+.drv { border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; margin-bottom: 6px; }
+.small { color: var(--muted); font-size: 12px; }
+.cat { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+body:not(.side) .cat { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.card { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg); cursor: pointer; }
+.card .pic { aspect-ratio: 4 / 3; background: linear-gradient(135deg, #0a1a8a, #2d0a6a); }
+.card .t { padding: 5px 7px; font-size: 12px; font-weight: 600; }
+.card .y { padding: 0 7px 6px; font-size: 11px; color: var(--muted); }
+.cat-f { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin-bottom: 8px; }
+.cat-f input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; min-width: 0; }
+
+#toast {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: rgba(0,0,0,0.85);
+  color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity 0.2s;
+  pointer-events: none; z-index: 50; max-width: 90vw; text-align: center;
+}
+#toast.on { opacity: 1; }
+
+/* --- phones: the menus go into the ☰ --- */
+@media (max-width: 700px) {
+  #hamb { display: inline-block; }
+  .menus { display: none; order: 9; width: 100%; flex-direction: column; }
+  #bar.open .menus { display: flex; }
+  .menu > button { width: 100%; text-align: left; }
+  .drop { position: static; box-shadow: none; margin: 2px 0 6px 10px; }
+  .quick .wide { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="note">MINTA – csak a kinézet, az emulátor nem fut. A menük kattinthatók; a „Nézet → Panel” alatt próbálható a képernyő melletti / alatti elrendezés. <a href="./" style="color:#fff">vissza az emulátorhoz</a></div>
+
+<div id="bar">
+  <span class="title">Enterprise 128 · TVC <small>web</small></span>
+  <button id="hamb" aria-label="Menü">☰</button>
+  <div class="menus">
+    <div class="menu"><button>Fájl</button><div class="drop">
+      <button>Fájl betöltése… <kbd>Ctrl+O</kbd></button>
+      <button>Programkatalógus</button>
+      <hr>
+      <button>Állapot mentése (.ep128s)</button>
+      <button>Gyorsmentés <kbd>F5</kbd></button>
+      <button>Gyorsbetöltés <kbd>F9</kbd></button>
+      <button>Visszatekerés (az utolsó 30 s)</button>
+      <hr>
+      <button>Beállítások exportálása…</button>
+      <button>Beállítások importálása…</button>
+    </div></div>
+    <div class="menu"><button>Gép</button><div class="drop">
+      <div class="head">Gép</div>
+      <label class="item radio">EP128 (UK) · EXDOS · 128K</label>
+      <label class="item radio">EP128 (magyar) · EXDOS · 128K</label>
+      <label class="item radio">EP 640K · EXOS 2.32 · EXDOS</label>
+      <label class="item radio sel">TVC 64k · BASIC 1.2</label>
+      <label class="item radio">TVC 64k+ · BASIC 2.2</label>
+      <label class="item radio">TVC 64k+ · VT-DOS (cartridge)</label>
+      <button class="small">további gépek…</button>
+      <hr>
+      <button>Reset <kbd>F11</kbd></button>
+      <button>Hideg reset <kbd>Shift+F11</kbd></button>
+      <button>Szünet <kbd>Pause</kbd></button>
+      <hr>
+      <div class="head">Sebesség</div>
+      <label class="item radio">50%</label>
+      <label class="item radio sel">100%</label>
+      <label class="item radio">200%</label>
+      <button>Turbó <kbd>F12</kbd></button>
+    </div></div>
+    <div class="menu"><button>Nézet</button><div class="drop">
+      <div class="head">Képernyő-effekt</div>
+      <label class="item radio sel">Éles</label>
+      <label class="item radio">CRT (WebGL)</label>
+      <label class="item radio">Régi tévé</label>
+      <label class="item radio">Zöld monitor</label>
+      <button class="small">további effektek…</button>
+      <hr>
+      <div class="head">Panel</div>
+      <label class="item radio" data-layout="side">A képernyő mellett</label>
+      <label class="item radio" data-layout="below">A képernyő alatt</label>
+      <hr>
+      <button>Teljes képernyő</button>
+      <button>Képernyő-billentyűzet</button>
+      <button>Joystick (érintőképernyő)</button>
+      <hr>
+      <div class="head">Téma</div>
+      <label class="item radio" data-theme="auto">Automatikus</label>
+      <label class="item radio" data-theme="light">Világos</label>
+      <label class="item radio" data-theme="dark">Sötét</label>
+      <hr>
+      <button>Nyelv: 🇭🇺 Magyar ›</button>
+    </div></div>
+    <div class="menu"><button>Felvétel</button><div class="drop">
+      <button>📷 Képernyőkép (.png)</button>
+      <button data-rec="Videó">● Videó (MP4)</button>
+      <button data-rec="Hang">● Hang (.wav)</button>
+      <button data-rec="Demó">● Demó (.ep128d)</button>
+      <hr>
+      <div class="head">Videó formátuma</div>
+      <label class="item radio sel">MP4</label>
+      <label class="item radio">WebM</label>
+    </div></div>
+    <div class="menu"><button>Eszközök</button><div class="drop">
+      <button>🐞 Debugger <kbd>Alt+D</kbd></button>
+      <button>🔗 Megosztható link másolása</button>
+      <button>🖱 Egér befogása</button>
+      <button>Telepítés alkalmazásként</button>
+    </div></div>
+    <div class="menu"><button>Súgó</button><div class="drop">
+      <button>Használat</button>
+      <button>Billentyűk</button>
+      <button>Újdonságok</button>
+      <hr>
+      <button>Névjegy (ep128emu, licencek)</button>
+    </div></div>
+  </div>
+  <div class="quick">
+    <span class="rec" id="rec" title="Felvétel leállítása">REC <span id="rec-t">0:00</span></span>
+    <button title="Szünet">⏸</button>
+    <button class="wide" title="Turbó">⏩</button>
+    <button title="Fájl betöltése">📂</button>
+    <button title="Némítás">🔊</button>
+    <input class="wide" type="range" value="70" style="width:80px" aria-label="Hangerő">
+  </div>
+</div>
+
+<div id="layout">
+  <div>
+    <canvas class="screen" id="scr" width="768" height="576"></canvas>
+    <div class="underbar">
+      <button>⌨ Billentyűzet</button>
+      <button>🕹 Joystick</button>
+      <button>Aa Szöveg beírása</button>
+      <button>Run</button>
+      <button>⛶</button>
+      <button>💾</button>
+    </div>
+    <div class="status"><span>Sebesség: 100%</span><span>Magnó: 0:00 / 0:00</span></div>
+  </div>
+
+  <section id="panel">
+    <div class="tabs">
+      <button data-tab="tape" class="act">Magnó</button>
+      <button data-tab="disk">Lemezek</button>
+      <button data-tab="cards">Bővítők</button>
+      <button data-tab="joy">Joystick</button>
+      <button data-tab="cat">Katalógus</button>
+      <button data-tab="cfg">Beállítások</button>
+    </div>
+    <div class="tab act" id="tab-tape">
+      <div class="small" style="margin-bottom:8px">nincs kazetta</div>
+      <div class="row"><button>▶ Lejátszás</button><button>■ Stop</button><button>⏮ Elejére</button><button>● Felvétel</button></div>
+      <div class="row"><button>⏪</button><button>⏩</button><button>＋ Jelölő</button><button>− Jelölő</button></div>
+      <h4>Kazetta</h4>
+      <div class="row"><button>Üres kazetta</button><button>Letöltés (.tap)</button><button>Letöltés (.wav)</button><button>CAS → WAV…</button></div>
+      <label class="small"><input type="checkbox" checked> Gyors betöltés (turbó, amíg a szalag megy)</label>
+    </div>
+    <div class="tab" id="tab-disk">
+      <h4>Lemez (A:)</h4>
+      <div class="drv"><div class="row"><b>1.</b> üres <span style="flex:1"></span><button>＋</button><button>📂</button><button>⬇</button><button>✕</button></div></div>
+      <h4>Lemez (B:)</h4>
+      <div class="drv"><div class="row"><b>1.</b> üres <span style="flex:1"></span><button>＋</button><button>📂</button><button>⬇</button><button>✕</button></div></div>
+      <h4>FILE: eszköz</h4>
+      <div class="small">üres</div>
+      <div class="row" style="margin-top:6px"><button>Betöltés…</button><button>Törlés</button></div>
+    </div>
+    <div class="tab" id="tab-cards">
+      <h4>TVC bővítőportok</h4>
+      <div class="kv">
+        <span>Port 0</span><select><option>FILE: (.cas fájlok)</option></select>
+        <span>Port 1</span><select><option>VT-DOS (lemez)</option></select>
+        <span>Port 2</span><select><option>GameCard (SN76489 + joystick)</option></select>
+        <span>Port 3</span><select><option>— üres —</option><option>TVC256k++</option></select>
+      </div>
+      <label style="display:block;margin:8px 0"><input type="checkbox"> 2dfx grafikus kártya</label>
+      <div class="row"><button>Portok betöltése, újraindítás</button><button>Alapértelmezés</button></div>
+      <h4>Cartridge</h4>
+      <div class="row"><span class="small">nincs modul</span><button>Kiadás</button></div>
+      <h4>USB pendrive (TVC256k++)</h4>
+      <div class="small">csak TVC256k++ kártyával</div>
+    </div>
+    <div class="tab" id="tab-joy">
+      <div class="kv">
+        <span>Num 8/4/6/2 + 0</span><select><option>1. port</option></select>
+        <span>Nyilak + jobb Ctrl</span><select><option>nincs</option></select>
+        <span>WASD + szóköz</span><select><option>nincs</option></select>
+        <span>Gamepad 1</span><select><option>1. port</option></select>
+        <span>Gamepad 2</span><select><option>2. port</option></select>
+        <span>Érintés</span><select><option>1. port</option></select>
+      </div>
+    </div>
+    <div class="tab" id="tab-cat">
+      <div class="cat-f"><input placeholder="Keresés a 169 program között…"><select><option>Minden típus</option></select></div>
+      <div class="cat" id="cat"></div>
+    </div>
+    <div class="tab" id="tab-cfg">
+      <h4>Hang</h4>
+      <label style="display:block"><input type="checkbox" checked> Hang a betöltés alatt</label>
+      <h4>Beállítások mentése</h4>
+      <div class="row"><button>Exportálás</button><button>Importálás…</button></div>
+      <label class="small"><input type="checkbox"> a lemezekkel és a gyorsmentésekkel együtt</label>
+      <h4>ROM-ok</h4>
+      <div class="row"><button>ROM-csomag betöltése…</button></div>
+    </div>
+  </section>
+</div>
+<div id="toast"></div>
+
+<script>
+(function () {
+  const $ = (s, r) => (r || document).querySelector(s);
+  const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
+  const toast = (t) => { const e = $('#toast'); e.textContent = t; e.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.remove('on'), 1600); };
+
+  // the screen: a TVC-like start picture
+  const c = $('#scr').getContext('2d');
+  c.fillStyle = '#00008b'; c.fillRect(0, 0, 768, 576);
+  c.font = 'bold 34px monospace'; c.textAlign = 'center';
+  for (let i = 0; i < 7; i++) { c.fillStyle = '#ff2020'; c.fillText('VIDEOTON', 420 - i * 22, 120 + i * 44); }
+  c.fillStyle = '#20ff40'; c.fillText('TV COMPUTER', 384, 470);
+
+  // menus: click opens, hovering moves between open menus, Esc / outside closes
+  let open = null;
+  const close = () => { if (open) open.classList.remove('open'); open = null; };
+  for (const m of $$('.menu')) {
+    const b = m.firstElementChild;
+    b.onclick = (e) => { e.stopPropagation(); const was = open === m; close(); if (!was) { m.classList.add('open'); open = m; } };
+    b.onmouseenter = () => { if (open && open !== m && matchMedia('(min-width: 701px)').matches) { close(); m.classList.add('open'); open = m; } };
+  }
+  document.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  $('#hamb').onclick = (e) => { e.stopPropagation(); $('#bar').classList.toggle('open'); };
+
+  // radio items in a group: select one
+  for (const it of $$('.drop .radio')) {
+    it.onclick = (e) => {
+      e.stopPropagation();
+      if (it.dataset.layout) { setLayout(it.dataset.layout); return; }
+      if (it.dataset.theme) { setTheme(it.dataset.theme); return; }
+      let n = it.previousElementSibling;
+      while (n && n.classList.contains('radio')) { n.classList.remove('sel'); n = n.previousElementSibling; }
+      n = it.nextElementSibling;
+      while (n && n.classList.contains('radio')) { n.classList.remove('sel'); n = n.nextElementSibling; }
+      it.classList.add('sel');
+      toast(it.textContent.trim());
+    };
+  }
+  for (const b of $$('.drop button')) {
+    b.addEventListener('click', () => {
+      if (b.dataset.rec) startRec(b.dataset.rec);
+      else if (/katalógus/i.test(b.textContent)) showTab('cat');
+      else toast(b.textContent.replace(/\s+/g, ' ').trim() + ' (minta)');
+    });
+  }
+
+  // layout: next to the screen (wide windows) or under it
+  function setLayout(l) {
+    document.body.classList.toggle('side', l === 'side');
+    for (const it of $$('[data-layout]')) it.classList.toggle('sel', it.dataset.layout === l);
+    try { localStorage.setItem('ep128web.mockLayout', l); } catch (e) { }
+  }
+  let l = null;
+  try { l = localStorage.getItem('ep128web.mockLayout'); } catch (e) { }
+  setLayout(l || (innerWidth >= 1200 ? 'side' : 'below'));
+
+  function setTheme(t) {
+    if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+    for (const it of $$('[data-theme]')) it.classList.toggle('sel', it.dataset.theme === t);
+    try { localStorage.setItem('ep128web.theme', t); } catch (e) { }
+  }
+  setTheme(document.documentElement.dataset.theme || 'auto');
+
+  // tabs
+  function showTab(id) {
+    for (const b of $$('.tabs button')) b.classList.toggle('act', b.dataset.tab === id);
+    for (const t of $$('.tab')) t.classList.toggle('act', t.id === 'tab-' + id);
+    try { localStorage.setItem('ep128web.mockTab', id); } catch (e) { }
+  }
+  for (const b of $$('.tabs button')) b.onclick = () => showTab(b.dataset.tab);
+  try { const t = localStorage.getItem('ep128web.mockTab'); if (t) showTab(t); } catch (e) { }
+
+  // catalog cards
+  const games = [['15-ös fejtörő', '????'], ['21', '????'], ['8 bit sunset (64k+)', '2019'], ['Alien 8 (v3)', '1987'],
+    ['Aknamező (v2)', '1986'], ['Boulder Dash', '1988'], ['Csillagok háborúja', '1987'], ['Digger', '1986'],
+    ['Flappy Bird (256k++)', '2023'], ['Galaxy (2dfx)', '2024'], ['Kalandor', '1987'], ['Pac-Man', '1985']];
+  $('#cat').innerHTML = games.map(([t, y]) => `<div class="card"><div class="pic"></div><div class="t">${t}</div><div class="y">${y}</div></div>`).join('');
+  for (const cd of $$('.card')) cd.onclick = () => toast('Betöltés: ' + $('.t', cd).textContent + ' (minta)');
+
+  // recording indicator
+  let recT = null, recS = 0;
+  function startRec(what) {
+    clearInterval(recT); recS = 0;
+    $('#rec').classList.add('on'); $('#rec').title = what + ' felvétele – kattintásra leáll';
+    $('#rec-t').textContent = '0:00';
+    recT = setInterval(() => { recS++; $('#rec-t').textContent = Math.floor(recS / 60) + ':' + String(recS % 60).padStart(2, '0'); }, 1000);
+    toast(what + ' felvétele indult – a piros REC jelre kattintva leáll');
+  }
+  $('#rec').onclick = () => { clearInterval(recT); $('#rec').classList.remove('on'); toast('Felvétel leállítva, letöltés (minta)'); };
+})();
+</script>
+</body>
+</html>
