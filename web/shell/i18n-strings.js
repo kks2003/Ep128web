@@ -1241,5 +1241,6 @@ window.EP_I18N_STRINGS = [
 ["Lemezek", "Disks", "Disketten", "Диски"],
 ["Bővítők", "Expansions", "Erweiterungen", "Розширення"],
 ["Katalógus", "Catalogue", "Katalog", "Каталог"],
-["Cartridge, 2dfx", "Cartridge, 2dfx", "Steckmodul, 2dfx", "Картридж, 2dfx"]
+["Cartridge, 2dfx", "Cartridge, 2dfx", "Steckmodul, 2dfx", "Картридж, 2dfx"],
+["Debugger bezárása", "Close the debugger", "Debugger schließen", "Закрити налагоджувач"]
 ];

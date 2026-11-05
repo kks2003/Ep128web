@@ -129,6 +129,9 @@
   ar.checked = load('tvcAutorun') === '1';
   ar.addEventListener('change', () => store('tvcAutorun', ar.checked ? '1' : '0'));
 
+  // the debugger's close button (the Debugger item turns it on and off)
+  $('dbg-close').addEventListener('click', () => $('btn-debug').click());
+
   // --- the help window ---
   $('help-close').addEventListener('click', () => $('help').close());
   $('help').addEventListener('click', (e) => { if (e.target === $('help')) $('help').close(); });
