@@ -92,6 +92,17 @@ body.side .underbar, body.side .status { justify-content: center; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; }
 .kv select { width: 100%; min-width: 0; }
 .drv { border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; margin-bottom: 6px; }
+.slot { margin: 0; padding: 2px 4px; border-radius: 5px; }
+.slot.act { outline: 1px solid var(--accent); }
+.slot button { padding: 2px 8px; min-height: 28px; }
+/* the debugger: a wide area under the screen and the panel */
+#dbg-wrap { padding: 0 14px 14px; }
+body:not(.side) #dbg-wrap { max-width: 1100px; width: 100%; margin: 0 auto; }
+#dbg { display: none; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; }
+#dbg.on { display: block; }
+#dbg .cols { display: grid; grid-template-columns: 200px minmax(0,1fr) minmax(0,1fr); gap: 10px; }
+#dbg .box { border: 1px solid var(--border); border-radius: 6px; padding: 8px; min-height: 140px; font: 12px ui-monospace, Menlo, Consolas, monospace; color: var(--muted); }
+@media (max-width: 800px) { #dbg .cols { grid-template-columns: minmax(0,1fr); } }
 .small { color: var(--muted); font-size: 12px; }
 .cat { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
 body:not(.side) .cat { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
@@ -249,13 +260,17 @@ body:not(.side) .cat { grid-template-columns: repeat(auto-fill, minmax(170px, 1f
       <label class="small"><input type="checkbox" checked> Gyors betöltés (turbó, amíg a szalag megy)</label>
     </div>
     <div class="tab" id="tab-disk">
-      <h4>Lemez (A:)</h4>
-      <div class="drv"><div class="row"><b>1.</b> üres <span style="flex:1"></span><button>＋</button><button>📂</button><button>⬇</button><button>✕</button></div></div>
+      <h4>Lemez (A:) <span class="small">– 3 hely, a kijelölt van a meghajtóban</span></h4>
+      <div class="drv"><div class="row slot act"><label><input type="radio" name="a" checked> <b>1. jatekok.dsk</b></label><span style="flex:1"></span><button title="Üres lemez">＋</button><button title="Lemezkép betöltése">📂</button><button title="Letöltés">⬇</button><button title="Kiadás">✕</button></div><div class="row slot"><label><input type="radio" name="a"> <b>2. üres</b></label><span style="flex:1"></span><button title="Üres lemez">＋</button><button title="Lemezkép betöltése">📂</button><button title="Letöltés">⬇</button><button title="Kiadás">✕</button></div><div class="row slot"><label><input type="radio" name="a"> <b>3. üres</b></label><span style="flex:1"></span><button title="Üres lemez">＋</button><button title="Lemezkép betöltése">📂</button><button title="Letöltés">⬇</button><button title="Kiadás">✕</button></div></div>
       <h4>Lemez (B:)</h4>
-      <div class="drv"><div class="row"><b>1.</b> üres <span style="flex:1"></span><button>＋</button><button>📂</button><button>⬇</button><button>✕</button></div></div>
+      <div class="drv"><div class="row slot act"><label><input type="radio" name="b" checked> <b>1. jatekok.dsk</b></label><span style="flex:1"></span><button title="Üres lemez">＋</button><button title="Lemezkép betöltése">📂</button><button title="Letöltés">⬇</button><button title="Kiadás">✕</button></div><div class="row slot"><label><input type="radio" name="b"> <b>2. üres</b></label><span style="flex:1"></span><button title="Üres lemez">＋</button><button title="Lemezkép betöltése">📂</button><button title="Letöltés">⬇</button><button title="Kiadás">✕</button></div><div class="row slot"><label><input type="radio" name="b"> <b>3. üres</b></label><span style="flex:1"></span><button title="Üres lemez">＋</button><button title="Lemezkép betöltése">📂</button><button title="Letöltés">⬇</button><button title="Kiadás">✕</button></div></div>
       <h4>FILE: eszköz</h4>
       <div class="small">üres</div>
       <div class="row" style="margin-top:6px"><button>Betöltés…</button><button>Törlés</button></div>
+      <h4>USB pendrive (TVC256k++) <span class="small">– csak a kártyával látszik</span></h4>
+      <div class="row"><label><input type="checkbox" checked> Bedugva</label><select><option>128 MB</option></select></div>
+      <div class="drv small">📁 GAMES &nbsp; 📄 README.TXT &nbsp; 📄 PACMAN.CAS</div>
+      <div class="row"><button>Fájlok hozzáadása…</button><button>Mappa hozzáadása…</button><button>Új mappa</button><button>Pendrive törlése</button></div>
     </div>
     <div class="tab" id="tab-cards">
       <h4>TVC bővítőportok</h4>
@@ -269,8 +284,6 @@ body:not(.side) .cat { grid-template-columns: repeat(auto-fill, minmax(170px, 1f
       <div class="row"><button>Portok betöltése, újraindítás</button><button>Alapértelmezés</button></div>
       <h4>Cartridge</h4>
       <div class="row"><span class="small">nincs modul</span><button>Kiadás</button></div>
-      <h4>USB pendrive (TVC256k++)</h4>
-      <div class="small">csak TVC256k++ kártyával</div>
     </div>
     <div class="tab" id="tab-joy">
       <div class="kv">
@@ -294,6 +307,17 @@ body:not(.side) .cat { grid-template-columns: repeat(auto-fill, minmax(170px, 1f
       <label class="small"><input type="checkbox"> a lemezekkel és a gyorsmentésekkel együtt</label>
       <h4>ROM-ok</h4>
       <div class="row"><button>ROM-csomag betöltése…</button></div>
+    </div>
+  </section>
+</div>
+<div id="dbg-wrap">
+  <section id="dbg">
+    <div class="row"><b>Debugger</b><span class="small">TVC 64k · Z80</span><span style="flex:1"></span><button>▶ Folytatás</button><button>Lépés</button><button>Átlépés</button><button id="dbg-close">✕</button></div>
+    <div class="tabs" style="padding:0;margin-bottom:8px"><button class="act">Monitor</button><button>Figyelés</button><button>Hívások</button><button>Nyomkövetés</button><button>Forrás</button><button>Grafika</button><button>Kereső</button><button>Script</button><button>…</button></div>
+    <div class="cols">
+      <div class="box">Regiszterek<br><br>AF 0044 BC 0000<br>DE 0000 HL 0000<br>IX 0000 IY 0000<br>SP 0000 PC 0000</div>
+      <div class="box">Disassembly<br><br>0000 DI<br>0001 LD SP,0000<br>0004 JP 0080</div>
+      <div class="box">Memória<br><br>0000 F3 31 00 00 C3 80 00 ..</div>
     </div>
   </section>
 </div>
@@ -341,6 +365,7 @@ body:not(.side) .cat { grid-template-columns: repeat(auto-fill, minmax(170px, 1f
   for (const b of $$('.drop button')) {
     b.addEventListener('click', () => {
       if (b.dataset.rec) startRec(b.dataset.rec);
+      else if (/Debugger/.test(b.textContent)) { $('#dbg').classList.add('on'); $('#dbg').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
       else if (/katalógus/i.test(b.textContent)) showTab('cat');
       else toast(b.textContent.replace(/\s+/g, ' ').trim() + ' (minta)');
     });
@@ -362,6 +387,9 @@ body:not(.side) .cat { grid-template-columns: repeat(auto-fill, minmax(170px, 1f
     try { localStorage.setItem('ep128web.theme', t); } catch (e) { }
   }
   setTheme(document.documentElement.dataset.theme || 'auto');
+
+  $('#dbg-close').onclick = () => $('#dbg').classList.remove('on');
+  document.addEventListener('keydown', (e) => { if (e.altKey && e.code === 'KeyD') { e.preventDefault(); $('#dbg').classList.add('on'); $('#dbg').scrollIntoView({ behavior: 'smooth', block: 'start' }); } });
 
   // tabs
   function showTab(id) {
