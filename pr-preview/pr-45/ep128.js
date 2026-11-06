@@ -2485,6 +2485,8 @@ registerProcessor('ep-output', EPOutput);
       btn.classList.toggle('on', locked());
       if (locked()) setMessage(isEP() ? T('Egér az Enterprise-on – kilépés: Esc') : T('Egér a TVC256k++ kártyán – kilépés: Esc'));
       else { buttons = 0; if (ready) api.setMouse(0, 0, 0, 0); setMessage(''); }
+      // TVC256k++: one USB port, the mouse is in it only while captured
+      if (ready && !isEP()) api.cardMouse(locked() ? 1 : 0);
     });
     canvas.addEventListener('mousemove', (e) => {
       if (!locked() || !ready) return;
@@ -7551,6 +7553,7 @@ ep.log('CTRL+ESC megnyomva');`)
       loadTvcCardFlash: c('ep_load_tvc_card_flash', 'number', ['string']),
       cardPutFile: c('ep_tvc_card_put_file', 'number', ['string', 'string']),
       setMouse: c('ep_set_mouse', null, ['number', 'number', 'number', 'number']),
+      cardMouse: c('ep_card_mouse', null, ['number']),
       tapeCue: c('ep_tape_cue', 'number', ['number']),
       demoRecord: c('ep_demo_record', 'number', ['number', 'string']),
       demoState: c('ep_demo_state', 'number', []),
