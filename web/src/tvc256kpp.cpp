@@ -578,6 +578,7 @@ extern "C" {
   struct card_state_region { void *p; unsigned n; };
   extern const struct card_state_region card_state_regions[];
   extern const unsigned card_state_region_count;
+  extern uint8_t registerInitializedUSBDevices;   // tvc-io-regs.c
 }
 
 namespace {
@@ -683,6 +684,10 @@ bool TVC256kpp::loadState(const uint8_t *p, size_t n)
   std::memcpy(&psram_[0], r.bytes(psram_.size()), psram_.size());
   for (unsigned i = 0; i < card_state_region_count; i++)
     std::memcpy(card_state_regions[i].p, r.bytes(card_state_regions[i].n), card_state_regions[i].n);
+  // the pendrive is in the card as it is now, not as it was at the save
+  // (otherwise LOAD from the USB drive fails: "No mass storage USB device")
+  registerInitializedUSBDevices = uint8_t((registerInitializedUSBDevices & ~0x02)
+                                          | (TVC256kppFS::usbPresent() ? 0x02 : 0x00));
   // the PSRAM drive as it is in the loaded PSRAM
   uint8_t driveSel = TVC256kppFS::ioArea()[kDriveSelectOffset];
   TVC256kppFS::remountPsramDrive(driveBlocks);
