@@ -51,7 +51,7 @@ const uint8_t *TVC256kpp::currentOverlay_ = (const uint8_t *) 0;
 
 namespace {
   // USB mouse (firmware: tvc-usb.c process_mouse_report()); the browser's
-  // mouse acts as the card's USB mouse once it sends a report
+  // mouse acts as the card's USB mouse while the page captures it
   struct {
     bool connected;
     int32_t sumX, sumY;
@@ -79,6 +79,13 @@ bool TVC256kpp::setUsbPendrive(uint32_t sizeMB)
     return true;
   }
   return TVC256kppFS::usbAttach(sizeMB);
+}
+
+void TVC256kpp::setMouseConnected(bool on)
+{
+  mouse.connected = on;
+  if (!on)
+    mouse.buttons = 0;
 }
 
 void TVC256kpp::mouseInput(int dx, int dy, int buttons)
@@ -313,8 +320,9 @@ uint8_t TVC256kpp::regRead(uint8_t r)
   }
   switch (r) {
   case REG_USB_INIT:                       // bit 0: mouse, bit 1: mass storage
-    return uint8_t((mouse.connected ? 0x01 : 0x00)
-                   | (TVC256kppFS::usbPresent() ? 0x02 : 0x00));
+    // one USB port: the card ROM's LOAD wants exactly 02h (pendrive), so
+    // the two are never reported together ("No mass storage USB device")
+    return uint8_t(mouse.connected ? 0x01 : (TVC256kppFS::usbPresent() ? 0x02 : 0x00));
   case 0xD1:
     return mouse.buttons;
   case 0xD2:                               // DX, DY: cleared by the read
@@ -578,6 +586,7 @@ extern "C" {
   struct card_state_region { void *p; unsigned n; };
   extern const struct card_state_region card_state_regions[];
   extern const unsigned card_state_region_count;
+  extern uint8_t registerInitializedUSBDevices;   // tvc-io-regs.c
 }
 
 namespace {
@@ -683,6 +692,10 @@ bool TVC256kpp::loadState(const uint8_t *p, size_t n)
   std::memcpy(&psram_[0], r.bytes(psram_.size()), psram_.size());
   for (unsigned i = 0; i < card_state_region_count; i++)
     std::memcpy(card_state_regions[i].p, r.bytes(card_state_regions[i].n), card_state_regions[i].n);
+  // the pendrive is in the card as it is now, not as it was at the save
+  // (otherwise LOAD from the USB drive fails: "No mass storage USB device")
+  registerInitializedUSBDevices = uint8_t((registerInitializedUSBDevices & ~0x02)
+                                          | (TVC256kppFS::usbPresent() ? 0x02 : 0x00));
   // the PSRAM drive as it is in the loaded PSRAM
   uint8_t driveSel = TVC256kppFS::ioArea()[kDriveSelectOffset];
   TVC256kppFS::remountPsramDrive(driveBlocks);

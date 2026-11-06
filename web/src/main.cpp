@@ -495,6 +495,13 @@ EMSCRIPTEN_KEEPALIVE void ep_set_mouse(int dX, int dY, int buttons, int wheel)
   vm->setMouseState(int8_t(dX), int8_t(dY), uint8_t(buttons), uint8_t(wheel));
 }
 
+// TVC256k++: the browser's mouse is captured (1) or released (0); while it is
+// captured the mouse is in the card's USB port instead of the pendrive
+EMSCRIPTEN_KEEPALIVE void ep_card_mouse(int on)
+{
+  TVC256kpp::setMouseConnected(on != 0);
+}
+
 EMSCRIPTEN_KEEPALIVE const uint32_t *ep_frame_buffer()
 {
   return display->getFrameBuffer();

@@ -627,7 +627,7 @@
     try { M.FS.mkdir('/tmp'); } catch (e) { }
     usbSaved = usbWalk('', []);
     usbSavedWrites = api.usbInfo(2);
-    db.put('usbfiles', usbSaved);
+    return db.put('usbfiles', usbSaved);
   }
 
   function restoreUsb(entries) {
@@ -2245,6 +2245,10 @@ registerProcessor('ep-output', EPOutput);
   // saves the disks in the drives, e.g. when the page is closed
   function persistDrives() {
     if (!ready) return;
+    // what the TVC wrote to the pendrive since the last periodic save
+    if (usbPlugged && api.usbInfo(2) !== usbSavedWrites) {
+      try { saveUsb(); } catch (e) { }
+    }
     for (let d = 0; d < 2; d++) {
       const i = drives[d].active;
       if (!slotPath(d, i)) continue;
@@ -2481,6 +2485,8 @@ registerProcessor('ep-output', EPOutput);
       btn.classList.toggle('on', locked());
       if (locked()) setMessage(isEP() ? T('Egér az Enterprise-on – kilépés: Esc') : T('Egér a TVC256k++ kártyán – kilépés: Esc'));
       else { buttons = 0; if (ready) api.setMouse(0, 0, 0, 0); setMessage(''); }
+      // TVC256k++: one USB port, the mouse is in it only while captured
+      if (ready && !isEP()) api.cardMouse(locked() ? 1 : 0);
     });
     canvas.addEventListener('mousemove', (e) => {
       if (!locked() || !ready) return;
@@ -7493,6 +7499,22 @@ ep.log('CTRL+ESC megnyomva');`)
       printErr: (s) => console.warn(s)
     });
     const c = (name, ret, args) => M.cwrap(name, ret, args);
+    // TVC snapshots keep only the upper half of segments 2 and 4, but the
+    // extension ROM and the FILE: card's ROM are in their lower half: they are
+    // loaded again after a snapshot (else the IRQ routine, calling the cards'
+    // ROMs, runs garbage: the machine froze after a quick load with FILE: and
+    // VT-DOS in the ports)
+    const withTvcRoms = (f) => (...a) => {
+      const r = f(...a);
+      if (r === 0 && machine && machine.type === 1) {
+        for (const [file, segments] of machineROMs(machine)) {
+          segments.forEach((seg, i) => {
+            if (seg === 0x02 || seg === 0x04) api.loadRom(seg, '/roms/' + file, i * 16384);
+          });
+        }
+      }
+      return r;
+    };
     // a new program / machine state: the debugger cannot step back past it
     const newState = (f) => (...a) => { dbgUndoClear(); return f(...a); };
     api = {
@@ -7513,10 +7535,10 @@ ep.log('CTRL+ESC megnyomva');`)
       audioFrames: c('ep_audio_frames', 'number', []),
       audioClear: c('ep_audio_clear', null, []),
       setVolume: c('ep_set_volume', null, ['number']),
-      loadSnapshot: newState(c('ep_load_snapshot', 'number', ['string'])),
+      loadSnapshot: newState(withTvcRoms(c('ep_load_snapshot', 'number', ['string']))),
       saveCardState: c('ep_save_card_state', 'number', ['string']),
       loadCardState: newState(c('ep_load_card_state', 'number', ['string'])),
-      loadSnapshotKeepUndo: c('ep_load_snapshot', 'number', ['string']),
+      loadSnapshotKeepUndo: withTvcRoms(c('ep_load_snapshot', 'number', ['string'])),
       saveSnapshot: c('ep_save_snapshot', 'number', ['string']),
       setDisk: c('ep_set_disk', 'number', ['number', 'string']),
       setTape: c('ep_set_tape', 'number', ['string']),
@@ -7531,6 +7553,7 @@ ep.log('CTRL+ESC megnyomva');`)
       loadTvcCardFlash: c('ep_load_tvc_card_flash', 'number', ['string']),
       cardPutFile: c('ep_tvc_card_put_file', 'number', ['string', 'string']),
       setMouse: c('ep_set_mouse', null, ['number', 'number', 'number', 'number']),
+      cardMouse: c('ep_card_mouse', null, ['number']),
       tapeCue: c('ep_tape_cue', 'number', ['number']),
       demoRecord: c('ep_demo_record', 'number', ['number', 'string']),
       demoState: c('ep_demo_state', 'number', []),
@@ -7877,6 +7900,8 @@ ep.log('CTRL+ESC megnyomva');`)
           if (api.saveSnapshot('/tmp/resume.ep128s') === 0) {
             await db.put('resume', { machine: machine.id, slots: tvcSlots.slice(), fx: fxOn,
                                      bytes: M.FS.readFile('/tmp/resume.ep128s'), card: saveCardState() });
+            // the pendrive as the TVC left it (it is saved every 5 s otherwise)
+            if (usbPlugged) await saveUsb();
           }
         } catch (e) { }
       }

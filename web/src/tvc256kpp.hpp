@@ -74,6 +74,9 @@ class TVC256kpp {
   // the browser's mouse as the card's USB mouse (relative movement, buttons:
   // bit 0 left, 1 middle, 2 right)
   static void mouseInput(int dx, int dy, int buttons);
+  // the card has one USB port: the mouse is in it while the page captures
+  // the browser's mouse, otherwise the pendrive (if plugged in)
+  static void setMouseConnected(bool on);
   // vSID output, added to the TVC's sound (called at 390625 Hz)
   void renderAudio(int32_t &outLeft, int32_t &outRight);
 
