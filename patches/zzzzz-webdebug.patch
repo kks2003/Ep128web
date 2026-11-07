@@ -1,5 +1,5 @@
 diff --git a/src/ep128vm.cpp b/src/ep128vm.cpp
-index 747a8f7..621a0dc 100644
+index 747a8f7..acbfa40 100644
 --- a/src/ep128vm.cpp
 +++ b/src/ep128vm.cpp
 @@ -41,6 +41,7 @@
@@ -10,7 +10,47 @@ index 747a8f7..621a0dc 100644
  
  // 2dfx card (Ep128web): its raster IRQ is wired-OR with DAVE's interrupt
  static bool twoDfxDaveInt = false;
-@@ -119,6 +120,7 @@ namespace Ep128 {
+@@ -69,26 +70,31 @@ namespace Ep128 {
+ 
+   EP128EMU_REGPARM1 void Ep128VM::videoMemoryWait()
+   {
++    int64_t   wdBefore = cpuCyclesRemaining;
+     cpuCyclesRemaining -= (int64_t(2) << 32);   // 2 cycles
+     uint32_t  tmp = uint32_t((uint64_t(cpuCyclesRemaining)
+                               * nickCyclesPerCPUCycleD2) >> 45) & 0x0003FFFFU;
+     cpuCyclesRemaining -= ((int64_t(videoMemoryWaitMult)
+                             * int32_t(tmp + videoMemoryWaitCycles))
+                            & (int64_t(-1) << 31));
++    WebDebug::waitRaw += (wdBefore - cpuCyclesRemaining) - (int64_t(3) << 32);
+   }
+ 
+   EP128EMU_REGPARM1 void Ep128VM::videoMemoryWait_M1()
+   {
++    int64_t   wdBefore = cpuCyclesRemaining;
+     cpuCyclesRemaining -= (int64_t(3) << 31);   // 1.5 cycles
+     uint32_t  tmp = uint32_t((uint64_t(cpuCyclesRemaining)
+                               * nickCyclesPerCPUCycleD2) >> 45) & 0x0003FFFFU;
+     cpuCyclesRemaining -= ((int64_t(videoMemoryWaitMult)
+                             * int32_t(tmp + videoMemoryWaitCycles_M1))
+                            & (int64_t(-1) << 31));
++    WebDebug::waitRaw += (wdBefore - cpuCyclesRemaining) - (int64_t(4) << 32);
+   }
+ 
+   EP128EMU_REGPARM1 void Ep128VM::videoMemoryWait_IO()
+   {
++    int64_t   wdBefore = cpuCyclesRemaining;
+     // -1 cycle (3 is needed, but Z80_::doIn()/doOut() already waits 4)
+     cpuCyclesRemaining += (int64_t(1) << 32);
+     uint32_t  tmp = uint32_t((uint64_t(cpuCyclesRemaining)
+@@ -96,6 +102,7 @@ namespace Ep128 {
+     cpuCyclesRemaining -= ((int64_t(videoMemoryWaitMult)
+                             * int32_t(tmp + videoMemoryWaitCycles_IO))
+                            & (int64_t(-1) << 31));
++    WebDebug::waitRaw += (wdBefore - cpuCyclesRemaining) - 0;
+   }
+ 
+   Ep128VM::Z80_::Z80_(Ep128VM& vm_)
+@@ -119,6 +126,7 @@ namespace Ep128 {
        vm.spectrumEmulatorIOPorts[3] = 0x1F;
        this->NMI_();
      }
@@ -18,7 +58,108 @@ index 747a8f7..621a0dc 100644
      Z80::executeInterrupt();
    }
  
-@@ -701,6 +703,7 @@ namespace Ep128 {
+@@ -126,7 +134,7 @@ namespace Ep128 {
+   {
+     if (vm.memoryTimingEnabled) {
+       if (vm.pageTable[addr >> 14] < 0xFC)
+-        vm.cpuCyclesRemaining -= vm.memoryWaitCycles;
++        { vm.cpuCyclesRemaining -= vm.memoryWaitCycles; WebDebug::waitRaw += vm.memoryWaitCycles - (int64_t(3) << 32); }
+       else
+         vm.videoMemoryWait();
+     }
+@@ -140,11 +148,11 @@ namespace Ep128 {
+   {
+     if (vm.memoryTimingEnabled) {
+       if (vm.pageTable[addr >> 14] < 0xFC)
+-        vm.cpuCyclesRemaining -= vm.memoryWaitCycles;
++        { vm.cpuCyclesRemaining -= vm.memoryWaitCycles; WebDebug::waitRaw += vm.memoryWaitCycles - (int64_t(3) << 32); }
+       else
+         vm.videoMemoryWait();
+       if (vm.pageTable[((addr + 1) & 0xFFFF) >> 14] < 0xFC)
+-        vm.cpuCyclesRemaining -= vm.memoryWaitCycles;
++        { vm.cpuCyclesRemaining -= vm.memoryWaitCycles; WebDebug::waitRaw += vm.memoryWaitCycles - (int64_t(3) << 32); }
+       else
+         vm.videoMemoryWait();
+     }
+@@ -161,7 +169,7 @@ namespace Ep128 {
+     uint16_t  addr = uint16_t(R.PC.W.l);
+     if (vm.memoryTimingEnabled) {
+       if (vm.pageTable[addr >> 14] < 0xFC)
+-        vm.cpuCyclesRemaining -= vm.memoryWaitCycles_M1;
++        { vm.cpuCyclesRemaining -= vm.memoryWaitCycles_M1; WebDebug::waitRaw += vm.memoryWaitCycles_M1 - (int64_t(4) << 32); }
+       else
+         vm.videoMemoryWait_M1();
+     }
+@@ -185,7 +193,7 @@ namespace Ep128 {
+     }
+     if (vm.memoryTimingEnabled) {
+       if (vm.pageTable[addr >> 14] < 0xFC)
+-        vm.cpuCyclesRemaining -= vm.memoryWaitCycles_M1;
++        { vm.cpuCyclesRemaining -= vm.memoryWaitCycles_M1; WebDebug::waitRaw += vm.memoryWaitCycles_M1 - (int64_t(4) << 32); }
+       else
+         vm.videoMemoryWait_M1();
+     }
+@@ -200,7 +208,7 @@ namespace Ep128 {
+     uint16_t  addr = uint16_t((int(R.PC.W.l) + offset) & 0xFFFF);
+     if (vm.memoryTimingEnabled) {
+       if (vm.pageTable[addr >> 14] < 0xFC)
+-        vm.cpuCyclesRemaining -= vm.memoryWaitCycles;
++        { vm.cpuCyclesRemaining -= vm.memoryWaitCycles; WebDebug::waitRaw += vm.memoryWaitCycles - (int64_t(3) << 32); }
+       else
+         vm.videoMemoryWait();
+     }
+@@ -215,11 +223,11 @@ namespace Ep128 {
+     uint16_t  addr = uint16_t((int(R.PC.W.l) + offset) & 0xFFFF);
+     if (vm.memoryTimingEnabled) {
+       if (vm.pageTable[addr >> 14] < 0xFC)
+-        vm.cpuCyclesRemaining -= vm.memoryWaitCycles;
++        { vm.cpuCyclesRemaining -= vm.memoryWaitCycles; WebDebug::waitRaw += vm.memoryWaitCycles - (int64_t(3) << 32); }
+       else
+         vm.videoMemoryWait();
+       if (vm.pageTable[((addr + 1) & 0xFFFF) >> 14] < 0xFC)
+-        vm.cpuCyclesRemaining -= vm.memoryWaitCycles;
++        { vm.cpuCyclesRemaining -= vm.memoryWaitCycles; WebDebug::waitRaw += vm.memoryWaitCycles - (int64_t(3) << 32); }
+       else
+         vm.videoMemoryWait();
+     }
+@@ -236,7 +244,7 @@ namespace Ep128 {
+   {
+     if (vm.memoryTimingEnabled) {
+       if (vm.pageTable[addr >> 14] < 0xFC)
+-        vm.cpuCyclesRemaining -= vm.memoryWaitCycles;
++        { vm.cpuCyclesRemaining -= vm.memoryWaitCycles; WebDebug::waitRaw += vm.memoryWaitCycles - (int64_t(3) << 32); }
+       else
+         vm.videoMemoryWait();
+     }
+@@ -262,11 +270,11 @@ namespace Ep128 {
+     }
+     if (vm.memoryTimingEnabled) {
+       if (vm.pageTable[addr >> 14] < 0xFC)
+-        vm.cpuCyclesRemaining -= vm.memoryWaitCycles;
++        { vm.cpuCyclesRemaining -= vm.memoryWaitCycles; WebDebug::waitRaw += vm.memoryWaitCycles - (int64_t(3) << 32); }
+       else
+         vm.videoMemoryWait();
+       if (vm.pageTable[((addr + 1) & 0xFFFF) >> 14] < 0xFC)
+-        vm.cpuCyclesRemaining -= vm.memoryWaitCycles;
++        { vm.cpuCyclesRemaining -= vm.memoryWaitCycles; WebDebug::waitRaw += vm.memoryWaitCycles - (int64_t(3) << 32); }
+       else
+         vm.videoMemoryWait();
+     }
+@@ -289,11 +297,11 @@ namespace Ep128 {
+     }
+     if (vm.memoryTimingEnabled) {
+       if (vm.pageTable[((addr + 1) & 0xFFFF) >> 14] < 0xFC)
+-        vm.cpuCyclesRemaining -= vm.memoryWaitCycles;
++        { vm.cpuCyclesRemaining -= vm.memoryWaitCycles; WebDebug::waitRaw += vm.memoryWaitCycles - (int64_t(3) << 32); }
+       else
+         vm.videoMemoryWait();
+       if (vm.pageTable[addr >> 14] < 0xFC)
+-        vm.cpuCyclesRemaining -= vm.memoryWaitCycles;
++        { vm.cpuCyclesRemaining -= vm.memoryWaitCycles; WebDebug::waitRaw += vm.memoryWaitCycles - (int64_t(3) << 32); }
+       else
+         vm.videoMemoryWait();
+     }
+@@ -701,6 +709,7 @@ namespace Ep128 {
            vm.z80.clearInterrupt();
        }
      }
@@ -26,7 +167,7 @@ index 747a8f7..621a0dc 100644
      if (vm.getIsDisplayEnabled())
        vm.display.drawLine(buf, nBytes);
      TwoDfx::clearOverlay();
-@@ -713,6 +716,8 @@ namespace Ep128 {
+@@ -713,6 +722,8 @@ namespace Ep128 {
    {
      if (newState)
        TwoDfx::vsync(-5);  // the card's Y=38 is the first IS-BASIC line (ruler: OUT 248,80: OUT 249,1: OUT 248,209)
@@ -35,7 +176,7 @@ index 747a8f7..621a0dc 100644
      if (vm.getIsDisplayEnabled())
        vm.display.vsyncStateChange(newState, currentSlot_);
      if (vm.videoCapture)
-@@ -849,6 +854,7 @@ namespace Ep128 {
+@@ -849,6 +860,7 @@ namespace Ep128 {
          } while (EP128EMU_UNLIKELY(daveCyclesRemaining >= 0L));
        }
        cpuCyclesRemaining += cpuCyclesPerNickCycle;
@@ -43,7 +184,7 @@ index 747a8f7..621a0dc 100644
      } while (cpuCyclesRemaining < -cpuCyclesPerNickCycle);
    }
  
-@@ -1655,6 +1661,9 @@ namespace Ep128 {
+@@ -1655,6 +1667,9 @@ namespace Ep128 {
        midiSavedStatus(0x00)
  #endif
    {
@@ -53,7 +194,7 @@ index 747a8f7..621a0dc 100644
  #ifdef ENABLE_SDEXT
      memory.setSDExtPtr(&sdext);
  #endif
-@@ -1745,6 +1754,9 @@ namespace Ep128 {
+@@ -1745,6 +1760,9 @@ namespace Ep128 {
  
    Ep128VM::~Ep128VM()
    {
@@ -63,7 +204,7 @@ index 747a8f7..621a0dc 100644
      if (videoCapture) {
        delete videoCapture;
        videoCapture = (Ep128Emu::VideoCapture *) 0;
-@@ -1788,12 +1800,19 @@ namespace Ep128 {
+@@ -1788,12 +1806,19 @@ namespace Ep128 {
      }
      if (EP128EMU_UNLIKELY(nickCyclesRemainingH < 1))
        return;
@@ -88,7 +229,7 @@ index 747a8f7..621a0dc 100644
        }
        daveCyclesRemaining += daveCyclesPerNickCycle;
        if (daveCyclesRemaining >= 0L) {
-@@ -1804,8 +1823,16 @@ namespace Ep128 {
+@@ -1804,8 +1829,16 @@ namespace Ep128 {
          } while (EP128EMU_UNLIKELY(daveCyclesRemaining >= 0L));
        }
        cpuCyclesRemaining += cpuCyclesPerNickCycle;
@@ -107,7 +248,7 @@ index 747a8f7..621a0dc 100644
      } while (EP128EMU_EXPECT(--nickCyclesRemainingH > 0));
    }
 diff --git a/src/tvc64vm.cpp b/src/tvc64vm.cpp
-index 12e54e4..2f26588 100644
+index 12e54e4..aaf8fb1 100644
 --- a/src/tvc64vm.cpp
 +++ b/src/tvc64vm.cpp
 @@ -74,6 +74,7 @@ static const uint16_t audioOutputLevelTable[16] = {
@@ -132,7 +273,23 @@ index 12e54e4..2f26588 100644
      z80HalfCycleCnt = uint8_t((z80HalfCycleCnt + halfCycles) & 0xFF);
    }
  
-@@ -243,8 +246,10 @@ namespace TVC64 {
+@@ -111,6 +114,7 @@ namespace TVC64 {
+   {
+     if (memory.getPage(addr >> 14) >= 0xFC) {
+       updateCPUHalfCycles(4);
++      WebDebug::waitRaw += int64_t(4 - int(z80HalfCycleCnt & 3));
+       updateCPUHalfCycles(4 - int(z80HalfCycleCnt & 3));
+       updateCPUHalfCycles(1);
+       runDevices();
+@@ -123,6 +127,7 @@ namespace TVC64 {
+   {
+     if (memory.getPage(addr >> 14) >= 0xFC) {
+       updateCPUHalfCycles(3);
++      WebDebug::waitRaw += int64_t(4 - int(z80HalfCycleCnt & 3));
+       updateCPUHalfCycles(4 - int(z80HalfCycleCnt & 3));
+       updateCPUHalfCycles(1);
+       runDevices();
+@@ -243,8 +248,10 @@ namespace TVC64 {
    EP128EMU_REGPARM1 void TVC64VM::Z80_::executeInterrupt()
    {
      vm.runDevices();
@@ -144,7 +301,7 @@ index 12e54e4..2f26588 100644
    }
  
    EP128EMU_REGPARM2 uint8_t TVC64VM::Z80_::readMemory(uint16_t addr)
-@@ -710,6 +715,7 @@ namespace TVC64 {
+@@ -710,6 +717,7 @@ namespace TVC64 {
        // lines 24..263) is raw X 126..637, Y 49..288, as in the firmware
        TwoDfx::line(twoDfxTVCPalette, -2,
                     paperStartPos * 8, paperEndPos * 8, (videoMode ? 2 : 1));
@@ -152,7 +309,7 @@ index 12e54e4..2f26588 100644
      if (vm.getIsDisplayEnabled())
        vm.display.drawLine(buf, nBytes);
      TVC256kpp::clearOverlay();
-@@ -725,6 +731,8 @@ namespace TVC64 {
+@@ -725,6 +733,8 @@ namespace TVC64 {
        vm.card256->videoVSync();
      if (newState)
        TwoDfx::vsync(4);
@@ -161,7 +318,7 @@ index 12e54e4..2f26588 100644
      if (vm.getIsDisplayEnabled())
        vm.display.vsyncStateChange(newState, currentSlot_);
      if (vm.videoCapture)
-@@ -1488,10 +1496,14 @@ namespace TVC64 {
+@@ -1488,10 +1498,14 @@ namespace TVC64 {
      // reset
      resetKeyboard();
      resetMemoryConfiguration(80);
@@ -176,7 +333,7 @@ index 12e54e4..2f26588 100644
      if (card256) {
        card256->setPagingCallback((void (*)(void *)) 0, (void *) 0);
        delete card256;
-@@ -1543,6 +1555,10 @@ namespace TVC64 {
+@@ -1543,6 +1557,10 @@ namespace TVC64 {
      crtcCyclesRemainingH = int32_t(crtcCyclesRemaining >> 32);
      z80.triggerInterrupt();
      while (EP128EMU_EXPECT(crtcCyclesRemainingH > 0)) {

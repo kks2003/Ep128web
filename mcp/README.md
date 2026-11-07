@@ -78,7 +78,9 @@ Other clients: run `node server.js` as a stdio MCP server.
 | `measure` | Exact Z80 cycles between two addresses or symbols (min / avg / max, samples), optionally without the interrupts |
 | `load_sym` | Assembler symbols (sjasmplus `--sym`…) from a file or text; names work as addresses everywhere |
 | `trace` | Instruction trace (registers, segment, cycle) on / off / dump |
-| `read_memory`, `write_memory`, `disassemble` | Memory (CPU, physical, 2dfx, TVC256k++) and Z80 disassembly |
+| `read_memory`, `write_memory`, `disassemble` | Memory (CPU, physical, video memory whatever the paging, 2dfx, TVC256k++) and Z80 disassembly |
+| `profile` | Where the cycles go: per symbol, 256-byte block or range, with the wait states |
+| `pixels` | The picture's pixels: palette index and colour |
 | `breakpoint`, `debug_control` | Breakpoints / watchpoints; pause, continue, step, step over, run to |
 | `monitor` | ep128emu monitor commands (`?` lists them) |
 | `snapshot` | Save / restore the whole state to a JSON file |

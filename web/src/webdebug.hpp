@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <vector>
 
 namespace WebDebug {
 
@@ -86,6 +87,20 @@ namespace WebDebug {
   extern int64_t  epCycleUnits;
   extern int64_t  *epCycleRemaining;
   uint64_t getCycles();
+  // the wait states among them (video memory, Enterprise port BFh): added
+  // by the VMs, TVC: half cycles, Enterprise: 2^-32 cycles
+  extern int64_t  waitRaw;
+  double getWaitCycles();
+
+  // cycle profiler: the cycles (and the wait states among them) of every
+  // instruction run, by segment, page and offset; the cycles from one
+  // instruction to the next belong to the first (an interrupt's acceptance
+  // to the interrupted instruction)
+  void cycleProfileStart();
+  void cycleProfileStop();
+  // the addresses run: 5 doubles each (segment, CPU address, instructions,
+  // cycles, wait cycles); returns their number
+  int cycleProfileGet(std::vector< double >& out);
   // video lines: called by the VMs for each line and at the vertical sync
   void videoLine();
   void videoFrame();

@@ -18,4 +18,4 @@
 - `await ep.type('PRINT 1+1\n')`, `ep.screenText()`, `await ep.waitText(/regexp/)`, `ep.runFrames(n)`.
 - Debugger: `ep.regs()`, `ep.read(addr, n)`, `ep.disasm(addr, n)`, `ep.bp(addr)`, `ep.onBreak(fn)`, `ep.monitor('?')`.
 - Repeatable runs: `ep.manual(true)`, `ep.runFrames(n, {perFrame: (i) => ['KeyA']})`, `ep.keyDown('Joy1Fire')`, `ep.snapshot()` / `ep.restore(s)`.
-- Timing: `ep.cycles()`, `ep.beam()`, `ep.measure({start, stop, frames, excludeIrq})`; symbols: `ep.loadSym(text | url)`; trace: `ep.trace(true)`, `ep.traceDump(n)`.
+- Timing: `ep.cycles()`, `ep.beam()`, `ep.measure({start, stop, frames, excludeIrq})`, `ep.profile({frames})`; picture: `ep.read(addr, n, 'vid')`, `ep.pixel(x, y)`; symbols: `ep.loadSym(text | url)`; trace: `ep.trace(true)`, `ep.traceDump(n)`.

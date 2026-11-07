@@ -43,6 +43,14 @@ namespace WebDebug {
   uint64_t halfCycles = 0;
   int64_t  epCycleUnits = 0;
   int64_t  *epCycleRemaining = 0;
+  int64_t  waitRaw = 0;
+  // cycle profiler: per segment * 4 + page, 16384 entries each
+  struct CycProf { uint32_t n; uint64_t cycles; double waits; };
+  static std::vector< CycProf > cycProf[1024];
+  static bool     cycProfOn = false;
+  static int      cycProfLast = -1;     // index * 16384 + offset of the last one
+  static uint64_t cycProfLastCycles = 0;
+  static double   cycProfLastWaits = 0.0;
   static int      vLine = 0;
   static uint32_t vFrame = 0;
   static int      rasterLine = -1;
@@ -96,7 +104,7 @@ namespace WebDebug {
   static void updateActive()
   {
     active = (reason != RUNNING || bpCount > 0 || scrExecCount > 0 || segExecCount > 0 || pending != RUNNING ||
-              skipOnce || stepInto || tempBreak >= 0 || histOn || profOn || traceOn || measOn);
+              skipOnce || stepInto || tempBreak >= 0 || histOn || profOn || traceOn || measOn || cycProfOn);
   }
 
   static bool stopAt(uint16_t pc, int why, uint16_t addr, uint8_t value)
@@ -172,9 +180,32 @@ namespace WebDebug {
     }
   }
 
+  static void cycProfStep(uint16_t pc)
+  {
+    uint64_t  now = getCycles();
+    double    w = getWaitCycles();
+    if (cycProfLast >= 0) {
+      CycProf&  e = cycProf[cycProfLast >> 14][cycProfLast & 0x3FFF];
+      e.n++;
+      e.cycles += now - cycProfLastCycles;
+      e.waits += w - cycProfLastWaits;
+    }
+    int     k = int(vmp ? vmp->getMemoryPage(pc >> 14) : 0) * 4 + (pc >> 14);
+    std::vector< CycProf >& v = cycProf[k];
+    if (v.empty()) {
+      CycProf z = { 0U, 0U, 0.0 };
+      v.assign(16384, z);
+    }
+    cycProfLast = (k << 14) | (pc & 0x3FFF);
+    cycProfLastCycles = now;
+    cycProfLastWaits = w;
+  }
+
   // the instruction at 'pc' runs
   static inline bool run(uint16_t pc)
   {
+    if (cycProfOn)
+      cycProfStep(pc);
     if (measOn)
       measureStep(pc);
     if (histOn) {
@@ -396,6 +427,58 @@ namespace WebDebug {
     if (epCycleRemaining)
       return uint64_t((epCycleUnits - *epCycleRemaining) >> 32);
     return halfCycles >> 1;
+  }
+
+  double getWaitCycles()
+  {
+    if (epCycleRemaining)
+      return double(waitRaw) * (1.0 / 4294967296.0);
+    return double(waitRaw) * 0.5;
+  }
+
+  void cycleProfileStart()
+  {
+    for (int i = 0; i < 1024; i++)
+      std::vector< CycProf >().swap(cycProf[i]);
+    cycProfLast = -1;
+    cycProfOn = true;
+    updateActive();
+  }
+
+  void cycleProfileStop()
+  {
+    // the last instruction: its cycles up to now
+    if (cycProfOn && cycProfLast >= 0) {
+      CycProf&  e = cycProf[cycProfLast >> 14][cycProfLast & 0x3FFF];
+      e.n++;
+      e.cycles += getCycles() - cycProfLastCycles;
+      e.waits += getWaitCycles() - cycProfLastWaits;
+    }
+    cycProfLast = -1;
+    cycProfOn = false;
+    updateActive();
+  }
+
+  int cycleProfileGet(std::vector< double >& out)
+  {
+    out.clear();
+    int     n = 0;
+    for (int k = 0; k < 1024; k++) {
+      const std::vector< CycProf >& v = cycProf[k];
+      if (v.empty())
+        continue;
+      for (int a = 0; a < 16384; a++) {
+        if (!v[a].n)
+          continue;
+        out.push_back(double(k >> 2));
+        out.push_back(double((k & 3) * 16384 + a));
+        out.push_back(double(v[a].n));
+        out.push_back(double(v[a].cycles));
+        out.push_back(v[a].waits);
+        n++;
+      }
+    }
+    return n;
   }
 
   void videoLine()

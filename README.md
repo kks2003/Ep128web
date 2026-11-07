@@ -79,7 +79,9 @@ mentése / visszaállítása. Kézi módban (`ep.manual(true)`) a gép csak akko
 amikor a program futtatja, a billentyűk és a joystick képkockánként adhatók meg,
 így ugyanaz a bemenet mindig ugyanazt az eredményt adja. Pontos időmérés
 Z80-ciklusban (várakozásokkal) két cím között, IRQ nélkül is (`ep.measure`),
-assembler-szimbólumok (sjasmplus `--sym`, `ep.loadSym`), utasításnyomkövetés.
+assembler-szimbólumok (sjasmplus `--sym`, `ep.loadSym`), utasításnyomkövetés,
+ciklusprofil a várakozásokkal (`ep.profile`), a videomemória és a képpontok
+kiolvasása.
 Leírás (angolul, MI-knek és teszteknek):
 [docs/AUTOMATION.md](docs/AUTOMATION.md); röviden az oldal `llms.txt`
 fájljában is.
@@ -88,7 +90,8 @@ fájljában is.
 mappában. A háttérben megnyitja az emulátort egy böngészőben, és eszközként adja
 az MI-nek: gép indítása, fájl betöltése, gépelés, a képernyő szövege és képe,
 képkockák futtatása (lenyomott billentyűkkel), memória, disassembly,
-töréspontok, lépés, monitor, állapotmentés, ciklusmérés, szimbólumok, nyomkövetés. Telepítés és beállítás: [mcp/README.md](mcp/README.md).
+töréspontok, lépés, monitor, állapotmentés, ciklusmérés, profil, szimbólumok,
+nyomkövetés, képpontok. Telepítés és beállítás: [mcp/README.md](mcp/README.md).
 
 ### Telepítés alkalmazásként, offline használat
 

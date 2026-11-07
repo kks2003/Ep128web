@@ -117,7 +117,7 @@ const server = new McpServer({ name: 'ep128web', version: '1.0.0' }, {
     'n frames of 20 ms, with keys held (keys) — repeatable, the same input gives the same result. ' +
     'Debugger: state (registers, cycles, beam, I/O), read_memory, disassemble, breakpoint, debug_control, ' +
     'monitor (ep128emu monitor commands, "?" lists them), trace. Timing: measure (exact Z80 cycles between ' +
-    'two addresses). load_sym loads assembler symbols (sjasmplus --sym); names work as addresses. ' +
+    'two addresses), profile (where the cycles go, with the wait states). pixels / read_memory source vid read the picture. load_sym loads assembler symbols (sjasmplus --sym); names work as addresses. ' +
     'eval_js runs any code with the page\'s `ep` object (docs/AUTOMATION.md).'
 });
 
@@ -294,6 +294,47 @@ server.registerTool('measure', {
   }, { start, stop, frames: frames || 50, excludeIrq: !!exclude_irq, maxSamples: samples === undefined ? 20 : samples, keys: keys || null }));
 });
 
+server.registerTool('profile', {
+  title: 'Cycle profile',
+  description: 'Runs `frames` frames and shows where the CPU spends its cycles: per symbol (load_sym), per 256-byte block ("segment:address"), or per given range, with the wait states (video memory; Enterprise: port BFh) separately. Most cycles first.',
+  inputSchema: {
+    frames: z.number().int().min(1).max(10000).optional().describe('default 50'),
+    by: z.enum(['symbol', 'block']).optional().describe('default: symbol when symbols are loaded'),
+    ranges: z.array(z.object({ name: z.string(), start: z.string(), end: z.string() })).optional()
+      .describe('group by these address ranges instead (addresses or symbols)'),
+    top: z.number().int().min(1).max(1000).optional().describe('rows (default 20)'),
+    keys: keyNames.optional().describe('keys held during the frames')
+  }
+}, async ({ frames, by, ranges, top, keys }) => {
+  const rows = await inPage((o) => {
+    const k = o.keys;
+    delete o.keys;
+    if (k) o.perFrame = () => k;
+    return ep.profile(o);
+  }, Object.assign({ frames: frames || 50, top: top || 20, keys: keys || null },
+    by ? { bySymbol: by === 'symbol' } : {}, ranges ? { ranges } : {}));
+  return text(['cycles/frame  share   waits/frame  instr/frame  name (segment, range)'].concat(rows.map((r) =>
+    String(Math.round(r.perFrame)).padStart(12) + String(r.percent.toFixed(2) + '%').padStart(8) +
+    String(Math.round(r.waitCycles / (frames || 50))).padStart(13) + String(Math.round(r.instructions / (frames || 50))).padStart(13) +
+    '  ' + r.name + (r.segment !== null && r.segment !== undefined ? '  (' + hex(r.segment, 2) + (r.start !== null ? ', ' + hex(r.start, 4) + '-' + hex(r.end, 4) : '') + ')' : ''))).join('\n'));
+});
+
+server.registerTool('pixels', {
+  title: 'Read pixels',
+  description: 'The pixels of the last finished frame (the coordinates of the screenshot): the video chip\'s palette index (TVC color, Enterprise color byte) as hex rows, and the colors used.',
+  inputSchema: {
+    x: z.number().int().min(0), y: z.number().int().min(0),
+    w: z.number().int().min(1).max(768).optional(), h: z.number().int().min(1).max(288).optional()
+  }
+}, async ({ x, y, w, h }) => {
+  const r = await inPage(([a, b, c, d]) => Object.assign(ep.pixels(a, b, c, d), { size: ep.frameSize() }), [x, y, w || 1, h || 1]);
+  const rows = [];
+  for (let j = 0; j < r.h; j++) rows.push(hex(r.y + j, 3) + ': ' + r.index.slice(j * r.w, (j + 1) * r.w).map((v) => hex(v, 2)).join(' '));
+  const colors = {};
+  r.index.forEach((v, i) => { colors[hex(v, 2)] = r.hex[i]; });
+  return text('picture ' + r.size.width + 'x' + r.size.height + ', x ' + r.x + '..' + (r.x + r.w - 1) + '\n' + rows.join('\n') + '\ncolors: ' + JSON.stringify(colors));
+});
+
 server.registerTool('load_sym', {
   title: 'Load symbols',
   description: 'Loads assembler symbols (sjasmplus --sym "name: EQU 0x0000ABCD", also "name equ 1234h", "1234 name") from a local file, a URL or the text itself, added to the ones loaded. Afterwards the names work in breakpoint, measure, disassemble, read_memory, and labels show in the disassembly.',
@@ -342,20 +383,21 @@ server.registerTool('state', {
 
 server.registerTool('read_memory', {
   title: 'Read memory',
-  description: 'A hex dump of memory. source: cpu (Z80 address with the current paging), physical (segment * 16384 + offset), 2dfx, psram (TVC256k++), cardram (TVC256k++).',
+  description: 'A hex dump of memory. source: cpu (Z80 address with the current paging), physical (segment * 16384 + offset), vid (video memory whatever the paging: TVC offset 0-3FFF in video page `page` 0-3, default the one shown; Enterprise video address 0-FFFF), 2dfx, psram (TVC256k++), cardram (TVC256k++).',
   inputSchema: {
     address: num,
     length: z.number().int().min(1).max(65536),
-    source: z.enum(['cpu', 'physical', '2dfx', 'psram', 'cardram']).optional()
+    source: z.enum(['cpu', 'physical', 'vid', '2dfx', 'psram', 'cardram']).optional(),
+    page: z.number().int().min(0).max(3).optional().describe('vid on the TVC: the video page')
   }
-}, async ({ address, length, source }) => {
-  const src = { cpu: 0, physical: 1, '2dfx': 2, psram: 3, cardram: 4 }[source || 'cpu'];
-  const a = src ? toNum(address) : await toAddr(address);
-  const bytes = await inPage(([x, n, s]) => ep.read(x, n, s), [a, length, src]);
+}, async ({ address, length, source, page }) => {
+  const src = { cpu: 0, physical: 1, vid: 'vid', '2dfx': 2, psram: 3, cardram: 4 }[source || 'cpu'];
+  const a = src && src !== 'vid' ? toNum(address) : await toAddr(address);
+  const bytes = await inPage(([x, n, s, pg]) => ep.read(x, n, s, pg === null ? undefined : pg), [a, length, src, page === undefined ? null : page]);
   const lines = [];
   for (let o = 0; o < bytes.length; o += 16) {
     const row = bytes.slice(o, o + 16);
-    lines.push(hex(a + o, src ? 6 : 4) + '  ' + row.map((b) => hex(b, 2)).join(' ').padEnd(48) + ' ' +
+    lines.push(hex(a + o, src && src !== 'vid' ? 6 : 4) + '  ' + row.map((b) => hex(b, 2)).join(' ').padEnd(48) + ' ' +
                row.map((b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : '.')).join(''));
   }
   return text(lines.join('\n'));

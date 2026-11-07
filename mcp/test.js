@@ -80,6 +80,12 @@ try {
   await call('run_frames', { frames: 1 });
   check(/6006 F9/.test(await call('trace', { action: 'dump', count: 3 })), 'trace: PC and segment');
   await call('trace', { action: 'off' });
+  // profile: the loop and its wait states; video memory and pixels
+  const prof = await call('profile', { frames: 5, top: 5 });
+  check(/LOOP/.test(prof.split('\n')[1] || ''), 'profile: the loop first');
+  await call('eval_js', { code: 'ep.out(2, 0x50); ep.poke(3, 0x50); ep.poke(0x8100, 0x5A); return ep.regs().pages;' });
+  check(/^0100 {2}5A/m.test(await call('read_memory', { address: '0100', length: 1, source: 'vid' })), 'read_memory: video memory');
+  check(/colors:/.test(await call('pixels', { x: 0, y: 0, w: 8, h: 2 })), 'pixels');
   // keys: back to BASIC, then type with run_frames keys / key_down
   await call('debug_control', { action: 'pause' });
   await call('eval_js', { code: 'ep.setReg("PC", 0x6000 + 13); ep.poke(0x600D, 0xC9); ep.cont(); return 1;' });
