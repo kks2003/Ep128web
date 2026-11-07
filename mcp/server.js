@@ -29,7 +29,9 @@ const URL_DEFAULT = 'https://kks2003.github.io/Ep128web/';
 const PAGE_URL = process.env.EP128WEB_URL || URL_DEFAULT;
 const HEADLESS = process.env.EP128WEB_HEADLESS !== '0';
 const PROFILE = process.env.EP128WEB_PROFILE || path.join(os.homedir(), '.ep128web-mcp');
-const MANUAL = process.env.EP128WEB_MANUAL !== '0';
+// manual mode as wanted (EP128WEB_MANUAL, then the manual_mode tool); set
+// again after every page load and checked before every tool call
+let wantManual = process.env.EP128WEB_MANUAL !== '0';
 // local files for the page (ep.load / ep.loadSym with a local path in
 // eval_js): served under this path of the page's own origin
 const LOCAL_PREFIX = '/__ep128web_local__/';
@@ -76,13 +78,21 @@ async function getPage() {
   }
   // manual mode: the machine runs only in the tools (run_frames, typing,
   // waiting...); the execution history is recorded for the debugger
-  await page.evaluate((m) => { ep.manual(m); ep.history(0); }, MANUAL);
+  await setupPage(page);
   return page;
 }
 
 // runs fn(ep, arg) in the page; errors come back as tool errors
+// after a page load: manual mode, the execution history
+async function setupPage(p) {
+  await p.waitForFunction(() => window.ep && window.ep.manual, null, { timeout: 60000 });
+  await p.evaluate((m) => { ep.manual(m); ep.history(0); }, wantManual);
+}
+
 async function inPage(fn, arg) {
   const p = await getPage();
+  // the page may have been reloaded (or a call turned the mode off)
+  if (await p.evaluate((m) => ep.manual() !== m, wantManual)) await setupPage(p);
   return p.evaluate(fn, arg);
 }
 
@@ -132,7 +142,7 @@ server.registerTool('emulator_start', {
   const p = await getPage();
   if (reload) {
     await p.reload({ waitUntil: 'domcontentloaded' });
-    await p.waitForFunction(() => window.ep && window.ep.ready, null, { timeout: 60000 });
+    await setupPage(p);
   }
   if (machine) await p.evaluate((id) => ep.machine(id), machine);
   else await p.evaluate(() => ep.ready());
@@ -272,7 +282,10 @@ server.registerTool('manual_mode', {
   title: 'Manual mode',
   description: 'on (default for this server): the machine runs only when a tool runs it; off: it runs in real time in the browser between the tool calls.',
   inputSchema: { on: z.boolean() }
-}, async ({ on }) => text({ manual: await inPage((m) => ep.manual(m), on) }));
+}, async ({ on }) => {
+  wantManual = on;
+  return text({ manual: await inPage((m) => ep.manual(m), on) });
+});
 
 server.registerTool('measure', {
   title: 'Measure cycles',

@@ -105,6 +105,15 @@ try {
                         return ep.cycles() + ':' + ep.read(0, 65536).join(','); };
     return run() === run();` }));
   check(det === true, 'runFrames with perFrame keys is repeatable');
+  // manual mode stays on after a reload and a machine switch: the machine
+  // does not run between the calls
+  for (const step of [['emulator_start', { reload: true }], ['set_machine', { id: 'tvc64-12' }]]) {
+    await call(...step);
+    const t1 = JSON.parse(await call('state')).timeMs;
+    await new Promise((r) => setTimeout(r, 1000));
+    const t2 = JSON.parse(await call('state'));
+    check(t2.manual === true && t2.timeMs === t1, 'manual mode after ' + step[0] + ' (' + t1 + ' -> ' + t2.timeMs + ' ms)');
+  }
   // a local path in eval_js (ep.loadSym / ep.load fetch it through the server)
   check(await call('eval_js', { code: 'return await ep.loadSym(' + JSON.stringify(symFile) + ', { prefix: "L_" });' }) === '3', 'loadSym with a local path');
 } finally {
