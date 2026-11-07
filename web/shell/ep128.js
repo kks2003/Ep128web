@@ -7205,6 +7205,7 @@ registerProcessor('ep-output', EPOutput);
     // (recorded from the first ep.ready / machine / load / manual / history
     // call on; while it is still empty: the PCs of the trace, if it is on)
     history: (n) => {
+      if (!api || !ready) return [];           // the emulator is not running yet
       epHistoryOn();
       n = n === undefined ? 64 : n;
       const h = api.dbgHistory(n).trim().split(/\s+/).filter(Boolean).map((x) => parseInt(x, 16));
