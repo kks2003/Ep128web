@@ -86,7 +86,12 @@ async function getPage() {
 // after a page load: manual mode, the execution history
 async function setupPage(p) {
   await p.waitForFunction(() => window.ep && window.ep.manual, null, { timeout: 60000 });
-  await p.evaluate((m) => { ep.manual(m); ep.history(0); }, wantManual);
+  // wait until the emulator runs (the history needs it), not for BASIC
+  await p.evaluate(async (m) => {
+    ep.manual(m);
+    try { await ep.ready({ prompt: false, timeout: 30000 }); } catch (e) { return; }
+    ep.history(0);
+  }, wantManual);
 }
 
 async function inPage(fn, arg) {
