@@ -16,6 +16,7 @@
 #define EP128WEB_WEBDEBUG_HPP
 
 #include <stdint.h>
+#include <stddef.h>
 
 namespace WebDebug {
 
@@ -93,11 +94,50 @@ namespace WebDebug {
   uint32_t videoFrameNumber();
   // raster breakpoint: stop at the start of video line 'n' (-1: none)
   void setRasterBreak(int n);
+  // the beam: [0] video line, [1] cycles since the start of the line,
+  // [2] lines and [3] cycles of the last whole frame
+  void getBeam(double *out);
+  // the cycle and video counters (7 doubles), to save and restore them with
+  // a snapshot: cycles, line, frame, cycles since the line and the frame
+  // started, lines and cycles of the last frame
+  void getTiming(double *out);
+  void setTiming(const double *in);
+  // the VM's time left over from the last run (not in its snapshots): two
+  // variables, registered by the VM (patches/zzzzz-webdebug.patch); read /
+  // written as bytes (at most 16) for ep.snapshot() / ep.restore()
+  void setTimingVars(void *p1, size_t n1, void *p2, size_t n2);
+  void clearTimingVars(void *p1);
+  int readTimingVars(uint8_t *out);
+  void writeTimingVars(const uint8_t *in, int n);
+
+  // the VMs call this when the Z80 accepts a maskable interrupt (before the
+  // interrupt cycles: the cycle count is that of its start)
+  void irqEnter();
+
+  // measuring: the cycles from the instruction at 'start' to the one at
+  // 'stop' (CPU addresses; segment >= 0: only with that segment paged in
+  // there). Nested starts count as the outermost pair; start == stop
+  // measures from one hit to the next. excludeIrq: the time of the
+  // interrupts (from their acceptance to the return of the handler) taken
+  // while measuring is not counted.
+  void measureStart(int start, int startSeg, int stop, int stopSeg, bool excludeIrq);
+  void measureStop();
+  // the number of samples (all of them; at most measureMaxSamples are kept)
+  // and the kept samples: start cycle, cycles (two doubles each)
+  const int measureMaxSamples = 100000;
+  int measureCount();
+  int measureKept();
+  const double *measureSamples();
 
   // trace: the registers before each instruction (PC AF BC DE HL IX IY SP,
   // 8 words per entry), the last 'n' (oldest first) into 'buf'
   void enableTrace(bool on);
   int getTrace(uint16_t *buf, int n);
+  // the segment at the PC and the cycle count of the same entries (two
+  // doubles each)
+  int getTraceExt(double *buf, int n);
+  // record only the instructions at lo..hi (CPU addresses; lo > hi: all)
+  void setTraceRange(int lo, int hi);
 
   // debugger scripts (the Lua scripts of ep128emu, web/src/webscript.cpp)
   // the breakpoint callback of the running script (type: 0 execution,

@@ -1611,6 +1611,79 @@ EMSCRIPTEN_KEEPALIVE double ep_dbg_video_frame()
   return double(WebDebug::videoFrameNumber());
 }
 
+// the beam: line, cycles since the line started, lines and cycles of the
+// last frame (4 doubles)
+EMSCRIPTEN_KEEPALIVE const double *ep_dbg_beam()
+{
+  static double b[4];
+  WebDebug::getBeam(b);
+  return b;
+}
+
+// the cycle and video counters (7 doubles, see WebDebug::getTiming)
+// (8 doubles: see WebDebug::getTiming, [7]: the odd TVC half cycle)
+EMSCRIPTEN_KEEPALIVE const double *ep_dbg_timing()
+{
+  static double t[8];
+  WebDebug::getTiming(t);
+  return t;
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_set_timing(double c, double line, double frame, double lineAgo,
+                                            double frameAgo, double frameLines, double frameCycles,
+                                            double oddHalf)
+{
+  double  t[8] = { c, line, frame, lineAgo, frameAgo, frameLines, frameCycles, oddHalf };
+  WebDebug::setTiming(t);
+}
+
+// the VM's time left over from the last run: the bytes into the buffer
+// returned by ep_dbg_timing_vars_buf(), returns their number
+static uint8_t  timingVarsBuf[16];
+
+EMSCRIPTEN_KEEPALIVE int ep_dbg_timing_vars()
+{
+  return WebDebug::readTimingVars(timingVarsBuf);
+}
+
+EMSCRIPTEN_KEEPALIVE uint8_t *ep_dbg_timing_vars_buf()
+{
+  return timingVarsBuf;
+}
+
+// writes back the bytes put in the buffer
+EMSCRIPTEN_KEEPALIVE void ep_dbg_set_timing_vars(int n)
+{
+  WebDebug::writeTimingVars(timingVarsBuf, n);
+}
+
+// measuring from 'start' to 'stop' (segment -1: any), see webdebug.hpp
+EMSCRIPTEN_KEEPALIVE void ep_dbg_measure_start(int start, int startSeg, int stop, int stopSeg, int excludeIrq)
+{
+  WebDebug::measureStart(start, startSeg, stop, stopSeg, excludeIrq != 0);
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_measure_stop()
+{
+  WebDebug::measureStop();
+}
+
+EMSCRIPTEN_KEEPALIVE int ep_dbg_measure_count()
+{
+  return WebDebug::measureCount();
+}
+
+EMSCRIPTEN_KEEPALIVE int ep_dbg_measure_kept()
+{
+  return WebDebug::measureKept();
+}
+
+// the kept samples: start cycle, cycles (two doubles each)
+EMSCRIPTEN_KEEPALIVE const double *ep_dbg_measure_samples()
+{
+  return WebDebug::measureSamples();
+}
+
 // raster breakpoint at video line 'n' (-1: off)
 EMSCRIPTEN_KEEPALIVE void ep_dbg_raster(int n)
 {
@@ -1637,6 +1710,29 @@ EMSCRIPTEN_KEEPALIVE int ep_dbg_trace(int n)
 EMSCRIPTEN_KEEPALIVE const uint16_t *ep_dbg_trace_buf()
 {
   return &(traceBuf[0]);
+}
+
+// the segment and the cycle count of the last 'n' trace entries (two doubles
+// each) into the buffer returned by ep_dbg_trace_ext_buf()
+static std::vector< double >  traceExtBuf;
+
+EMSCRIPTEN_KEEPALIVE int ep_dbg_trace_ext(int n)
+{
+  if (n < 0)
+    n = 0;
+  traceExtBuf.resize(size_t(n) * 2U + 2U);
+  return WebDebug::getTraceExt(&(traceExtBuf[0]), n);
+}
+
+EMSCRIPTEN_KEEPALIVE const double *ep_dbg_trace_ext_buf()
+{
+  return &(traceExtBuf[0]);
+}
+
+// trace only the instructions at lo..hi (lo > hi: all)
+EMSCRIPTEN_KEEPALIVE void ep_dbg_trace_range(int lo, int hi)
+{
+  WebDebug::setTraceRange(lo, hi);
 }
 
 EMSCRIPTEN_KEEPALIVE void ep_dbg_iolog_enable(int on)

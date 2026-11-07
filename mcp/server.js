@@ -13,6 +13,9 @@
 //                      settings between runs; default: ~/.ep128web-mcp)
 //   EP128WEB_CHROMIUM  path of a Chromium / Chrome executable (default: the
 //                      one installed by "npx playwright install chromium")
+//   EP128WEB_MANUAL    0: the machine runs in real time between the tool
+//                      calls (default: manual mode, it runs only when a tool
+//                      runs it: repeatable)
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -26,6 +29,11 @@ const URL_DEFAULT = 'https://kks2003.github.io/Ep128web/';
 const PAGE_URL = process.env.EP128WEB_URL || URL_DEFAULT;
 const HEADLESS = process.env.EP128WEB_HEADLESS !== '0';
 const PROFILE = process.env.EP128WEB_PROFILE || path.join(os.homedir(), '.ep128web-mcp');
+const MANUAL = process.env.EP128WEB_MANUAL !== '0';
+// local files for the page (ep.load / ep.loadSym with a local path in
+// eval_js): served under this path of the page's own origin
+const LOCAL_PREFIX = '/__ep128web_local__/';
+const expandHome = (f) => (/^~[\\/]/.test(f) ? path.join(os.homedir(), f.slice(2)) : f);
 
 let context = null;
 let page = null;
@@ -41,6 +49,17 @@ async function getPage() {
       // the page's sound starts after a click; not needed here
       args: ['--autoplay-policy=no-user-gesture-required']
     });
+    const origin = new URL(PAGE_URL).origin;
+    await context.addInitScript((u) => { window.__ep128webLocal = u; }, origin + LOCAL_PREFIX);
+    await context.route((u) => u.origin === origin && u.pathname.startsWith(LOCAL_PREFIX), async (route) => {
+      const u = new URL(route.request().url());
+      const file = expandHome(decodeURIComponent(u.pathname.slice(LOCAL_PREFIX.length)));
+      try {
+        await route.fulfill({ status: 200, body: await fs.readFile(file), contentType: 'application/octet-stream' });
+      } catch (e) {
+        await route.fulfill({ status: 404, body: String(e.message) });
+      }
+    });
   }
   page = context.pages()[0] || await context.newPage();
   await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded' });
@@ -55,6 +74,9 @@ async function getPage() {
     }
     await loadFile(process.env.EP128WEB_ROMS);
   }
+  // manual mode: the machine runs only in the tools (run_frames, typing,
+  // waiting...); the execution history is recorded for the debugger
+  await page.evaluate((m) => { ep.manual(m); ep.history(0); }, MANUAL);
   return page;
 }
 
@@ -70,7 +92,7 @@ async function loadFile(file, name) {
   if (/^https?:\/\//.test(file)) {
     return p.evaluate(([u, n]) => ep.load(u, n || undefined), [file, name || '']);
   }
-  bytes = await fs.readFile(file);
+  bytes = await fs.readFile(expandHome(file));
   return p.evaluate(([b64, n]) => {
     const s = atob(b64), a = new Uint8Array(s.length);
     for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i);
@@ -80,17 +102,23 @@ async function loadFile(file, name) {
 
 const text = (t) => ({ content: [{ type: 'text', text: typeof t === 'string' ? t : JSON.stringify(t, null, 2) }] });
 const hex = (v, n) => v.toString(16).toUpperCase().padStart(n, '0');
-const num = z.union([z.number().int(), z.string()]).describe('a number, or a hex string such as "C000" / "0xC000"');
+const num = z.union([z.number().int(), z.string()]).describe('a number, a hex string such as "C000" / "0xC000", or a symbol (load_sym), symbol+offset');
 const toNum = (v) => (typeof v === 'number' ? v : parseInt(String(v).replace(/^0x|^\$|h$/i, ''), 16));
+// a CPU address: a number, hex, or a symbol known in the page
+const toAddr = async (v) => (typeof v === 'number' || /^(0x|\$)?[0-9a-f]+h?$/i.test(String(v).trim()) ? toNum(String(v).trim())
+  : inPage((x) => ep.addr(x), String(v)));
 
 const server = new McpServer({ name: 'ep128web', version: '1.0.0' }, {
   instructions:
     'Ep128web: an Enterprise 128 / Videoton TVC emulator (ep128emu) in a browser. ' +
     'Start with emulator_start (or set_machine). Read the screen with screen_text; type with type_text ' +
     '("\\n" = Enter); BASIC shows "ok" when it waits for a command. Enterprise IS-BASIC: one statement per line. ' +
-    'Use run_frames for repeatable timing (20 ms per frame). Debugger: registers, read_memory, disassemble, ' +
-    'breakpoint, debug_control, monitor (ep128emu monitor commands, "?" lists them). eval_js runs any code ' +
-    'with the page\'s `ep` object (docs/AUTOMATION.md).'
+    'The machine runs only while a tool runs it (manual mode; manual_mode turns it off): run_frames runs ' +
+    'n frames of 20 ms, with keys held (keys) — repeatable, the same input gives the same result. ' +
+    'Debugger: state (registers, cycles, beam, I/O), read_memory, disassemble, breakpoint, debug_control, ' +
+    'monitor (ep128emu monitor commands, "?" lists them), trace. Timing: measure (exact Z80 cycles between ' +
+    'two addresses). load_sym loads assembler symbols (sjasmplus --sym); names work as addresses. ' +
+    'eval_js runs any code with the page\'s `ep` object (docs/AUTOMATION.md).'
 });
 
 server.registerTool('emulator_start', {
@@ -201,25 +229,114 @@ server.registerTool('screenshot', {
   return { content: [{ type: 'image', data: url.replace(/^data:image\/png;base64,/, ''), mimeType: 'image/png' }] };
 });
 
+const keyNames = z.array(z.string()).describe('key names: KeyboardEvent.code (KeyA, Digit1, Space, Enter, ArrowUp, ShiftLeft, End = STOP…) or joysticks: Joy1Up, Joy1Down, Joy1Left, Joy1Right, Joy1Fire (Joy2…; TVC: Joy3, Joy4 = GameCard)');
+
 server.registerTool('run_frames', {
   title: 'Run frames',
-  description: 'Runs n frames (20 ms emulated each) at once, as fast as possible. Stops early at a breakpoint. Returns the frames run and the state.',
-  inputSchema: { frames: z.number().int().min(1).max(100000) }
-}, async ({ frames }) => {
-  return text(await inPage((n) => {
+  description: 'Runs n frames (20 ms emulated each) at once, as fast as possible. Stops early at a breakpoint. Optionally holds keys during all of them (released after). Returns the frames run and the state.',
+  inputSchema: {
+    frames: z.number().int().min(1).max(100000),
+    keys: keyNames.optional()
+  }
+}, async ({ frames, keys }) => {
+  return text(await inPage(([n, k]) => {
     let run = 0;
     while (run < n) {
-      const k = ep.runFrames(Math.min(500, n - run));
-      run += k;
-      if (k === 0 || ep.stopped()) break;
+      const r = ep.runFrames(Math.min(500, n - run), k ? { perFrame: () => k } : undefined);
+      run += r;
+      if (r === 0 || ep.stopped()) break;
     }
     return { framesRun: run, state: ep.state() };
-  }, frames));
+  }, [frames, keys || null]));
+});
+
+server.registerTool('key_down', {
+  title: 'Hold keys',
+  description: 'Presses keys (or joystick directions) at once and holds them until key_up — also across breakpoints and run_frames calls.',
+  inputSchema: { keys: keyNames }
+}, async ({ keys }) => {
+  await inPage((k) => ep.keyDown(k), keys);
+  return text(await inPage(() => ({ held: ep.state().keys })));
+});
+
+server.registerTool('key_up', {
+  title: 'Release keys',
+  description: 'Releases keys held by key_down (no keys: all of them, and any pending press_key).',
+  inputSchema: { keys: keyNames.optional() }
+}, async ({ keys }) => {
+  await inPage((k) => (k && k.length ? ep.keyUp(k) : ep.keysUp()), keys || null);
+  return text(await inPage(() => ({ held: ep.state().keys })));
+});
+
+server.registerTool('manual_mode', {
+  title: 'Manual mode',
+  description: 'on (default for this server): the machine runs only when a tool runs it; off: it runs in real time in the browser between the tool calls.',
+  inputSchema: { on: z.boolean() }
+}, async ({ on }) => text({ manual: await inPage((m) => ep.manual(m), on) }));
+
+server.registerTool('measure', {
+  title: 'Measure cycles',
+  description: 'Runs `frames` frames and measures the exact Z80 cycles (T-states, with the wait states) from the instruction at `start` to the instruction at `stop`, every time it runs. Nested starts count as the outermost pair; without stop: from one start to the next. Addresses: hex, a symbol (load_sym), symbol+offset, or "seg:offset". exclude_irq leaves out the interrupts taken meanwhile (acceptance to return).',
+  inputSchema: {
+    start: z.string(),
+    stop: z.string().optional(),
+    frames: z.number().int().min(1).max(10000).optional().describe('default 50'),
+    exclude_irq: z.boolean().optional(),
+    samples: z.number().int().min(0).max(10000).optional().describe('samples to return (default 20)'),
+    keys: keyNames.optional().describe('keys held during the frames')
+  }
+}, async ({ start, stop, frames, exclude_irq, samples, keys }) => {
+  return text(await inPage((o) => {
+    const k = o.keys;
+    delete o.keys;
+    if (k) o.perFrame = () => k;
+    return ep.measure(o);
+  }, { start, stop, frames: frames || 50, excludeIrq: !!exclude_irq, maxSamples: samples === undefined ? 20 : samples, keys: keys || null }));
+});
+
+server.registerTool('load_sym', {
+  title: 'Load symbols',
+  description: 'Loads assembler symbols (sjasmplus --sym "name: EQU 0x0000ABCD", also "name equ 1234h", "1234 name") from a local file, a URL or the text itself, added to the ones loaded. Afterwards the names work in breakpoint, measure, disassemble, read_memory, and labels show in the disassembly.',
+  inputSchema: {
+    file: z.string().optional().describe('local path or URL'),
+    text: z.string().optional().describe('the symbol file\'s text'),
+    prefix: z.string().optional().describe('put before each name'),
+    segment: z.union([z.number().int(), z.string()]).optional().describe('the symbols are valid only with this segment paged in (hex)'),
+    replace: z.boolean().optional().describe('remove the symbols loaded before')
+  }
+}, async ({ file, text: t, prefix, segment, replace }) => {
+  let src = t;
+  if (!src && file) src = /^https?:\/\//.test(file) ? null : await fs.readFile(expandHome(file), 'utf8');
+  if (!src && !file) throw new Error('file or text is needed');
+  const n = await inPage(async ([s, u, o]) => ep.loadSym(s !== null ? s + '\n' : u, o),
+    [src === null ? null : src, file || '', { prefix: prefix || '', segment: segment === undefined ? undefined : toNum(segment), replace: !!replace }]);
+  return text('loaded ' + n + ' symbols');
+});
+
+server.registerTool('trace', {
+  title: 'Instruction trace',
+  description: 'on: records the registers, segment and cycle count before each instruction (the last 65536; optionally only in from..to); off; dump: the last `count` entries with the disassembly.',
+  inputSchema: {
+    action: z.enum(['on', 'off', 'dump']),
+    from: z.string().optional(),
+    to: z.string().optional(),
+    count: z.number().int().min(1).max(65536).optional().describe('dump: entries (default 50)')
+  }
+}, async ({ action, from, to, count }) => {
+  if (action === 'dump') {
+    const rows = await inPage((n) => ep.traceDump(n, { disasm: true }), count || 50);
+    return text(rows.map((e) => hex(e.pc, 4) + ' ' + hex(e.segment, 2) + ' ' + String(e.cycle).padStart(12) + '  ' +
+      (e.text || '').replace(/^\s*[0-9A-F]{4}\s+(?:[0-9A-F]{2} )*[0-9A-F]{2}\s+/, '').padEnd(22) +
+      ' AF=' + hex(e.AF, 4) + ' BC=' + hex(e.BC, 4) + ' DE=' + hex(e.DE, 4) + ' HL=' + hex(e.HL, 4) +
+      ' IX=' + hex(e.IX, 4) + ' IY=' + hex(e.IY, 4) + ' SP=' + hex(e.SP, 4)).join('\n') || '(empty)');
+  }
+  await inPage(([on, f, t]) => ep.trace(on, Object.assign({}, f ? { from: f } : {}, t ? { to: t } : {})), [action === 'on', from || '', to || '']);
+  return text('trace ' + action);
 });
 
 server.registerTool('state', {
   title: 'Machine state',
-  description: 'Machine, running / stopped, emulated time, registers, stop reason.',
+  description: 'Machine, running / stopped, emulated time, CPU cycles, the beam (video line, cycles in the line), registers, the I/O registers (TVC: CRTC, paging, VRAM; EP: NICK, DAVE, paging), held keys, stop reason, the last onBreak error.',
   inputSchema: {}
 }, async () => text(await inPage(() => ep.state())));
 
@@ -233,7 +350,7 @@ server.registerTool('read_memory', {
   }
 }, async ({ address, length, source }) => {
   const src = { cpu: 0, physical: 1, '2dfx': 2, psram: 3, cardram: 4 }[source || 'cpu'];
-  const a = toNum(address);
+  const a = src ? toNum(address) : await toAddr(address);
   const bytes = await inPage(([x, n, s]) => ep.read(x, n, s), [a, length, src]);
   const lines = [];
   for (let o = 0; o < bytes.length; o += 16) {
@@ -249,7 +366,7 @@ server.registerTool('write_memory', {
   description: 'Writes bytes to CPU memory (current paging).',
   inputSchema: { address: num, bytes: z.string().describe('hex bytes, e.g. "3E 05 C9"') }
 }, async ({ address, bytes }) => {
-  const a = toNum(address);
+  const a = await toAddr(address);
   const b = bytes.trim().split(/[\s,]+/).filter(Boolean).map((x) => parseInt(x, 16));
   if (b.some((x) => Number.isNaN(x) || x < 0 || x > 255)) throw new Error('bytes: hex values 00-FF');
   await inPage(([x, v]) => v.forEach((y, i) => ep.poke(x + i, y)), [a, b]);
@@ -261,7 +378,7 @@ server.registerTool('disassemble', {
   description: 'Z80 disassembly with labels, from a CPU address (default: PC).',
   inputSchema: { address: num.optional(), lines: z.number().int().min(1).max(500).optional() }
 }, async ({ address, lines }) => {
-  return text((await inPage(([a, n]) => ep.disasm(a === null ? ep.regs().PC : a, n), [address === undefined ? null : toNum(address), lines || 20])).join('\n'));
+  return text((await inPage(([a, n]) => ep.disasm(a === null ? ep.regs().PC : a, n), [address === undefined ? null : await toAddr(address), lines || 20])).join('\n'));
 });
 
 server.registerTool('breakpoint', {
@@ -296,7 +413,7 @@ server.registerTool('debug_control', {
     await new Promise((r) => setTimeout(r, 50));
     const st = ep.state();
     return { state: st, disasm: st.regs ? ep.disasm(st.regs.PC, 5) : [] };
-  }, [action, address === undefined ? 0 : toNum(address)]));
+  }, [action, address === undefined ? 0 : await toAddr(address)]));
 });
 
 server.registerTool('monitor', {

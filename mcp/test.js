@@ -24,6 +24,11 @@ const call = async (name, args = {}) => {
   return t;
 };
 
+const check = (ok, what) => {
+  console.log((ok ? 'OK   ' : 'FAIL ') + what + '\n');
+  if (!ok) process.exitCode = 1;
+};
+
 const tools = await client.listTools();
 console.log('tools:', tools.tools.map((t) => t.name).join(', '), '\n');
 try {
@@ -52,6 +57,50 @@ try {
   if (process.env.EP128WEB_ROMS) await call('load_file', { file: process.env.EP128WEB_ROMS });
   await call('eval_js', { code: 'return { lines: ep.screenLines().length, prompt: ep.atPrompt() };' });
   await call('list_machines');
+
+  // --- timing, symbols, keys, trace (machine code POKEd on a TVC 64k) ---
+  // 6000 LD HL,7000 / LD B,0 / XOR A / 6006 LD (HL),A / INC L / DJNZ 6006 / 600A JP 6000
+  await call('set_machine', { id: 'tvc64-12' });
+  await call('write_memory', { address: '6000', bytes: '21 00 70 06 00 AF 77 2C 10 FC C3 00 60' });
+  const symFile = path.join(profile, 'loop.sym');
+  fs.writeFileSync(symFile, 'START: EQU 0x00006000\nLOOP: EQU 0x00006006\nDONE: EQU 0x0000600A\n');
+  await call('load_sym', { file: symFile });
+  check(/START:/.test(await call('disassemble', { address: 'START', lines: 4 })), 'labels in the disassembly');
+  check(/21 00 70/.test(await call('read_memory', { address: 'START', length: 3 })), 'read_memory with a symbol');
+  await call('debug_control', { action: 'pause' });
+  await call('eval_js', { code: 'ep.setReg("PC", ep.sym("START")); ep.cont(); return ep.regs().PC;' });
+  // 10 + 7 + 4 + 255 * (7 + 4 + 13) + (7 + 4 + 8) = 6160 T, no wait states in RAM
+  const m = JSON.parse(await call('measure', { start: 'START', stop: 'DONE', frames: 5, exclude_irq: true, samples: 2 }));
+  check(m.count > 10 && m.min === 6160 && m.max === 6160, 'measure: the loop takes 6160 cycles (' + m.min + '..' + m.max + ')');
+  const per = JSON.parse(await call('measure', { start: 'LOOP', frames: 1, samples: 0 }));
+  check(per.min === 24, 'measure: one iteration takes 24 cycles');
+  const st = JSON.parse(await call('state'));
+  check(typeof st.cycles === 'number' && st.beam && st.beam.frameLines > 0 && Array.isArray(st.io.crtc), 'state: cycles, beam, CRTC');
+  await call('trace', { action: 'on', from: 'LOOP', to: 'LOOP' });
+  await call('run_frames', { frames: 1 });
+  check(/6006 F9/.test(await call('trace', { action: 'dump', count: 3 })), 'trace: PC and segment');
+  await call('trace', { action: 'off' });
+  // keys: back to BASIC, then type with run_frames keys / key_down
+  await call('debug_control', { action: 'pause' });
+  await call('eval_js', { code: 'ep.setReg("PC", 0x6000 + 13); ep.poke(0x600D, 0xC9); ep.cont(); return 1;' });
+  await call('run_frames', { frames: 20 });
+  await call('eval_js', { code: 'ep.reset(true); await ep.ready(); return ep.atPrompt();' });
+  await call('run_frames', { frames: 3, keys: ['KeyA'] });
+  await call('run_frames', { frames: 10 });
+  await call('key_down', { keys: ['KeyB'] });
+  await call('run_frames', { frames: 3 });
+  await call('key_up', {});
+  await call('run_frames', { frames: 10 });
+  check(/ab/i.test(await call('screen_text')), 'keys typed "ab"');
+  // determinism: the same input from the same state gives the same memory and cycles
+  const det = JSON.parse(await call('eval_js', { code: `
+    const s = ep.snapshot();
+    const run = () => { ep.restore(s); ep.runFrames(30, { perFrame: (i) => (i === 2 ? ['KeyC'] : i === 7 ? ['Joy1Fire'] : []) });
+                        return ep.cycles() + ':' + ep.read(0, 65536).join(','); };
+    return run() === run();` }));
+  check(det === true, 'runFrames with perFrame keys is repeatable');
+  // a local path in eval_js (ep.loadSym / ep.load fetch it through the server)
+  check(await call('eval_js', { code: 'return await ep.loadSym(' + JSON.stringify(symFile) + ', { prefix: "L_" });' }) === '3', 'loadSym with a local path');
 } finally {
   await client.close();
   fs.rmSync(profile, { recursive: true, force: true });

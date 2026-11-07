@@ -46,11 +46,29 @@ namespace WebDebug {
   static int      vLine = 0;
   static uint32_t vFrame = 0;
   static int      rasterLine = -1;
+  static uint64_t lineStartCycle = 0, frameStartCycle = 0, lastFrameCycles = 0;
+  static int      lastFrameLines = 0;
+  // interrupts: accepted, not seen by run() yet; the handlers running
+  // (stack pointer after the return address was pushed, start cycle)
+  static bool     irqPending = false;
+  static uint64_t irqPendingCycle = 0;
+  struct IrqEntry { uint16_t sp; uint64_t cycle; };
+  static IrqEntry irqStack[64];
+  static int      irqDepth = 0;
+  // measuring
+  static bool     measOn = false, measExclIrq = false;
+  static int      measStartPC = -1, measStartSeg = -1, measStopPC = -1, measStopSeg = -1;
+  static int      measDepth = 0, measIrqLevel = 0;
+  static uint64_t measStartCycle = 0, measIrq = 0;
+  static int      measCount = 0;
+  static std::vector< double >  measSamples;
   // trace
   static const int  traceSize = 65536;
   static std::vector< uint16_t >  trace;
+  static std::vector< double >    traceExt;       // segment, cycle
   static uint32_t tracePos = 0, traceCount = 0;
   static bool     traceOn = false;
+  static int      traceLo = 0, traceHi = 0xFFFF;
   // script breakpoints
   bool (*scriptCallback)(int type, uint16_t addr, uint8_t value) = 0;
   static Ep128Emu::VirtualMachine *vmp = 0;
@@ -78,7 +96,7 @@ namespace WebDebug {
   static void updateActive()
   {
     active = (reason != RUNNING || bpCount > 0 || scrExecCount > 0 || segExecCount > 0 || pending != RUNNING ||
-              skipOnce || stepInto || tempBreak >= 0 || histOn || profOn || traceOn);
+              skipOnce || stepInto || tempBreak >= 0 || histOn || profOn || traceOn || measOn);
   }
 
   static bool stopAt(uint16_t pc, int why, uint16_t addr, uint8_t value)
@@ -99,9 +117,66 @@ namespace WebDebug {
     return (vmp ? vmp->readMemory(pc, true) : 0);
   }
 
+  static inline uint16_t curSP()
+  {
+    return uint16_t(static_cast< const Ep128Emu::VirtualMachine * >(vmp)->getZ80Registers().SP.W);
+  }
+
+  static inline bool segAt(uint16_t pc, int seg)
+  {
+    return (seg < 0 || (vmp && int(vmp->getMemoryPage(pc >> 14)) == seg));
+  }
+
+  static void measureStep(uint16_t pc)
+  {
+    uint64_t  now = getCycles();
+    if (measExclIrq && vmp) {
+      uint16_t  sp = curSP();
+      // handlers that returned (the stack pointer is above the return
+      // address pushed by the interrupt)
+      while (irqDepth > 0 && sp > irqStack[irqDepth - 1].sp) {
+        irqDepth--;
+        if (measDepth > 0 && irqDepth == measIrqLevel)
+          measIrq += now - irqStack[irqDepth].cycle;
+      }
+      if (irqPending) {
+        irqPending = false;
+        if (irqDepth < 64) {
+          irqStack[irqDepth].sp = sp;
+          irqStack[irqDepth].cycle = irqPendingCycle;
+          irqDepth++;
+        }
+      }
+    }
+    irqPending = false;
+    if (int(pc) == measStopPC && measDepth > 0 && segAt(pc, measStopSeg)) {
+      if (measStartPC == measStopPC || --measDepth == 0) {
+        measDepth = 0;
+        if (measSamples.size() < size_t(measureMaxSamples) * 2U) {
+          measSamples.push_back(double(measStartCycle));
+          measSamples.push_back(double(now - measStartCycle - measIrq));
+        }
+        measCount++;
+        if (measStartPC == measStopPC)
+          goto start;               // this hit starts the next one
+      }
+      return;
+    }
+    if (int(pc) != measStartPC || !segAt(pc, measStartSeg))
+      return;
+  start:
+    if (measDepth++ == 0) {
+      measStartCycle = now;
+      measIrq = 0;
+      measIrqLevel = irqDepth;
+    }
+  }
+
   // the instruction at 'pc' runs
   static inline bool run(uint16_t pc)
   {
+    if (measOn)
+      measureStep(pc);
     if (histOn) {
       hist[histPos] = pc;
       histPos = (histPos + 1) & (histSize - 1);
@@ -110,7 +185,9 @@ namespace WebDebug {
     }
     if (profOn)
       prof[pc]++;
-    if (traceOn && vmp) {
+    if (traceOn && vmp && int(pc) >= traceLo && int(pc) <= traceHi) {
+      traceExt[size_t(tracePos) * 2U] = double(vmp->getMemoryPage(pc >> 14));
+      traceExt[size_t(tracePos) * 2U + 1U] = double(getCycles());
       const Ep128::Z80_REGISTERS& r =
           static_cast< const Ep128Emu::VirtualMachine * >(vmp)->getZ80Registers();
       uint16_t  *e = &(trace[size_t(tracePos) * 8U]);
@@ -324,6 +401,7 @@ namespace WebDebug {
   void videoLine()
   {
     vLine++;
+    lineStartCycle = getCycles();
     if (vLine == rasterLine && reason == RUNNING && pending == RUNNING) {
       pending = RASTER;
       pendingAddr = uint16_t(vLine);
@@ -334,6 +412,11 @@ namespace WebDebug {
 
   void videoFrame()
   {
+    uint64_t  now = getCycles();
+    lastFrameLines = vLine;
+    lastFrameCycles = now - frameStartCycle;
+    frameStartCycle = now;
+    lineStartCycle = now;
     vLine = 0;
     vFrame++;
     if (rasterLine == 0 && reason == RUNNING && pending == RUNNING) {
@@ -359,10 +442,139 @@ namespace WebDebug {
     rasterLine = n;
   }
 
+  void getBeam(double *out)
+  {
+    out[0] = double(vLine);
+    out[1] = double(getCycles() - lineStartCycle);
+    out[2] = double(lastFrameLines);
+    out[3] = double(lastFrameCycles);
+  }
+
+  void getTiming(double *out)
+  {
+    uint64_t  now = getCycles();
+    out[0] = double(now);
+    out[1] = double(vLine);
+    out[2] = double(vFrame);
+    out[3] = double(now - lineStartCycle);
+    out[4] = double(now - frameStartCycle);
+    out[5] = double(lastFrameLines);
+    out[6] = double(lastFrameCycles);
+    out[7] = double(epCycleRemaining ? 0 : int(halfCycles & 1U));
+  }
+
+  static void   *tVar[2] = { 0, 0 };
+  static size_t tVarSize[2] = { 0, 0 };
+
+  void setTimingVars(void *p1, size_t n1, void *p2, size_t n2)
+  {
+    tVar[0] = p1;
+    tVarSize[0] = n1;
+    tVar[1] = p2;
+    tVarSize[1] = n2;
+  }
+
+  void clearTimingVars(void *p1)
+  {
+    if (tVar[0] == p1) {
+      tVar[0] = tVar[1] = 0;
+      tVarSize[0] = tVarSize[1] = 0;
+    }
+  }
+
+  int readTimingVars(uint8_t *out)
+  {
+    int     n = 0;
+    for (int i = 0; i < 2; i++) {
+      if (tVar[i] && n + int(tVarSize[i]) <= 16) {
+        std::memcpy(out + n, tVar[i], tVarSize[i]);
+        n += int(tVarSize[i]);
+      }
+    }
+    return n;
+  }
+
+  void writeTimingVars(const uint8_t *in, int n)
+  {
+    int     k = 0;
+    for (int i = 0; i < 2; i++) {
+      if (tVar[i] && k + int(tVarSize[i]) <= n) {
+        std::memcpy(tVar[i], in + k, tVarSize[i]);
+        k += int(tVarSize[i]);
+      }
+    }
+  }
+
+  void setTiming(const double *in)
+  {
+    uint64_t  now = uint64_t(in[0]);
+    if (epCycleRemaining)
+      epCycleUnits = int64_t(now << 32) + *epCycleRemaining;
+    else
+      halfCycles = (now << 1) | uint64_t(int(in[7]) & 1);
+    vLine = int(in[1]);
+    vFrame = uint32_t(in[2]);
+    lineStartCycle = now - uint64_t(in[3]);
+    frameStartCycle = now - uint64_t(in[4]);
+    lastFrameLines = int(in[5]);
+    lastFrameCycles = uint64_t(in[6]);
+  }
+
+  void irqEnter()
+  {
+    if (measOn) {
+      irqPending = true;
+      irqPendingCycle = getCycles();
+    }
+  }
+
+  void measureStart(int start, int startSeg, int stop, int stopSeg, bool excludeIrq)
+  {
+    measStartPC = start;
+    measStartSeg = startSeg;
+    measStopPC = stop;
+    measStopSeg = stopSeg;
+    measExclIrq = excludeIrq;
+    measDepth = 0;
+    measIrq = 0;
+    measCount = 0;
+    measSamples.clear();
+    irqPending = false;
+    irqDepth = 0;
+    measOn = true;
+    updateActive();
+  }
+
+  void measureStop()
+  {
+    measOn = false;
+    measDepth = 0;
+    updateActive();
+  }
+
+  int measureCount()
+  {
+    return measCount;
+  }
+
+  int measureKept()
+  {
+    return int(measSamples.size() / 2U);
+  }
+
+  const double *measureSamples()
+  {
+    if (measSamples.empty())
+      measSamples.reserve(2);
+    return measSamples.data();
+  }
+
   void enableTrace(bool on)
   {
-    if (on && trace.size() != size_t(traceSize) * 8U)
+    if (on && trace.size() != size_t(traceSize) * 8U) {
       trace.assign(size_t(traceSize) * 8U, 0);
+      traceExt.assign(size_t(traceSize) * 2U, 0.0);
+    }
     if (on && !traceOn) {
       tracePos = 0;
       traceCount = 0;
@@ -382,6 +594,28 @@ namespace WebDebug {
         buf[i * 8 + j] = e[j];
     }
     return n;
+  }
+
+  int getTraceExt(double *buf, int n)
+  {
+    if (n > int(traceCount))
+      n = int(traceCount);
+    for (int i = 0; i < n; i++) {
+      size_t  k = size_t((tracePos - uint32_t(n) + uint32_t(i)) & (traceSize - 1)) * 2U;
+      buf[i * 2] = traceExt[k];
+      buf[i * 2 + 1] = traceExt[k + 1];
+    }
+    return n;
+  }
+
+  void setTraceRange(int lo, int hi)
+  {
+    if (lo > hi) {
+      lo = 0;
+      hi = 0xFFFF;
+    }
+    traceLo = lo;
+    traceHi = hi;
   }
 
   void setVM(void *vm)
