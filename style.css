@@ -596,6 +596,7 @@ body.side #tb-qs { margin-left: 0; }
 #menu-toggle { display: none; }
 #quick { display: flex; align-items: center; gap: 4px; padding-left: 10px; margin-left: 4px; border-left: 1px solid var(--border); }
 #quick > button, #quick > .file { min-height: 30px; padding: 3px 9px; }
+#ai-ind { background: var(--warn, #b45309); color: #fff; border-color: transparent; font-weight: 700; border-radius: 14px; }
 #rec-ind { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 700; border-radius: 14px; }
 #video-fmt-row:has(> select[hidden]) { display: none; }
 @media (max-width: 760px) {
