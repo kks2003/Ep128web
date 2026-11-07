@@ -60,7 +60,7 @@ Other clients: run `node server.js` as a stdio MCP server.
 | `EP128WEB_HEADLESS` | `1` | `0` shows the browser window, to watch the agent work |
 | `EP128WEB_PROFILE` | `~/.ep128web-mcp` | Browser profile: keeps the ROMs, disks and settings between runs |
 | `EP128WEB_CHROMIUM` | Playwright's Chromium | Path of another Chromium / Chrome executable |
-| `EP128WEB_MANUAL` | `1` | Manual mode: the machine runs only while a tool runs it, so results are repeatable. `0`: it runs in real time between the calls |
+| `EP128WEB_MANUAL` | `1` | Manual mode: the machine runs only while a tool runs it, so results are repeatable; set again after every page load (`emulator_start` with `reload`) and checked before every call (`manual_mode` changes it). `0`: it runs in real time between the calls |
 
 ## Tools
 
