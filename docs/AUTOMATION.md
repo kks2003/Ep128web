@@ -69,6 +69,9 @@ machine: `(64k+)`, `(DOS)`, `(UPM)`, `(256k++)`, `(2dfx)`).
 | `ep.atPrompt()` | `true` if BASIC waits for a command (the last line with text is `ok`) |
 | **async** `ep.waitText(textOrRegExp, {timeout})` | Waits until the screen text contains / matches it (default 30 s real time); returns the text, or throws with the screen's text |
 | `ep.screenshot()` | The picture as a PNG data URL |
+| `ep.frameSize()` | `{width, height}` of the picture (TVC 672×288, Enterprise 768×288) |
+| `ep.pixel(x, y)` | A pixel of the last finished frame, in the screenshot's coordinates: `{x, y, index, r, g, b, hex}`. `index`: what the video chip produced (TVC: its colour value, e.g. 80 = `50h` green; Enterprise: the colour byte) |
+| `ep.pixels(x, y, w, h)` | A rectangle of them, row by row: `{x, y, w, h, index: [...], rgb: [[r, g, b]…], hex: ['#rrggbb'…]}` |
 | **async** `ep.type(text)` | Types on the emulated keyboard (`\n` = Enter); resolves when typed. Waits for an earlier typing to finish. |
 | **async** `ep.press(code, ms)` | Holds a key for `ms` ms of emulated time (default 100): pressed at once, released at the end of the frame in which the time is up, also inside `runFrames` (no `await` needed). Resolves when released. |
 | `ep.keyDown(...keys)`, `ep.keyUp(...keys)` | Presses / releases keys at once; they stay held across `runFrames` calls and debugger stops until released |
@@ -113,7 +116,7 @@ background tab), unless manual mode is on.
 | `ep.setReg(name, value)` | Sets a register (`'HL'`, `'AF_'`…) |
 | `ep.peek(a)`, `ep.peek16(a)`, `ep.poke(a, v)` | CPU memory (with the current paging) |
 | `ep.addr(a)` | The CPU address of `a`. Everywhere a CPU address is taken (peek, poke, read, disasm, assemble, bp, runTo, measure, trace) it can be a number, hex text (`'C000'`, `'0xC000'`), a symbol or symbol±offset (`'LOOP+2'`) |
-| `ep.read(addr, n, src)` | `n` bytes; `src` 0 = CPU address (default), 1 = physical address (segment × 16384 + offset), 2 = 2dfx resource RAM, 3 = TVC256k++ PSRAM, 4 = TVC256k++ card RAM |
+| `ep.read(addr, n, src, page)` | `n` bytes; `src` 0 / `'cpu'` = CPU address (default), 1 / `'phys'` = physical address (segment × 16384 + offset), `'vid'` = the video memory whatever the paging (TVC: offset 0–3FFF in video page `page` 0–3, default the page shown; Enterprise: the video address 0–FFFF, segments FCh–FFh), 2 / `'2dfx'` = 2dfx resource RAM, 3 / `'psram'` = TVC256k++ PSRAM, 4 / `'cardram'` = TVC256k++ card RAM |
 | `ep.out(port, v)` | Writes an I/O port |
 | `ep.disasm(a, n)` | `n` lines of disassembly (with labels: `LOOP:   6006  77  LD (HL), A`) |
 | `ep.assemble(a, text)` | Assembles one instruction (e.g. `'LD A,5'`) to `a`; returns the next address |
@@ -127,7 +130,7 @@ background tab), unless manual mode is on.
 | `ep.monitor(cmd)` | Runs a command of the ep128emu monitor (`?` lists them) and returns its output as text |
 | `ep.ioRegs()` | The I/O registers as text (NICK, DAVE / CRTC, video mode…) |
 | `ep.io()` (= `ep.ioRegs(true)`) | The same as an object, with `pages` (the segments paged in). TVC: `crtc` (R0–R15), `crtcSelected`, `vidX`, `vidY`, `crtcMA`, `crtcRA`, `mode`, `palette`, `border`, `port02`, `pagingExt`, `vram`, `vramSegment`, `irq`, `irqMask`, `sound`. Enterprise: `nick` (80h–83h), `nickSlot`, `lpb`, `lpbLine`, `ld1`, `ld2`, `dave` (A0h–AFh), `b4`…`b6` (and the values written), `bf`, `zx`, `disk`. Plus `text`. |
-| `ep.history(n)` | The last `n` executed addresses. The first call turns the recording on (it was off, so the list was empty). |
+| `ep.history(n)` | The last `n` executed addresses. Recorded from the first `ep.ready`, `machine`, `load`, `manual` or `history` call on (before that it was off, so the list was empty); while it is still empty and the trace is on, the trace's addresses. |
 | `ep.trace(on, {from, to})` | Records the registers, the segment and the cycle count before each instruction (the last 65536); `from`/`to`: only that address range |
 | `ep.traceDump(n, {disasm})` | The last `n` entries, oldest first: `{pc, segment, cycle, AF, BC, DE, HL, IX, IY, SP}` (`disasm: true`: with `text`) |
 | `ep.sym(name)`, `ep.label(a)` | Symbols ↔ addresses (known system addresses, loaded symbol files) |
@@ -142,8 +145,21 @@ background tab), unless manual mode is on.
 | --- | --- |
 | `ep.measure({start, stop, frames, excludeIrq, maxSamples, perFrame})` | Runs `frames` frames (default 50) and measures the cycles from the instruction at `start` to the instruction at `stop` (the cycles of `start`'s instruction are counted, those of `stop`'s are not), every time it runs. Nested starts (recursion) count as the outermost pair. Without `stop` (or `stop` = `start`): from one hit to the next (e.g. a loop's period). `start` / `stop`: addresses, symbols, or `'seg:offset'` (only with that segment paged in). `excludeIrq`: the interrupts taken meanwhile are not counted (from the acceptance of the interrupt to the return of its handler: the stack pointer back above the return address — `RETI`, `RET`, TVC's `EI; RET`; IM 1 and IM 2). Returns `{count, avg, min, max, kept, samples: [{startCycle, cycles}], frames, stopped}` (`samples`: the first `maxSamples`, default 10000; at most 100000 are kept for the statistics). `frames: 0` only starts measuring: `ep.measureEnd()` stops it and returns the result. |
 
-The cycle counts include the wait states: TVC video memory (pages FCh–FFh) and I/O,
-Enterprise video memory and the wait states set in port BFh.
+| `ep.profile({frames, ranges, bySymbol, maxSymbolSize, top, perFrame})` | Runs `frames` frames (default 50) and returns where the cycles went, most first: `[{name, segment, start, end, cycles, perFrame, percent, waitCycles, instructions}]`. Each instruction's cycles are exact (from its start to the next instruction's start; an interrupt's acceptance counts to the interrupted instruction); `waitCycles`: the wait states among them. Grouped by `ranges` (`[{name, start, end}]`, addresses or symbols; the rest is `(other)`), else by symbol (the default when symbols are loaded: an address belongs to the symbol before it, at most `maxSymbolSize` bytes away, default 4096), else by 256-byte blocks named `segment:address` (`F9:6000-60FF`). `frames: 0` only starts it: `ep.profileEnd(opts)` returns it. |
+| `ep.waitCycles()` | The wait states among `ep.cycles()` since power on |
+
+The cycle counts include the wait states: TVC video memory (the CPU waits for the video
+chip's memory slot when it accesses pages FCh–FFh; I/O has no wait), Enterprise video
+memory and the wait states set in port BFh.
+
+Frames: `runFrames` runs 20 ms of emulated time per frame (TVC: 62 500 cycles at
+3.125 MHz; Enterprise: 80 000 at 4 MHz). That is not the video frame: the TVC's CRTC as
+set by its ROM makes 314 lines of 200 cycles (64 µs) = 62 800 cycles, about 49.76 Hz
+(`ep.beam().frameLines` / `frameCycles` show it; a reading can be a few cycles off, as
+it is taken at an instruction boundary). The Enterprise's NICK frame is 312 lines of
+about 256 cycles (≈ 79 940). So the video frame drifts against `runFrames`' 20 ms by
+about 300 cycles per frame on the TVC; to act at a given point of the picture, use
+`ep.beam()` or a raster breakpoint rather than counting `runFrames`.
 
 ## State
 
@@ -217,6 +233,10 @@ if (!/^ *2$/m.test(ep.screenText())) throw new Error('bad');
 
 - `ep.type()`, `ep.wait()` and `ep.until()` progress only while the machine runs (not
   while paused or stopped in the debugger; in manual mode they run it themselves).
+- Local paths (`ep.load('/home/me/game.cas')`, `ep.loadSym('C:\\src\\game.sym')`) work only
+  through the MCP server (`mcp/server.js`, its tools and its `eval_js`); elsewhere the page
+  cannot read local files and says so in the error. Pass the contents instead:
+  `ep.load([{name, bytes}])`, `ep.loadSym(text)`.
 - After a debugger stop inside a frame, the rest of that frame's time runs first when the
   machine continues.
 - Typing goes through the emulated keyboard; the page types faster than real time.

@@ -53,6 +53,8 @@ namespace {
     uint32_t  palette[256];
     std::vector< uint32_t > backBuffer;
     std::vector< uint32_t > frontBuffer;
+    std::vector< uint8_t >  backIndex;      // the palette indices
+    std::vector< uint8_t >  frontIndex;
     int       curLine;
     int       vsyncCnt;
     bool      vsyncState;
@@ -139,6 +141,7 @@ namespace {
     void frameDone()
     {
       frontBuffer = backBuffer;
+      frontIndex = backIndex;
       frameCount++;
     }
    public:
@@ -146,6 +149,8 @@ namespace {
       : VideoDisplay(),
         backBuffer(size_t(frameWidth * frameHeight), 0xFF000000U),
         frontBuffer(size_t(frameWidth * frameHeight), 0xFF000000U),
+        backIndex(size_t(frameWidth * frameHeight), 0),
+        frontIndex(size_t(frameWidth * frameHeight), 0),
         curLine(0),
         vsyncCnt(0),
         vsyncState(false),
@@ -195,6 +200,7 @@ namespace {
         uint32_t  *p = &(backBuffer[size_t(y) * size_t(frameWidth)]);
         for (int x = 0; x < frameWidth; x++)
           p[x] = palette[lineBuf[x]];
+        std::memcpy(&(backIndex[size_t(y) * size_t(frameWidth)]), &(lineBuf[0]), size_t(frameWidth));
       }
       if (vsyncCnt != 0) {
         curLine += 2;
@@ -224,6 +230,10 @@ namespace {
     inline const uint32_t *getFrameBuffer() const
     {
       return &(frontBuffer.front());
+    }
+    inline const uint8_t *getFrameIndex() const
+    {
+      return &(frontIndex.front());
     }
     inline uint32_t getFrameCount() const
     {
@@ -1655,6 +1665,46 @@ EMSCRIPTEN_KEEPALIVE uint8_t *ep_dbg_timing_vars_buf()
 EMSCRIPTEN_KEEPALIVE void ep_dbg_set_timing_vars(int n)
 {
   WebDebug::writeTimingVars(timingVarsBuf, n);
+}
+
+// the wait states among the cycles (video memory, Enterprise port BFh)
+EMSCRIPTEN_KEEPALIVE double ep_dbg_wait_cycles()
+{
+  return WebDebug::getWaitCycles();
+}
+
+// cycle profiler, see webdebug.hpp
+EMSCRIPTEN_KEEPALIVE void ep_dbg_cycprof_start()
+{
+  WebDebug::cycleProfileStart();
+}
+
+EMSCRIPTEN_KEEPALIVE void ep_dbg_cycprof_stop()
+{
+  WebDebug::cycleProfileStop();
+}
+
+static std::vector< double >  cycProfBuf;
+
+// the addresses run (5 doubles each, see webdebug.hpp) into the buffer
+// returned by ep_dbg_cycprof_buf(); returns their number
+EMSCRIPTEN_KEEPALIVE int ep_dbg_cycprof()
+{
+  int     n = WebDebug::cycleProfileGet(cycProfBuf);
+  if (cycProfBuf.empty())
+    cycProfBuf.push_back(0.0);
+  return n;
+}
+
+EMSCRIPTEN_KEEPALIVE const double *ep_dbg_cycprof_buf()
+{
+  return cycProfBuf.data();
+}
+
+// the palette indices of the last finished frame (frameWidth * frameHeight)
+EMSCRIPTEN_KEEPALIVE const uint8_t *ep_frame_index()
+{
+  return display->getFrameIndex();
 }
 
 // measuring from 'start' to 'stop' (segment -1: any), see webdebug.hpp

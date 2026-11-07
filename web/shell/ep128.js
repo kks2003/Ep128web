@@ -6945,10 +6945,21 @@ registerProcessor('ep-output', EPOutput);
   // fetches a file: a URL, or (in the MCP server) a local path
   async function epFetch(src) {
     let url = String(src);
-    if (window.__ep128webLocal && (/^(\/|[A-Za-z]:[\\/]|file:)/.test(url) || /^~[\\/]/.test(url)))
+    const local = /^(file:|[A-Za-z]:[\\/]|~[\\/]|\\\\)/.test(url) ||
+      /^\/(home|Users|tmp|mnt|root|var|opt|media|private|Volumes|srv|data|workspace)\//.test(url);
+    const hint = ': the page cannot read local files. Local paths work only through the MCP server ' +
+      '(mcp/server.js: load_file, load_sym, or ep.load / ep.loadSym in its eval_js). Elsewhere pass the ' +
+      'contents: ep.load([{name, bytes}]), ep.loadSym(text)';
+    if (window.__ep128webLocal && (local || url.startsWith('/')))
       url = window.__ep128webLocal + encodeURIComponent(url.replace(/^file:\/\//, ''));
-    const r = await fetch(url);
-    if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + src);
+    else if (local) throw new Error('local path ' + src + hint);
+    let r;
+    try {
+      r = await fetch(url);
+    } catch (e) {
+      throw new Error('cannot fetch ' + src + ' (' + e.message + ')' + (url.startsWith('/') || local ? hint : ''));
+    }
+    if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + src + (r.status === 404 && /^\//.test(String(src)) ? ' (a local path?' + hint + ')' : ''));
     return r;
   }
   // the I/O registers as an object (with the text of ep.ioRegs())
@@ -6996,6 +7007,76 @@ registerProcessor('ep-output', EPOutput);
     o.text = t;
     return o;
   }
+  // the execution history is recorded once a program uses the API
+  function epHistoryOn() {
+    if (dbgHistOn || !api || !api.dbgHistoryEnable) return;
+    dbgHistOn = true;
+    api.dbgHistoryEnable(1);
+    if ($('dbg-hist-on')) $('dbg-hist-on').checked = true;
+  }
+  let epProf = null;                    // the cycle profiler runs
+  function epProfileRows(o) {
+    const n = api.dbgCycprof(), d = f64(api.dbgCycprofBuf(), n * 5);
+    const frames = o.frames || 1;
+    let total = 0;
+    for (let i = 0; i < n; i++) total += d[i * 5 + 3];
+    const groups = new Map();
+    const add = (key, name, seg, start, end, i) => {
+      let g = groups.get(key);
+      if (!g) groups.set(key, g = { name, segment: seg, start, end, cycles: 0, waitCycles: 0, instructions: 0 });
+      g.cycles += d[i * 5 + 3]; g.waitCycles += d[i * 5 + 4]; g.instructions += d[i * 5 + 2];
+    };
+    // ranges: [{name, start, end}] (addresses / symbols; 'seg:offset' start: that segment)
+    const ranges = (o.ranges || []).map((r, k) => {
+      const a = epAddr(r.start), e = r.end === undefined ? null : epAddr(r.end);
+      return { name: r.name || ('range ' + k), seg: a.seg, start: a.segOffset ? a.addr : a.addr,
+               end: e ? e.addr : 0xFFFF, segOffset: !!a.segOffset };
+    });
+    // symbols: sorted [address, name] (plain ones, and per segment)
+    const bySym = o.bySymbol !== undefined ? !!o.bySymbol : !ranges.length && (dbgSyms.size + dbgSegSyms.size) > 0;
+    const plain = [...dbgSyms].sort((x, y) => x[0] - y[0]);
+    const segSyms = new Map();
+    for (const [k, name] of dbgSegSyms) {
+      const sg = Math.floor(k / 65536);
+      if (!segSyms.has(sg)) segSyms.set(sg, []);
+      segSyms.get(sg).push([k & 0xFFFF, name]);
+    }
+    for (const v of segSyms.values()) v.sort((x, y) => x[0] - y[0]);
+    const below = (list, a) => {               // the last entry <= a, and the next one
+      let lo = 0, hi = list.length - 1, r = -1;
+      while (lo <= hi) { const m = (lo + hi) >> 1; if (list[m][0] <= a) { r = m; lo = m + 1; } else hi = m - 1; }
+      return r < 0 ? null : { s: list[r], next: list[r + 1] };
+    };
+    for (let i = 0; i < n; i++) {
+      const seg = d[i * 5], a = d[i * 5 + 1];
+      if (ranges.length) {
+        const r = ranges.find((q) => (q.seg < 0 || q.seg === seg) &&
+          (q.segOffset ? (a & 0x3FFF) >= q.start && (a & 0x3FFF) <= q.end : a >= q.start && a <= q.end));
+        if (r) add('r:' + r.name, r.name, r.seg < 0 ? null : r.seg, r.start, r.end, i);
+        else add('other', '(other)', null, null, null, i);
+        continue;
+      }
+      if (bySym) {
+        const p = below(plain, a), q = segSyms.has(seg) ? below(segSyms.get(seg), a) : null;
+        const b = q && (!p || q.s[0] >= p.s[0]) ? q : p;
+        // not too far from the symbol (code without symbols, e.g. the ROM)
+        if (b && a - b.s[0] < (o.maxSymbolSize || 4096)) {
+          const end = Math.min(b.next ? b.next[0] - 1 : 0xFFFF, b.s[0] + (o.maxSymbolSize || 4096) - 1);
+          add('s:' + b.s[1] + ':' + seg, b.s[1], seg, b.s[0], end, i);
+          continue;
+        }
+      }
+      const st = a & 0xFF00;
+      add('b:' + seg + ':' + st, hex(seg, 2) + ':' + hex(st, 4) + '-' + hex(st + 255, 4), seg, st, st + 255, i);
+    }
+    const rows = [...groups.values()].sort((x, y) => y.cycles - x.cycles);
+    for (const g of rows) {
+      g.perFrame = g.cycles / frames;
+      g.percent = total ? Math.round(g.cycles / total * 10000) / 100 : 0;
+      g.waitCycles = Math.round(g.waitCycles * 100) / 100;
+    }
+    return o.top ? rows.slice(0, o.top) : rows;
+  }
   function epTimingVars() {
     if (!api.dbgTimingVars) return [];
     const n = api.dbgTimingVars(), p = api.dbgTimingVarsBuf();
@@ -7028,7 +7109,23 @@ registerProcessor('ep-output', EPOutput);
     peek: (a) => dbgPeek(epA(a)),
     peek16: (a) => { a = epA(a); return dbgPeek(a) | (dbgPeek((a + 1) & 0xFFFF) << 8); },
     poke: (a, v) => api.dbgPoke(epA(a), v & 0xFF, 0),
-    read: (a, n, src) => {
+    // src: 0 / 'cpu', 1 / 'phys', 2 / '2dfx', 3 / 'psram', 4 / 'cardram', or
+    // 'vid': the video memory whatever the paging (TVC: offset in the video
+    // page 'page' 0-3, default the one shown; Enterprise: video address 0-FFFF)
+    read: (a, n, src, page) => {
+      if (src === 'vid') {
+        if (machine.type === 1) {
+          if (page === undefined || page === null) page = epIoObj().vramSegment - 0xFC;
+          a = (0xFC + (page & 3)) * 16384 + (epA(a) & 0x3FFF);
+        } else {
+          a = 0xFC * 16384 + epA(a);
+        }
+        src = 1;
+      } else if (typeof src === 'string') {
+        const k = { cpu: 0, phys: 1, physical: 1, '2dfx': 2, psram: 3, cardram: 4 }[src.toLowerCase()];
+        if (k === undefined) throw new Error('read: source cpu, phys, vid, 2dfx, psram or cardram');
+        src = k;
+      }
       if (!src) a = epA(a);
       const out = [];
       for (let o = 0; o < n; o += 4096) {
@@ -7105,13 +7202,14 @@ registerProcessor('ep-output', EPOutput);
       return epFetch(t).then((r) => r.text()).then(add);
     },
     // execution history: the last n PCs (the first call turns the recording on)
+    // (recorded from the first ep.ready / machine / load / manual / history
+    // call on; while it is still empty: the PCs of the trace, if it is on)
     history: (n) => {
-      if (!dbgHistOn) {
-        dbgHistOn = true;
-        api.dbgHistoryEnable(1);
-        if ($('dbg-hist-on')) $('dbg-hist-on').checked = true;
-      }
-      return api.dbgHistory(n || 64).trim().split(/\s+/).filter(Boolean).map((h) => parseInt(h, 16));
+      epHistoryOn();
+      n = n === undefined ? 64 : n;
+      const h = api.dbgHistory(n).trim().split(/\s+/).filter(Boolean).map((x) => parseInt(x, 16));
+      if (!h.length && dbgTraceOn && n > 0) return ep.traceDump(n).map((e) => e.pc);
+      return h;
     },
     // the CPU cycles (T-states, with the wait states) since power on; in a
     // breakpoint, before the instruction stopped at
@@ -7151,6 +7249,60 @@ registerProcessor('ep-output', EPOutput);
       const r = epMeasureResult(epMeasure.maxSamples);
       epMeasure = null;
       return r;
+    },
+    // the wait states among ep.cycles() (video memory; Enterprise: port BFh)
+    waitCycles: () => api.dbgWaitCycles(),
+    // cycle profile of opts.frames frames (default 50; 0: only starts,
+    // ep.profileEnd(opts) returns it): [{name, segment, start, end, cycles,
+    // perFrame, percent, waitCycles, instructions}], most cycles first;
+    // grouped by opts.ranges ([{name, start, end}]), else by symbol
+    // (opts.bySymbol, default when symbols are loaded), else 256-byte blocks
+    profile: (o) => {
+      o = o || {};
+      api.dbgCycprofStart();
+      epProf = true;
+      if (o.frames === 0) return null;
+      let frames = 0;
+      try {
+        frames = runFramesNow(o.frames || 50, { perFrame: o.perFrame });
+      } catch (e) {
+        api.dbgCycprofStop();
+        epProf = null;
+        throw e;
+      }
+      return ep.profileEnd(Object.assign({}, o, { frames }));
+    },
+    profileEnd: (o) => {
+      if (!epProf) return null;
+      api.dbgCycprofStop();
+      epProf = null;
+      return epProfileRows(o || {});
+    },
+    // the picture's size (the coordinates of ep.pixel, as in ep.screenshot)
+    frameSize: () => ({ width: imageData.width - 2 * cropX, height: imageData.height }),
+    // a pixel of the last finished frame: {x, y, index (the video chip's
+    // palette byte: TVC color, Enterprise color byte), r, g, b, hex}
+    pixel: (x, y) => {
+      const r = ep.pixels(x, y, 1, 1);
+      return { x, y, index: r.index[0], r: r.rgb[0][0], g: r.rgb[0][1], b: r.rgb[0][2], hex: r.hex[0] };
+    },
+    // a rectangle of them, row by row: {x, y, w, h, index: [...], rgb: [[r, g, b]...], hex: ['#rrggbb'...]}
+    pixels: (x, y, w, h) => {
+      const fw = imageData.width, fh = imageData.height, sw = fw - 2 * cropX;
+      x = Math.floor(x); y = Math.floor(y); w = Math.max(1, Math.floor(w) || 1); h = Math.max(1, Math.floor(h) || 1);
+      if (x < 0 || y < 0 || x + w > sw || y + h > fh) throw new Error('pixels: outside the picture (' + sw + 'x' + fh + ')');
+      const pi = api.frameIndex(), pb = api.frameBuffer();
+      const out = { x, y, w, h, index: [], rgb: [], hex: [] };
+      for (let j = 0; j < h; j++) {
+        for (let i = 0; i < w; i++) {
+          const o = (y + j) * fw + x + i + cropX;
+          const c = M.HEAPU8.subarray(pb + o * 4, pb + o * 4 + 3);
+          out.index.push(M.HEAPU8[pi + o]);
+          out.rgb.push([c[0], c[1], c[2]]);
+          out.hex.push('#' + [c[0], c[1], c[2]].map((v) => v.toString(16).padStart(2, '0')).join(''));
+        }
+      }
+      return out;
     },
     // trace: the registers, segment and cycle count before each instruction
     // (the last 65536); opts: {from, to} only that address range
@@ -7209,7 +7361,11 @@ registerProcessor('ep-output', EPOutput);
     },
     // manual mode: the machine runs only in runFrames / step / runTo (and
     // for what an async call waits for, in whole frames); returns the mode
-    manual: (on) => (on === undefined ? manualMode : setManual(on !== false)),
+    manual: (on) => {
+      if (on === undefined) return manualMode;
+      epHistoryOn();
+      return setManual(on !== false);
+    },
     // keys held until ep.keyUp / ep.keysUp, at once (names: see aiKey)
     keyDown: (...names) => { for (const n of names.flat()) { aiKey(n); aiHeld.add(String(n)); } aiApply(); },
     keyUp: (...names) => { for (const n of names.flat()) aiHeld.delete(String(n)); aiApply(); },
@@ -7231,6 +7387,7 @@ registerProcessor('ep-output', EPOutput);
     ready: (opts) => epPumped(async () => {
       opts = opts || {};
       await pageStarted();
+      epHistoryOn();
       const limit = performance.now() + (opts.timeout || 60000);
       while (!ready) {
         if (performance.now() > limit) {
@@ -7288,6 +7445,7 @@ registerProcessor('ep-output', EPOutput);
     // command has been typed
     load: async (src, name) => {
       await pageStarted();
+      epHistoryOn();
       let files;
       if (Array.isArray(src)) files = src.map((f) => new File([f.bytes], f.name));
       else if (typeof src === 'string') {
@@ -7995,6 +8153,12 @@ ep.log('CTRL+ESC megnyomva');`)
       setKey: c('ep_set_key', null, ['number', 'number']),
       frameBuffer: c('ep_frame_buffer', 'number', []),
       frameCount: c('ep_frame_count', 'number', []),
+      frameIndex: c('ep_frame_index', 'number', []),
+      dbgWaitCycles: c('ep_dbg_wait_cycles', 'number', []),
+      dbgCycprofStart: c('ep_dbg_cycprof_start', null, []),
+      dbgCycprofStop: c('ep_dbg_cycprof_stop', null, []),
+      dbgCycprof: c('ep_dbg_cycprof', 'number', []),
+      dbgCycprofBuf: c('ep_dbg_cycprof_buf', 'number', []),
       frameWidth: c('ep_frame_width', 'number', []),
       frameHeight: c('ep_frame_height', 'number', []),
       audioBuffer: c('ep_audio_buffer', 'number', []),
