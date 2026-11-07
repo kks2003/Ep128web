@@ -75,15 +75,20 @@ Az oldal programból is vezérelhető a `window.ep` objektumon keresztül: gép
 indítása, programok és ROM-ok betöltése, gépelés, a képernyő szövegének
 kiolvasása (EP: a karaktersorok; TVC: a ROM betűkészletével visszafejtve),
 megadott számú képkocka futtatása, a debugger teljes elérése és az állapot
-mentése / visszaállítása. Leírás (angolul, MI-knek és teszteknek):
+mentése / visszaállítása. Kézi módban (`ep.manual(true)`) a gép csak akkor fut,
+amikor a program futtatja, a billentyűk és a joystick képkockánként adhatók meg,
+így ugyanaz a bemenet mindig ugyanazt az eredményt adja. Pontos időmérés
+Z80-ciklusban (várakozásokkal) két cím között, IRQ nélkül is (`ep.measure`),
+assembler-szimbólumok (sjasmplus `--sym`, `ep.loadSym`), utasításnyomkövetés.
+Leírás (angolul, MI-knek és teszteknek):
 [docs/AUTOMATION.md](docs/AUTOMATION.md); röviden az oldal `llms.txt`
 fájljában is.
 
 **MCP szerver** (Claude Desktop, Claude Code és más MCP kliensek): az `mcp/`
 mappában. A háttérben megnyitja az emulátort egy böngészőben, és eszközként adja
 az MI-nek: gép indítása, fájl betöltése, gépelés, a képernyő szövege és képe,
-képkockák futtatása, memória, disassembly, töréspontok, lépés, monitor,
-állapotmentés. Telepítés és beállítás: [mcp/README.md](mcp/README.md).
+képkockák futtatása (lenyomott billentyűkkel), memória, disassembly,
+töréspontok, lépés, monitor, állapotmentés, ciklusmérés, szimbólumok, nyomkövetés. Telepítés és beállítás: [mcp/README.md](mcp/README.md).
 
 ### Telepítés alkalmazásként, offline használat
 

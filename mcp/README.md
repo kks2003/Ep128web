@@ -60,6 +60,7 @@ Other clients: run `node server.js` as a stdio MCP server.
 | `EP128WEB_HEADLESS` | `1` | `0` shows the browser window, to watch the agent work |
 | `EP128WEB_PROFILE` | `~/.ep128web-mcp` | Browser profile: keeps the ROMs, disks and settings between runs |
 | `EP128WEB_CHROMIUM` | Playwright's Chromium | Path of another Chromium / Chrome executable |
+| `EP128WEB_MANUAL` | `1` | Manual mode: the machine runs only while a tool runs it, so results are repeatable. `0`: it runs in real time between the calls |
 
 ## Tools
 
@@ -69,18 +70,27 @@ Other clients: run `node server.js` as a stdio MCP server.
 | `list_machines`, `set_machine` | Machines; switch with a cold start (TVC `slots`, 2dfx `fx`) |
 | `load_file` | A local path or URL: programs start by themselves, tapes, disks, snapshots, ROMs |
 | `type_text`, `press_key` | Typing (`\n` = Enter) and holding a key; returns the screen text |
+| `key_down`, `key_up` | Hold / release keys and joystick directions (`Joy1Fire`…) across calls |
 | `screen_text`, `wait_text`, `screenshot` | The screen as text (and whether BASIC waits), waiting for text, PNG |
-| `run_frames` | n frames of 20 ms at once (repeatable timing) |
-| `state` | Machine, running / stopped, time, registers, stop reason |
+| `run_frames` | n frames of 20 ms at once (repeatable timing), optionally with `keys` held |
+| `manual_mode` | Manual mode on / off |
+| `state` | Machine, running / stopped, time, CPU cycles, beam position, registers, I/O registers (CRTC, paging…), held keys, stop reason |
+| `measure` | Exact Z80 cycles between two addresses or symbols (min / avg / max, samples), optionally without the interrupts |
+| `load_sym` | Assembler symbols (sjasmplus `--sym`…) from a file or text; names work as addresses everywhere |
+| `trace` | Instruction trace (registers, segment, cycle) on / off / dump |
 | `read_memory`, `write_memory`, `disassemble` | Memory (CPU, physical, 2dfx, TVC256k++) and Z80 disassembly |
 | `breakpoint`, `debug_control` | Breakpoints / watchpoints; pause, continue, step, step over, run to |
 | `monitor` | ep128emu monitor commands (`?` lists them) |
 | `snapshot` | Save / restore the whole state to a JSON file |
-| `eval_js` | Any JavaScript with the page's `ep` object |
+| `eval_js` | Any JavaScript with the page's `ep` object (`ep.load` / `ep.loadSym` take local paths here too) |
 
-Example prompt: *"Start a TVC, type a BASIC program that prints the first ten squares,
-run it and check the output. Then set a breakpoint at the TVC's system call entry (0030h)
-and show the registers when it stops."*
+Example prompts:
+
+- *"Start a TVC, type a BASIC program that prints the first ten squares, run it and check
+  the output. Then set a breakpoint at the TVC's system call entry (0030h) and show the
+  registers when it stops."*
+- *"Load game.cas and game.sym, and measure how many cycles DRAW_SPRITE takes, without
+  the interrupts. Then make it faster and measure again."*
 
 ## Test
 

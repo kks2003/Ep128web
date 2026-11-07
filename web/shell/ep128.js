@@ -4230,6 +4230,8 @@ registerProcessor('ep-output', EPOutput);
   let dbgPrevRegs = null, dbgPrevMem = null;
   let dbgTab = 'mon';
   let dbgOnBreakFn = null;            // script callback: true = continue
+  let dbgBreakError = null;           // the last exception of dbgOnBreakFn
+  let epInBreak = 0;                  // dbgOnBreakFn runs
   // { type: 'x' | 'r' | 'w' | 'rw' | 'ior' | 'iow' | 'iorw', addr, cond, on, hits }
   let dbgBps = [];
   try { dbgBps = JSON.parse(localStorage.getItem('ep128web.dbgBps')) || []; } catch (e) { }
@@ -4239,8 +4241,12 @@ registerProcessor('ep-output', EPOutput);
   // --- symbols ---
   let dbgSyms = new Map();            // address -> name
   let dbgSymAddr = new Map();         // NAME -> address
-  function dbgLoadSymbols(text) {
-    const syms = new Map(), byName = new Map();
+  // symbols valid only with a segment paged in (ep.loadSym(..., {segment}))
+  let dbgSymSeg = new Map();          // NAME -> segment
+  let dbgSegSyms = new Map();         // segment * 65536 + address -> name
+  // the symbols of a symbol file / listing: [[name, address]]
+  function dbgParseSymbols(text) {
+    const out = [];
     const num = (t) => {
       let m = /^(?:0x|\$|#|&)([0-9a-f]+)$/i.exec(t) || /^([0-9][0-9a-f]*)h$/i.exec(t) || /^([0-9a-f]{4,6})$/i.exec(t);
       if (m) return parseInt(m[1], 16);
@@ -4259,15 +4265,55 @@ registerProcessor('ep-output', EPOutput);
         name = m[1]; val = parseInt(m[2], 16);
       }
       if (!name || isNaN(val) || val < 0 || val > 0xFFFF) continue;
-      if (!syms.has(val) || syms.get(val).startsWith('.')) syms.set(val, name);
-      byName.set(name.toUpperCase(), val);
+      out.push([name, val]);
     }
-    dbgSyms = syms;
-    dbgSymAddr = byName;
-    return byName.size;
+    return out;
+  }
+  // adds symbols; opts.prefix: before the names, opts.segment: valid only
+  // with that segment paged in at the address
+  function dbgAddSymbols(list, opts) {
+    opts = opts || {};
+    const seg = opts.segment === undefined || opts.segment === null ? -1 : Number(opts.segment) & 0xFF;
+    for (let [name, val] of list) {
+      name = (opts.prefix || '') + name;
+      if (seg < 0) {
+        if (!dbgSyms.has(val) || dbgSyms.get(val).startsWith('.')) dbgSyms.set(val, name);
+        dbgSymSeg.delete(name.toUpperCase());
+      } else {
+        const k = seg * 65536 + val;
+        if (!dbgSegSyms.has(k) || dbgSegSyms.get(k).startsWith('.')) dbgSegSyms.set(k, name);
+        dbgSymSeg.set(name.toUpperCase(), seg);
+      }
+      dbgSymAddr.set(name.toUpperCase(), val);
+    }
+    dbgPagesCache = null;
+    return list.length;
+  }
+  // replaces the symbols (the debugger's symbol file)
+  function dbgLoadSymbols(text) {
+    dbgSyms = new Map();
+    dbgSymAddr = new Map();
+    dbgSymSeg = new Map();
+    dbgSegSyms = new Map();
+    dbgAddSymbols(dbgParseSymbols(text));
+    return dbgSymAddr.size;
+  }
+  // the segments paged in (cached while the machine does not run)
+  let dbgPagesCache = null;
+  function dbgPagesNow() {
+    const cyc = api.dbgCycles();
+    if (!dbgPagesCache || dbgPagesCache.cyc !== cyc) dbgPagesCache = { cyc, pages: dbgRegObj().pages };
+    return dbgPagesCache.pages;
   }
   try { const t = localStorage.getItem('ep128web.dbgSyms'); if (t) dbgLoadSymbols(t); } catch (e) { }
-  const dbgLabel = (a) => dbgSyms.get(a & 0xFFFF);
+  const dbgLabel = (a) => {
+    a &= 0xFFFF;
+    if (dbgSegSyms.size && api && api.dbgRegs) {
+      const l = dbgSegSyms.get(dbgPagesNow()[a >> 14] * 65536 + a);
+      if (l) return l;
+    }
+    return dbgSyms.get(a);
+  };
 
   // a breakpoint is one address or a range (end, inclusive), optionally
   // segment:offset (seg, offsets 0000-3FFF in the segment)
@@ -5561,9 +5607,16 @@ registerProcessor('ep-output', EPOutput);
     }
     if (dbgOnBreakFn && info.why !== 3) {
       try {
-        if (dbgOnBreakFn(Object.assign(info, { reason: DBG_REASONS[info.why] })) === true) return false;
+        epInBreak++;
+        let r;
+        try { r = dbgOnBreakFn(Object.assign(info, { reason: DBG_REASONS[info.why] })); } finally { epInBreak--; }
+        if (r === true) return false;
       } catch (e) {
-        dbgScriptLog(T('onBreak hiba: ') + e.message);
+        // the machine stays stopped; the error is in the Script output, the
+        // console and ep.state().breakError
+        dbgBreakError = { message: String(e && e.message || e), pc: info.pc, timeMs: emulatedUs / 1000 };
+        dbgScriptLog(T('onBreak hiba: ') + dbgBreakError.message);
+        console.error('ep.onBreak', e);
       }
     }
     return true;
@@ -6745,6 +6798,223 @@ registerProcessor('ep-output', EPOutput);
                         gamecard: 3, soundcard: 4, card256: SLOT_CARD256 };
   let monCapture = null;                // ep.monitor(): the output of a command
 
+  // --- deterministic keys for programs: pressed / released at once (not
+  // through the key queue of the PC keyboard), held across debugger stops.
+  // Names: KeyboardEvent.code ('KeyA', 'Space', 'Enter', 'End' = STOP...)
+  // and the joysticks: 'Joy1Up', 'Joy1Down', 'Joy1Left', 'Joy1Right',
+  // 'Joy1Fire' (Joy2; TVC: Joy3, Joy4 = the GameCard's joysticks).
+  const AI_JOY_BITS = { right: 0, left: 1, down: 2, up: 3, fire: 4 };
+  const aiHeld = new Set();             // ep.keyDown()
+  let aiFrame = new Set();              // ep.input() / runFrames perFrame
+  let aiPresses = [];                   // ep.press(): { name, at, resolve }
+  let aiInputNext = null;               // ep.input(): for the next runFrames
+  let aiApplied = new Map();            // matrix code -> 1 (set on the machine)
+  let aiGcApplied = [0, 0];             // GameCard joysticks (bits as above)
+  // a key name -> { codes: [matrix codes] } or { gc: 0 / 1, bit }
+  function aiKey(name) {
+    const n = String(name);
+    let m = /^joy([1-4])(up|down|left|right|fire)$/i.exec(n);
+    if (m) {
+      const t = Number(m[1]), bit = AI_JOY_BITS[m[2].toLowerCase()];
+      if (t <= 2) return { codes: [(t === 1 ? 0x70 : 0x78) + bit] };
+      if (machine && machine.type === 1) return { gc: t - 3, bit };
+      throw new Error('no joystick ' + t + ' on the Enterprise: ' + n);
+    }
+    if (machine && machine.type === 1 && TVC_STOP_KEYS.has(n)) return { codes: TVC_STOP.slice() };
+    const c = mapKey({ code: n });
+    if (c === undefined) throw new Error('no such key on this machine: ' + n + ' (a KeyboardEvent.code such as KeyA, Space, Enter, or Joy1Fire)');
+    return { codes: [c] };
+  }
+  // a key state: a name, an array of names, or { keys: [...], joy1: ['up', 'fire'], ... }
+  function aiKeyNames(st) {
+    if (st === undefined || st === null || st === false) return [];
+    if (typeof st === 'string') return st ? [st] : [];
+    if (Array.isArray(st)) return st.map(String);
+    const out = [];
+    if (st.keys) out.push(...aiKeyNames(st.keys));
+    for (let t = 1; t <= 4; t++) {
+      const j = st['joy' + t];
+      if (j) for (const d of (Array.isArray(j) ? j : [j])) out.push('Joy' + t + String(d)[0].toUpperCase() + String(d).slice(1).toLowerCase());
+    }
+    return out;
+  }
+  // sets the machine's keys to what is held now
+  function aiApply() {
+    if (!api || !machine) return;
+    const want = new Map(), gc = [0, 0];
+    const names = new Set([...aiHeld, ...aiFrame, ...aiPresses.map((p) => p.name)]);
+    for (const n of names) {
+      const k = aiKey(n);
+      if (k.codes) for (const c of k.codes) want.set(c, 1);
+      else gc[k.gc] |= 1 << k.bit;
+    }
+    for (const c of aiApplied.keys()) if (!want.has(c) && !pressedKeys.has(c)) api.setKey(c, 0);
+    for (const c of want.keys()) {
+      if (!aiApplied.has(c)) {
+        api.setKey(c, 1);
+        if (!MODIFIER_KEYS.has(c)) keyedSinceReset = true;
+      }
+    }
+    aiApplied = want;
+    if (api.setTvcExtJoy && (gc[0] !== aiGcApplied[0] || gc[1] !== aiGcApplied[1])) {
+      for (let t = 0; t < 2; t++) {
+        // GameCard: active low, bits up, down, left, right, fire
+        let b = 0xFF;
+        if (gc[t] & 8) b &= ~1;
+        if (gc[t] & 4) b &= ~2;
+        if (gc[t] & 2) b &= ~4;
+        if (gc[t] & 1) b &= ~8;
+        if (gc[t] & 16) b &= ~16;
+        api.setTvcExtJoy(t, b);
+      }
+      aiGcApplied = gc;
+    }
+  }
+  function aiSetFrameKeys(st) {
+    const names = aiKeyNames(st);
+    for (const n of names) aiKey(n);    // throws for an unknown key
+    aiFrame = new Set(names);
+    aiApply();
+  }
+  // after each frame: releases the keys of ep.press() whose time is up
+  function aiKeysTick() {
+    if (!aiPresses.length) return;
+    const done = aiPresses.filter((p) => emulatedUs >= p.at);
+    if (!done.length) return;
+    aiPresses = aiPresses.filter((p) => emulatedUs < p.at);
+    aiApply();
+    for (const p of done) p.resolve();
+  }
+  // releases every key held by the program (forget = the machine was replaced)
+  function aiKeysReset(forget) {
+    const presses = aiPresses;
+    aiHeld.clear();
+    aiFrame = new Set();
+    aiPresses = [];
+    aiInputNext = null;
+    if (forget) { aiApplied = new Map(); aiGcApplied = [0, 0]; }
+    else aiApply();
+    for (const p of presses) p.resolve();
+  }
+
+  // --- manual mode (ep.manual): the machine runs only when a program runs it
+  let manualMode = false;
+  let epPump = 0;                       // async ep calls waiting for the machine
+  // something waits for emulated time (runs in manual mode too)
+  const epPending = () => !!(autoTask || dbgWaits.length || aiPresses.length || epPump > 0);
+  async function epPumped(fn) {
+    epPump++;
+    try { return await fn(); } finally { epPump--; }
+  }
+  function setManual(on) {
+    manualMode = !!on;
+    const ind = $('ai-ind');
+    if (ind && ind.hidden !== !manualMode) ind.hidden = !manualMode;
+    return manualMode;
+  }
+
+  // an address for the API: a number, or text: hex ('C000', '0xC000'), a
+  // symbol, symbol+offset, 'seg:offset' (segment: the result's seg)
+  function epAddr(a) {
+    if (typeof a === 'number') return { addr: a & 0xFFFF, seg: -1 };
+    const t = String(a).trim();
+    let m = /^([0-9a-f]{1,2}):([0-9a-f]{1,4})$/i.exec(t);
+    if (m) {
+      const off = parseInt(m[2], 16);
+      if (off > 0x3FFF) throw new Error('segment offset above 3FFF: ' + t);
+      return { addr: off, seg: parseInt(m[1], 16), segOffset: true };
+    }
+    const sym = dbgSymAddr.get(t.toUpperCase());
+    if (sym !== undefined) {
+      const seg = dbgSymSeg.get(t.toUpperCase());
+      return { addr: sym, seg: seg === undefined ? -1 : seg };
+    }
+    const r = dbgParseAddr(t);
+    if (!r || r.phys) throw new Error('not an address or a known symbol: ' + t);
+    return { addr: r.addr & 0xFFFF, seg: -1 };
+  }
+  const epA = (a) => epAddr(a).addr;
+  // the CPU address of seg:offset for measuring: the offset in the page
+  // where that segment is paged in now (else page 0..3 by the offset alone)
+  function epCpuAddr(r) {
+    if (!r.segOffset) return r;
+    const pages = dbgRegObj().pages;
+    const pg = pages.indexOf(r.seg);
+    return { addr: (pg < 0 ? 0 : pg) * 16384 + r.addr, seg: r.seg, anyPage: pg < 0 };
+  }
+  // fetches a file: a URL, or (in the MCP server) a local path
+  async function epFetch(src) {
+    let url = String(src);
+    if (window.__ep128webLocal && (/^(\/|[A-Za-z]:[\\/]|file:)/.test(url) || /^~[\\/]/.test(url)))
+      url = window.__ep128webLocal + encodeURIComponent(url.replace(/^file:\/\//, ''));
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + src);
+    return r;
+  }
+  // the I/O registers as an object (with the text of ep.ioRegs())
+  function epIoObj() {
+    const t = api.dbgIoRegs();
+    const hx = (x) => parseInt(x, 16);
+    const vals = (x) => (x.match(/[0-9A-F]{2,4}/gi) || []).map(hx);
+    const o = { pages: dbgRegObj().pages };
+    let m;
+    if (machine.type === 1) {
+      const c1 = /CRTC 0-7:([^\n]*)/.exec(t), c2 = /CRTC 8-F:([^\n]*)/.exec(t);
+      if (c1 && c2) {
+        o.crtc = vals(c1[1]).concat(vals(c2[1]));
+        const sel = (c1[1] + ' ' + c2[1]).split(/\s+/).filter(Boolean).findIndex((x) => x.startsWith('>'));
+        o.crtcSelected = sel;
+      }
+      if ((m = /VidXY:\s*(-?\d+),\s*(-?\d+)\s+CRTC MA: ([0-9A-F]+)\s+RA: ([0-9A-F]+)/.exec(t))) {
+        o.vidX = +m[1]; o.vidY = +m[2]; o.crtcMA = hx(m[3]); o.crtcRA = hx(m[4]);
+      }
+      if ((m = /Mode:\s*(\d+)\s+Palette:([^\n]*)/.exec(t))) {
+        const p = vals(m[2]);
+        o.mode = +m[1]; o.palette = p.slice(0, 4); o.border = p[4];
+      }
+      if ((m = /Mem: ([0-9A-F]+) ([0-9A-F]+)\s+VRAM: ([0-9A-F]+)\s+IRQ: ([0-9A-F]+)\s+Mask: ([0-9A-F]+)/.exec(t))) {
+        o.port02 = hx(m[1]); o.pagingExt = hx(m[2]); o.vram = hx(m[3]); o.vramSegment = 0xFC + ((hx(m[3]) >> 4) & 3);
+        o.irq = hx(m[4]); o.irqMask = hx(m[5]);
+      }
+      if ((m = /Snd Freq: ([0-9A-F]+)\s+Cnt1: ([0-9A-F]+)\s+Cnt2: ([0-9A-F]+)\s+Volume: ([0-9A-F]+)\s+E\/D: ([0-9A-F]+)/.exec(t)))
+        o.sound = { freq: hx(m[1]), cnt1: hx(m[2]), cnt2: hx(m[3]), volume: hx(m[4]), enabled: hx(m[5]) };
+    } else {
+      if ((m = /Nick\s+80: ([0-9A-F ]+?)\s+Slot: ([0-9A-F]+)/.exec(t))) { o.nick = vals(m[1]); o.nickSlot = hx(m[2]); }
+      if ((m = /LPB: ([0-9A-F]+),([0-9A-F]+)\s+LD1: ([0-9A-F]+)\s+LD2: ([0-9A-F]+)/.exec(t))) {
+        o.lpb = hx(m[1]); o.lpbLine = hx(m[2]); o.ld1 = hx(m[3]); o.ld2 = hx(m[4]);
+      }
+      const d1 = /Dave\s+A0:([^\n]*)/.exec(t), d2 = /Dave\s+A8:([^\n]*)/.exec(t);
+      if (d1 && d2) o.dave = vals(d1[1]).concat(vals(d2[1]));
+      if ((m = /B4: ([0-9A-F]+)\(([0-9A-F]+)\) ([0-9A-F]+)\(([0-9A-F]+)\) ([0-9A-F]+)\(([0-9A-F]+)\)\s+BF: ([0-9A-F]+)/.exec(t))) {
+        o.b4 = hx(m[1]); o.b4Written = hx(m[2]); o.b5 = hx(m[3]); o.b5Written = hx(m[4]);
+        o.b6 = hx(m[5]); o.b6Written = hx(m[6]); o.bf = hx(m[7]);
+      }
+      if ((m = /ZX\s+40: ([0-9A-F ]+?)\s+44: ([0-9A-F]+)/.exec(t))) o.zx = vals(m[1]).concat([hx(m[2])]);
+      if ((m = /Disk\s+WD: ([0-9A-F]+)\(([0-9A-F]+)\) ([0-9A-F]+) ([0-9A-F]+) ([0-9A-F]+)\s+EXDOS: ([0-9A-F]+)\(([0-9A-F]+)\)/.exec(t)))
+        o.disk = { wdStatus: hx(m[1]), wdCommand: hx(m[2]), track: hx(m[3]), sector: hx(m[4]), data: hx(m[5]), exdos: hx(m[6]), exdosWritten: hx(m[7]) };
+    }
+    o.text = t;
+    return o;
+  }
+  function epTimingVars() {
+    if (!api.dbgTimingVars) return [];
+    const n = api.dbgTimingVars(), p = api.dbgTimingVarsBuf();
+    return Array.from(M.HEAPU8.subarray(p, p + n));
+  }
+  const f64 = (p, n) => new Float64Array(M.HEAPU8.buffer.slice(p, p + n * 8));
+  let epMeasure = null;                 // a measurement started by ep.measure({frames: 0})
+  function epMeasureResult(maxSamples) {
+    const count = api.dbgMeasureCount(), kept = api.dbgMeasureKept();
+    const d = kept ? f64(api.dbgMeasureSamples(), kept * 2) : [];
+    let sum = 0, min = Infinity, max = -Infinity;
+    for (let i = 1; i < d.length; i += 2) { sum += d[i]; if (d[i] < min) min = d[i]; if (d[i] > max) max = d[i]; }
+    const lim = maxSamples === undefined ? 10000 : maxSamples;
+    const samples = [];
+    for (let i = 0; i < kept && i < lim; i++) samples.push({ startCycle: d[i * 2], cycles: d[i * 2 + 1] });
+    return { count, avg: kept ? sum / kept : null, min: kept ? min : null, max: kept ? max : null,
+             kept, samples };
+  }
+
   const ep = {
     hex,
     regs: () => dbgRegObj(),
@@ -6753,10 +7023,13 @@ registerProcessor('ep-output', EPOutput);
       if (i < 0) throw new Error(T('ismeretlen regiszter: ') + name);
       api.dbgSetReg(i, v);
     },
-    peek: (a) => dbgPeek(a & 0xFFFF),
-    peek16: (a) => dbgPeek(a & 0xFFFF) | (dbgPeek((a + 1) & 0xFFFF) << 8),
-    poke: (a, v) => api.dbgPoke(a & 0xFFFF, v & 0xFF, 0),
+    // an address: a number, hex text, a symbol, symbol+offset
+    addr: (a) => epA(a),
+    peek: (a) => dbgPeek(epA(a)),
+    peek16: (a) => { a = epA(a); return dbgPeek(a) | (dbgPeek((a + 1) & 0xFFFF) << 8); },
+    poke: (a, v) => api.dbgPoke(epA(a), v & 0xFF, 0),
     read: (a, n, src) => {
+      if (!src) a = epA(a);
       const out = [];
       for (let o = 0; o < n; o += 4096) {
         const k = Math.min(4096, n - o), p = api.dbgMem(src ? a + o : (a + o) & 0xFFFF, k, src || 0);
@@ -6765,9 +7038,15 @@ registerProcessor('ep-output', EPOutput);
       return out;
     },
     out: (port, v) => api.dbgOut(port, v),
-    disasm: (a, n) => dbgDisasm(a, n || 1).map((l) => dbgSymText(l.text)),
-    assemble: (a, text) => api.dbgAssemble('A ' + hex(a, 4) + ' ' + String(text).toUpperCase()),
+    disasm: (a, n) => dbgDisasm(epA(a), n || 1).map((l) => {
+      const lbl = dbgLabel(l.addr);
+      return (lbl ? lbl + ': ' : '') + dbgSymText(l.text);
+    }),
+    assemble: (a, text) => api.dbgAssemble('A ' + hex(epA(a), 4) + ' ' + String(text).toUpperCase()),
     bp: (a, cond) => {
+      // a symbol loaded with a segment: a segment:offset breakpoint
+      const sg = typeof a === 'string' ? dbgSymSeg.get(a.trim().toUpperCase()) : undefined;
+      if (sg !== undefined) a = hex(sg, 2) + ':' + hex(dbgSymAddr.get(a.trim().toUpperCase()) & 0x3FFF, 4);
       const b = typeof a === 'string' ? dbgMakeBp('x', a, cond) : { type: 'x', addr: a & 0xFFFF, cond: cond || '', on: true, hits: 0 };
       if (!b) throw new Error(T('cím: C000, C000-FFFF vagy FF:0000-3FFF'));
       dbgBps.push(b); dbgApplyBps(); dbgRenderBps();
@@ -6784,15 +7063,127 @@ registerProcessor('ep-output', EPOutput);
     onBreak: (fn) => { dbgOnBreakFn = typeof fn === 'function' ? fn : null; },
     pause: () => api.dbgPause(),
     cont: () => dbgResume(() => api.dbgContinue()),
-    step: () => dbgResume(() => api.dbgStep()),
-    stepOver: () => dbgStepOver(),
-    runTo: (a) => dbgResume(() => api.dbgRunTo(a & 0xFFFF)),
+    // in manual mode, step / stepOver / runTo run the machine until it stops
+    // (runTo: at most opts.frames frames, default 500)
+    step: () => { dbgResume(() => api.dbgStep()); if (manualMode) runFramesNow(1); return dbgStopped; },
+    stepOver: (opts) => { dbgStepOver(); if (manualMode) runFramesNow((opts && opts.frames) || 500); return dbgStopped; },
+    runTo: (a, opts) => {
+      a = epA(a);
+      dbgResume(() => api.dbgRunTo(a));
+      if (manualMode) runFramesNow((opts && opts.frames) || 500);
+      return dbgStopped;
+    },
     stopped: () => dbgStopped,
     info: () => dbgInfo(),
-    ioRegs: () => api.dbgIoRegs(),
+    // ep.ioRegs(): text; ep.ioRegs(true) / ep.io(): an object
+    ioRegs: (obj) => (obj ? epIoObj() : api.dbgIoRegs()),
+    io: () => epIoObj(),
     sym: (name) => dbgSymAddr.get(String(name).toUpperCase()),
     label: (a) => dbgLabel(a),
-    history: (n) => api.dbgHistory(n || 64).trim().split(/\s+/).filter(Boolean).map((h) => parseInt(h, 16)),
+    // the symbols: [{name, addr, segment}]
+    syms: () => [...dbgSymAddr].map(([n, a]) => {
+      const seg = dbgSymSeg.get(n);
+      const name = (seg === undefined ? dbgSyms.get(a) : dbgSegSyms.get(seg * 65536 + a));
+      return { name: name && name.toUpperCase() === n ? name : n, addr: a, segment: seg === undefined ? null : seg };
+    }),
+    // loads symbols (sjasmplus --sym "name: EQU 0x0000ABCD", also "name equ
+    // 1234h", "1234 name"...) and adds them to the ones loaded; src: the text,
+    // a URL / local path (MCP), a File / Blob. opts: {prefix, segment,
+    // replace}. Returns the number of symbols (a Promise for a URL / file).
+    loadSym: (src, opts) => {
+      opts = opts || {};
+      const add = (text) => {
+        if (opts.replace) dbgLoadSymbols('');
+        const n = dbgAddSymbols(dbgParseSymbols(text), opts);
+        if (dbgOpen) dbgRefresh();
+        return n;
+      };
+      if (src instanceof Blob) return src.text().then(add);
+      if (src instanceof ArrayBuffer || ArrayBuffer.isView(src)) return add(new TextDecoder().decode(src));
+      const t = String(src);
+      if (/\n|\s(equ|=|defl)\s/i.test(t) || /:\s*equ\b/i.test(t)) return add(t);
+      return epFetch(t).then((r) => r.text()).then(add);
+    },
+    // execution history: the last n PCs (the first call turns the recording on)
+    history: (n) => {
+      if (!dbgHistOn) {
+        dbgHistOn = true;
+        api.dbgHistoryEnable(1);
+        if ($('dbg-hist-on')) $('dbg-hist-on').checked = true;
+      }
+      return api.dbgHistory(n || 64).trim().split(/\s+/).filter(Boolean).map((h) => parseInt(h, 16));
+    },
+    // the CPU cycles (T-states, with the wait states) since power on; in a
+    // breakpoint, before the instruction stopped at
+    cycles: () => api.dbgCycles(),
+    // the beam: video line (from the vertical sync), the cycles since that
+    // line started, the lines and cycles of the last whole frame
+    beam: () => {
+      const b = f64(api.dbgBeam(), 4);
+      return { line: b[0], col: b[1], frameLines: b[2], frameCycles: b[3] };
+    },
+    // measures the cycles from 'start' to 'stop' (addresses or symbols;
+    // 'seg:offset' for a segment) over opts.frames frames (default 50; 0:
+    // only starts, ep.measureEnd() returns the result)
+    measure: (o) => {
+      o = o || {};
+      if (o.start === undefined) throw new Error('measure: start is needed');
+      const st = epCpuAddr(epAddr(o.start)), sp = epCpuAddr(epAddr(o.stop === undefined ? o.start : o.stop));
+      api.dbgMeasureStart(st.addr, st.seg, sp.addr, sp.seg, o.excludeIrq ? 1 : 0);
+      epMeasure = { maxSamples: o.maxSamples };
+      if (o.frames === 0) return null;
+      let frames = 0;
+      try {
+        frames = runFramesNow(o.frames || 50, { perFrame: o.perFrame });
+      } catch (e) {
+        api.dbgMeasureStop();
+        epMeasure = null;
+        throw e;
+      }
+      const r = ep.measureEnd();
+      r.frames = frames;
+      r.stopped = dbgStopped;
+      return r;
+    },
+    measureEnd: () => {
+      if (!epMeasure) return null;
+      api.dbgMeasureStop();
+      const r = epMeasureResult(epMeasure.maxSamples);
+      epMeasure = null;
+      return r;
+    },
+    // trace: the registers, segment and cycle count before each instruction
+    // (the last 65536); opts: {from, to} only that address range
+    trace: (on, opts) => {
+      opts = opts || {};
+      on = on !== false;
+      if (on) api.dbgTraceRange(opts.from === undefined ? 0 : epA(opts.from), opts.to === undefined ? 0xFFFF : epA(opts.to));
+      dbgTraceOn = on;
+      api.dbgTraceEnable(on ? 1 : 0);
+      if ($('dbg-trace-on')) $('dbg-trace-on').checked = on;
+      return on;
+    },
+    // the last n trace entries, oldest first: {pc, segment, cycle, AF, BC, DE,
+    // HL, IX, IY, SP} (opts.disasm: with the instruction's text)
+    traceDump: (n, opts) => {
+      n = Math.max(0, Math.min(65536, Math.floor(n) || 100));
+      const cnt = api.dbgTrace(n);
+      const w = new Uint16Array(M.HEAPU8.buffer.slice(api.dbgTraceBuf(), api.dbgTraceBuf() + cnt * 16));
+      const cntX = api.dbgTraceExt(n);
+      const x = f64(api.dbgTraceExtBuf(), cntX * 2);
+      const out = [];
+      const dis = new Map();
+      for (let i = 0; i < cnt; i++) {
+        const e = { pc: w[i * 8], segment: x[i * 2], cycle: x[i * 2 + 1], AF: w[i * 8 + 1], BC: w[i * 8 + 2], DE: w[i * 8 + 3],
+                    HL: w[i * 8 + 4], IX: w[i * 8 + 5], IY: w[i * 8 + 6], SP: w[i * 8 + 7] };
+        if (opts && opts.disasm) {
+          if (!dis.has(e.pc)) { const l = dbgDisasm(e.pc, 1)[0]; dis.set(e.pc, l ? dbgSymText(l.text) : ''); }
+          e.text = dis.get(e.pc);
+        }
+        out.push(e);
+      }
+      return out;
+    },
     // runs a monitor command; returns its output as text
     monitor: (cmd) => {
       monCapture = [];
@@ -6816,6 +7207,15 @@ registerProcessor('ep-output', EPOutput);
       typeText(String(text));
       return ep.until(() => !autoTask);
     },
+    // manual mode: the machine runs only in runFrames / step / runTo (and
+    // for what an async call waits for, in whole frames); returns the mode
+    manual: (on) => (on === undefined ? manualMode : setManual(on !== false)),
+    // keys held until ep.keyUp / ep.keysUp, at once (names: see aiKey)
+    keyDown: (...names) => { for (const n of names.flat()) { aiKey(n); aiHeld.add(String(n)); } aiApply(); },
+    keyUp: (...names) => { for (const n of names.flat()) aiHeld.delete(String(n)); aiApply(); },
+    keysUp: () => { aiKeysReset(false); releaseAllKeys(); },
+    // keys held in every frame of the next ep.runFrames (then released)
+    input: (state) => { aiKeyNames(state).forEach(aiKey); aiInputNext = state || []; },
     // resolves after 'ms' milliseconds of emulated time
     wait: (ms) => new Promise((resolve) => dbgWaits.push({ at: emulatedUs + ms * 1000, resolve })),
     // resolves at the first frame where fn() is true
@@ -6828,7 +7228,7 @@ registerProcessor('ep-output', EPOutput);
     machines: () => MACHINES.map((m) => ({ id: m.id, name: m.name, type: m.type === 1 ? 'tvc' : 'ep' })),
     // resolves when the emulator runs; unless {prompt: false}, also waits for
     // BASIC's "ok" (pressing Space at the start-up logo)
-    ready: async (opts) => {
+    ready: (opts) => epPumped(async () => {
       opts = opts || {};
       await pageStarted();
       const limit = performance.now() + (opts.timeout || 60000);
@@ -6856,7 +7256,7 @@ registerProcessor('ep-output', EPOutput);
         await sleepMs(50);
       }
       throw new Error('timeout: no BASIC prompt ("ok") on the screen');
-    },
+    }),
     // switches to a machine (ids: ep.machines()), cold start; opts: TVC
     // cards {slots: [4 card names or ids]}, {fx: true} for the 2dfx card,
     // {wait: false} not to wait for the prompt
@@ -6876,9 +7276,10 @@ registerProcessor('ep-output', EPOutput);
         try { localStorage.setItem('ep128web.2dfx', fxOn ? '1' : '0'); } catch (e) { }
       }
       autoTask = null;
+      aiKeysReset(true);
       releaseAllKeys();
       applyMachine(m);
-      if (opts.wait !== false) await ep.ready(opts);
+      if (opts.wait !== false) await epPumped(() => ep.ready(opts));
       return machine.id;
     },
     // loads files as if dropped on the screen: a program (started as usual),
@@ -6890,13 +7291,14 @@ registerProcessor('ep-output', EPOutput);
       let files;
       if (Array.isArray(src)) files = src.map((f) => new File([f.bytes], f.name));
       else if (typeof src === 'string') {
-        const r = await fetch(src);
-        if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + src);
-        files = [new File([await r.blob()], name || decodeURIComponent(new URL(src, location.href).pathname.split('/').pop()) || 'program')];
+        const r = await epFetch(src);
+        files = [new File([await r.blob()], name || decodeURIComponent(src.split(/[?#]/)[0].split(/[\\/]/).pop()) || 'program')];
       } else if (src instanceof Blob) files = [src instanceof File && !name ? src : new File([src], name || src.name || 'program')];
       else files = [new File([src], name || 'program')];
-      await loadFiles(files);
-      while (autoTask) await sleepMs(50);
+      await epPumped(async () => {
+        await loadFiles(files);
+        while (autoTask) await sleepMs(50);
+      });
       return true;
     },
     // the text on the screen (EP: the character rows; TVC: read back with
@@ -6906,7 +7308,7 @@ registerProcessor('ep-output', EPOutput);
     atPrompt: () => atPrompt(),
     // resolves when the screen text matches (a RegExp or a string), at most
     // after opts.timeout ms of real time (default 30 s)
-    waitText: async (what, opts) => {
+    waitText: (what, opts) => epPumped(async () => {
       const re = what instanceof RegExp ? what : null;
       const limit = performance.now() + ((opts && opts.timeout) || 30000);
       for (;;) {
@@ -6915,36 +7317,67 @@ registerProcessor('ep-output', EPOutput);
         if (performance.now() > limit) throw new Error('timeout waiting for ' + what + '; screen:\n' + t);
         await sleepMs(50);
       }
-    },
+    }),
     // the picture as a PNG data URL
     screenshot: () => canvas.toDataURL('image/png'),
     // runs n frames (20 ms each) at once, as fast as possible; returns the
     // number run (fewer if the debugger stopped the machine)
-    runFrames: (n) => runFramesNow(Math.max(1, Math.floor(n) || 1)),
-    // presses a key for ms milliseconds of emulated time; key: a
-    // KeyboardEvent.code (e.g. 'Space', 'KeyA', 'Enter', 'ArrowUp', 'F1')
+    // opts.perFrame(i): the keys held in frame i
+    runFrames: (n, opts) => runFramesNow(Math.max(1, Math.floor(n) || 1), opts),
+    // presses a key for ms milliseconds of emulated time (released at the
+    // end of the frame in which the time is up, also inside runFrames); key:
+    // a KeyboardEvent.code (e.g. 'Space', 'KeyA', 'Enter', 'ArrowUp', 'F1')
+    // or a joystick ('Joy1Fire'); the Promise resolves when it is released
     press: (key, ms) => {
-      const c = mapKey({ code: key });
-      if (c === undefined) return Promise.reject(new Error('no such key on this machine: ' + key));
-      keyDown(c);
-      return ep.wait(ms || 100).then(() => keyUp(c));
+      try { aiKey(key); } catch (e) { return Promise.reject(e); }
+      return new Promise((resolve) => {
+        aiPresses.push({ name: String(key), at: emulatedUs + (ms === undefined ? 100 : ms) * 1000, resolve });
+        aiApply();
+      });
     },
     // everything in one: machine, running state, registers, stop reason
     state: () => ({
       machine: machine && machine.id, type: machine && machine.type === 1 ? 'tvc' : 'ep',
       ready, paused, stopped: dbgStopped, typing: !!autoTask, timeMs: emulatedUs / 1000,
+      manual: manualMode,
+      cycles: ready ? api.dbgCycles() : null, beam: ready ? ep.beam() : null,
       regs: ready ? dbgRegObj() : null, stop: dbgStopped ? dbgInfo() : null,
+      io: ready ? epIoObj() : null,
+      keys: [...new Set([...aiHeld, ...aiFrame, ...aiPresses.map((p) => p.name)])],
+      breakError: dbgBreakError,
       tvcSlots: machine && machine.type === 1 ? tvcSlots.slice() : null, fx: fxOn
     }),
     // the machine's state (with the TVC256k++ / 2dfx cards), to restore later
     snapshot: () => {
       check(api.saveSnapshot('/tmp/ai.ep128s'), T('mentés'));
       return { machine: machine.id, slots: tvcSlots.slice(), fx: fxOn, time: Date.now(),
-               bytes: M.FS.readFile('/tmp/ai.ep128s'), card: saveCardState() };
+               bytes: M.FS.readFile('/tmp/ai.ep128s'), card: saveCardState(),
+               timing: Array.from(f64(api.dbgTiming(), 8)), timingVars: epTimingVars() };
     },
-    restore: (st) => { loadSavedState(st); return true; }
+    // also releases every key and pending ep.press
+    restore: (st) => {
+      aiKeysReset(true);
+      releaseAllKeys();
+      loadSavedState(st);
+      // the cycle counter, the beam and the time left over from the last
+      // frame as they were: the same input runs the same way again
+      const setVars = (v) => {
+        M.HEAPU8.set(v, api.dbgTimingVarsBuf());
+        api.dbgSetTimingVars(v.length);
+      };
+      // the machine clears its keyboard at its first run after a snapshot:
+      // let it do that now (with no time left to run), not in the next
+      // ep.runFrames, where it would clear the keys set before it
+      if (api.dbgSetTimingVars) setVars(new Array(api.dbgTimingVars()).fill(0));
+      check(api.run(0), T('emuláció'));
+      if (st.timingVars && api.dbgSetTimingVars) setVars(st.timingVars);
+      if (st.timing && api.dbgSetTiming) api.dbgSetTiming(...st.timing.concat([0, 0, 0, 0, 0, 0, 0, 0]).slice(0, 8));
+      return true;
+    }
   };
   window.ep = ep;
+  // the "AI in control" indicator: a click lets the machine run by itself again
+  if ($('ai-ind')) $('ai-ind').addEventListener('click', () => setManual(false));
 
   // script hooks run by the main loop after each frame
   let dbgOnFrameFn = null;
@@ -7326,6 +7759,13 @@ ep.log('CTRL+ESC megnyomva');`)
     lastTime = now;
     if (dt > 100) dt = 100;             // tab was in the background
     if (!ready || paused) return;
+    if (manualMode) {
+      // a program drives the machine (ep.manual): it runs only in
+      // ep.runFrames(), and for what an async ep call waits for (typing,
+      // ep.wait / until / press, the prompt), in whole 20 ms frames
+      if (epPending()) runFramesNow(5);
+      return;
+    }
     if (dbgStopped) {
       // stopped in the debugger, until it continues (or a reset / new
       // machine / snapshot starts the machine again)
@@ -7391,6 +7831,7 @@ ep.log('CTRL+ESC megnyomva');`)
     rewindTick(us);
     dbgFrameTick(us);
     dbgHandleStops();
+    aiKeysTick();
     if (!dbgStopped) dbgScriptFrame(us);
     // ep128emu runs the floppy drives' motor-off timer (and writes the
     // buffered track to the image) when it is asked for the LED state, once
@@ -7448,12 +7889,36 @@ ep.log('CTRL+ESC megnyomva');`)
   // ep.runFrames(): n frames of 20 ms emulated time at once, as fast as
   // possible (without sound), with everything a frame does; stops early when
   // the debugger stops the machine. Returns the number of frames run.
-  function runFramesNow(n) {
+  // opts.perFrame(i): the keys held in frame i (see aiKeyNames); the keys
+  // of ep.input() are held in every frame. Both are released at the end.
+  function runFramesNow(n, opts) {
+    if (epInBreak) throw new Error('runFrames / measure cannot run inside onBreak (return true to continue instead)');
+    if (dbgStopped && !api.dbgState()) {
+      dbgStopped = false;               // started again (reset, new machine, snapshot)
+      dbgRefresh();
+    }
+    const perFrame = opts && typeof opts.perFrame === 'function' ? opts.perFrame : null;
+    const input = aiInputNext;
+    aiInputNext = null;
+    if (input) aiSetFrameKeys(input);
     let i = 0;
-    while (i < n && ready && !paused && !dbgStopped) {
+    try {
+      i = runFramesLoop(n, perFrame);
+    } finally {
+      if (input || perFrame) aiSetFrameKeys([]);
+    }
+    return i;
+  }
+  function runFramesLoop(n, perFrame) {
+    let i = 0;
+    while (i < n && ready && !dbgStopped) {
       if (api.dbgState()) {
         dbgHandleStops();
         if (dbgStopped) break;
+      }
+      if (perFrame) {
+        const st = perFrame(i);
+        if (st !== undefined && st !== null) aiSetFrameKeys(st);
       }
       const done = autoTask ? runAutoTask(20000) : 0;
       if (done < 20000) check(api.run(20000 - done), T('emuláció'));
@@ -7464,6 +7929,7 @@ ep.log('CTRL+ESC megnyomva');`)
       rewindTick(20000);
       dbgFrameTick(20000);
       dbgHandleStops();
+      aiKeysTick();
       if (!dbgStopped) dbgScriptFrame(20000);
       ledAccUs += 20000;
       for (let k = 0; ledAccUs >= 2000 && k < 1000; k++) {
@@ -7603,6 +8069,20 @@ ep.log('CTRL+ESC megnyomva');`)
       dbgTraceEnable: c('ep_dbg_trace_enable', null, ['number']),
       dbgTrace: c('ep_dbg_trace', 'number', ['number']),
       dbgTraceBuf: c('ep_dbg_trace_buf', 'number', []),
+      dbgTraceExt: c('ep_dbg_trace_ext', 'number', ['number']),
+      dbgTraceExtBuf: c('ep_dbg_trace_ext_buf', 'number', []),
+      dbgTraceRange: c('ep_dbg_trace_range', null, ['number', 'number']),
+      dbgBeam: c('ep_dbg_beam', 'number', []),
+      dbgTiming: c('ep_dbg_timing', 'number', []),
+      dbgSetTiming: c('ep_dbg_set_timing', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
+      dbgTimingVars: c('ep_dbg_timing_vars', 'number', []),
+      dbgTimingVarsBuf: c('ep_dbg_timing_vars_buf', 'number', []),
+      dbgSetTimingVars: c('ep_dbg_set_timing_vars', null, ['number']),
+      dbgMeasureStart: c('ep_dbg_measure_start', null, ['number', 'number', 'number', 'number', 'number']),
+      dbgMeasureStop: c('ep_dbg_measure_stop', null, []),
+      dbgMeasureCount: c('ep_dbg_measure_count', 'number', []),
+      dbgMeasureKept: c('ep_dbg_measure_kept', 'number', []),
+      dbgMeasureSamples: c('ep_dbg_measure_samples', 'number', []),
       luaRun: c('ep_lua_run', 'number', ['string']),
       luaStop: c('ep_lua_stop', null, []),
       luaActive: c('ep_lua_active', 'number', []),
