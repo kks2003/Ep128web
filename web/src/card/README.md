@@ -2,6 +2,10 @@
 
 Copied from https://github.com/dikdom/tvc256kplusplus (`sources/firmware/TVC-IO`),
 so that the card's file operations behave exactly like the real firmware:
+firmware 0.25 (commit `da192ee`). Where 0.24 (commit `4580b14`) behaves differently,
+`if (!CARD_FW25)` branches keep its behaviour too; `card_fw_minor` (24 / 25, chosen on
+the page, see `card_shim.h`) selects it at run time.
+
 
 - `tvc-lfs.c`, `tvc-lfs.h` – the card's littlefs file/directory operations on the
   parameter area of the IO RAM (MIT license, Vass Sándor).

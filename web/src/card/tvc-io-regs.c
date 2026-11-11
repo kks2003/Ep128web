@@ -441,8 +441,18 @@ void card_power_on(void) {
 
 void card_reset(void) {
     card_gfx_reset();
-    /* reset_handler(): only the register copy is cleared, the SID emulation
-     * keeps its volume until the next write (as on the card) */
     extern uint8_t SID[];
-    SID[24] = 0;
+    if(CARD_FW25) {
+        /* FW 0.25 reset_handler(): the volume off and the three voices'
+         * gate bits cleared through the SID emulation */
+        extern void setregister_SID(uint8_t addr, uint8_t value);
+        setregister_SID(24, 0);
+        setregister_SID(4, SID[4] & 0xfe);  // voice 1, gate 0
+        setregister_SID(11, SID[11] & 0xfe);  // voice 2, gate 0
+        setregister_SID(18, SID[18] & 0xfe);  // voice 3, gate 0
+    } else {
+        /* FW 0.24 reset_handler(): only the register copy is cleared, the
+         * SID emulation keeps its volume until the next write (as on the card) */
+        SID[24] = 0;
+    }
 }

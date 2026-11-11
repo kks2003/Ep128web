@@ -167,10 +167,12 @@ server.registerTool('set_machine', {
     id: z.string().describe('machine id (list_machines)'),
     slots: z.array(z.enum(['empty', 'file', 'vtdos', 'upm', 'gamecard', 'soundcard', 'card256'])).length(4).optional()
       .describe('TVC expansion ports 0-3'),
-    fx: z.boolean().optional().describe('the 2dfx graphics card')
+    fx: z.boolean().optional().describe('the 2dfx graphics card'),
+    card256fw: z.enum(['0.24', '0.25']).optional().describe('the TVC256k++ card\'s firmware version (default: the one set on the page, 0.25)')
   }
-}, async ({ id, slots, fx }) => {
-  await inPage(([i, s, f]) => ep.machine(i, Object.assign({}, s ? { slots: s } : {}, f !== null ? { fx: f } : {})), [id, slots || null, fx === undefined ? null : fx]);
+}, async ({ id, slots, fx, card256fw }) => {
+  await inPage(([i, s, f, w]) => ep.machine(i, Object.assign({}, s ? { slots: s } : {}, f !== null ? { fx: f } : {}, w ? { card256fw: w } : {})),
+    [id, slots || null, fx === undefined ? null : fx, card256fw || null]);
   return text(await inPage(() => ({ state: ep.state(), screen: ep.screenText() })));
 });
 

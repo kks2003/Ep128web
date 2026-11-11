@@ -11,6 +11,35 @@ Jelölések:
 Az „Emulátorban” sor azt írja le, hogy az Ep128web mit csinál (a javított vagy az eredeti
 viselkedést követi-e). A javított helyeken a forrásban `Ep128web:` megjegyzés áll.
 
+## A 0.25-ös firmware (commit `da192ee`, 2026.11.10)
+
+Az emulátor most a 0.25-ös firmware kódját futtatja. A 0.24 a Bővítők fülön (vagy
+`ep.machine(id, {card256fw: '0.24'})`) választható; ahol a kettő eltér, a kódban
+`if (!CARD_FW25)` ág adja a 0.24 viselkedését, és a kártya a firmware-verzió
+regiszterében is a választott verziót jelzi.
+
+A lenti listából a 0.25-ben javítva: **1.1, 1.2, 1.3, 1.4, 2.1, 2.2, 3.1, 3.3, 4.3**
+(a 4.3-nál a reset a három hang kapuját is törli). Nincs javítva: **1.5, 3.2, 4.1, 4.2,
+5.1** és a 6. pont.
+
+A 0.25 további javításai (nem a mi listánkból):
+- fájl végén túli olvasás: 0 bájt, hiba nélkül (a 0.24 hibakódot adott);
+- hozzáfűzés (`FA_OPEN_APPEND`) a flash- és PSRAM-meghajtón;
+- `.cas` fájl létrehozása fejléccel a flash/PSRAM meghajtón; csak olvasásra nyitható a flash;
+- szigorúbb `.cas`-ellenőrzés (legalább 128 bájt, különben 21 / 22-es hiba) és a
+  fájlkezelő felszabadítása hibás fejlécnél;
+- a mkdir, del, getstat és rename hosszellenőrzése a munkakönyvtárral számol;
+- Load-to-PSRAM: jobb hibakezelés (133, 134-es hiba), a forrás mappa vége;
+- memóriamozgatás: 64 bites határellenőrzés, az átfedés-vizsgálat a forrás lépésközével;
+- képrész-másolás: 16 bites szélesség-szorzó;
+- a matematikai kiértékelő nullával osztásnál -10-es hibát ad (ismeretlen műveletnél -11);
+- a 8 MB-os PSRAM lapozása a felső bitet is figyelembe veszi (a 0.24 nem érte el a felső
+  4 MB-ot).
+
+0.24 választásakor az emulátor a 0.24 viselkedését adja, kivéve azt a néhány hibát, amely
+az emulátort leállítaná vagy nem utánozható hűen: az 1.1–1.4 javítva fut, a nullával
+osztás (4.2 és a kiértékelő) 0-t ad, ahogy a kártya ARM magja.
+
 ---
 
 ## 1. Beépített függvények (`tvc-routines.c`)

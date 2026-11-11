@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <cstring>
 
+extern "C" int card_fw_minor;     // the firmware version emulated
+
 static int failures = 0, checks = 0;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; \
   std::printf("FAIL line %d: %s\n", __LINE__, #c); } } while (0)
@@ -190,7 +192,7 @@ int main()
   // identification: firmware version via auto-increment
   c.handleWrite(0x20, 0xC3);
   c.handleRead(0x21, v); CHECK(v == 0);
-  c.handleRead(0x21, v); CHECK(v == 24);
+  c.handleRead(0x21, v); CHECK(v == 25);                  // the default: 0.25
   c.handleRead(0x20, v); CHECK(v == 0xC5);
   // increment register: default 1, settable
   c.handleRead(0x22, v); CHECK(v == 1);
@@ -205,7 +207,9 @@ int main()
   // second port set is independent
   c.handleWrite(0x20, 0x40);
   c.handleWrite(0x24, 0xC4);
+  card_fw_minor = 24;                                      // 0.24 chosen on the page
   c.handleRead(0x25, v); CHECK(v == 24);
+  card_fw_minor = 25;
   c.handleRead(0x20, v); CHECK(v == 0x40);
 
   // power-up paging: U2 = fast page 4, U3 = fast page 5

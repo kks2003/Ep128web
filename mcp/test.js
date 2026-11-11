@@ -114,6 +114,10 @@ try {
     const t2 = JSON.parse(await call('state'));
     check(t2.manual === true && t2.timeMs === t1, 'manual mode after ' + step[0] + ' (' + t1 + ' -> ' + t2.timeMs + ' ms)');
   }
+  // the TVC256k++ firmware version
+  const fwst = JSON.parse(await call('set_machine', { id: 'tvc64-12', slots: ['vtdos', 'file', 'card256', 'gamecard'], card256fw: '0.24' }));
+  check(fwst.state.card256fw === '0.24', 'TVC256k++ firmware 0.24');
+  await call('set_machine', { id: 'tvc64-12', slots: ['file', 'vtdos', 'gamecard', 'empty'], card256fw: '0.25' });
   // a local path in eval_js (ep.loadSym / ep.load fetch it through the server)
   check(await call('eval_js', { code: 'return await ep.loadSym(' + JSON.stringify(symFile) + ', { prefix: "L_" });' }) === '3', 'loadSym with a local path');
 } finally {

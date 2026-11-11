@@ -482,7 +482,11 @@ void calculate_one_line(uint8_t *line_buffer) {
         tempRegisterSpriteCollision = 0;
 
         calc_one_sprite_line(line_buffer, false);
-        if(videoMode == 1) {
+        if(CARD_FW25 && (yToUse < 21)) {
+            /* FW 0.25: the lines scrolled in at the top are empty (transparent)
+             * in the text modes too */
+            registerSpBgCollision = 0;
+        } else if(videoMode == 1) {
             copy_2color_text_line(&line_buffer[startXPos], &sprite_background_line_mask[startXPos], yToUse);
         } else if (videoMode == 2) {
             copy_fullcolor_text_line(&line_buffer[startXPos], &sprite_background_line_mask[startXPos], yToUse);

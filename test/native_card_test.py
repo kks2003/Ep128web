@@ -29,10 +29,19 @@ def build(main_src="test/native_harness.cpp", name="harness"):
     cf = ["-O1", "-w", "-fpermissive", "-DHAVE_STDINT_H", "-DZ80_ENABLE_CMOS",
           "-DCPC_LSB_FIRST=1", "-DENABLE_SDEXT", "-I" + os.path.join(ROOT, "test/native_shim"),
           "-I" + os.path.join(ROOT, "web/stubs"), "-I" + os.path.join(ROOT, "web/src"),
-          "-I" + E + "/src", "-I" + E + "/z80", "-I" + E]
+          "-I" + E + "/src", "-I" + E + "/z80", "-I" + E] + \
+         ["-I" + os.path.join(ROOT, "web/src/twodfx", d)
+          for d in ("include", "core", "assets", "firmware_eggs", "firmware_eggs/portable")] + \
+         ["-DHAVE_LUA_H", "-I" + os.path.join(ROOT, "web/src/lua")]
     txt = open(os.path.join(ROOT, "build.sh")).read()
-    block = txt.split('SOURCES="')[1].split('"')[0]
-    srcs = [l.strip().replace("$E", E) for l in block.splitlines() if l.strip().endswith((".cpp", ".c"))]
+    block = txt.split('SOURCES="')[1].split('"\n')[0]
+    srcs = []
+    for l in block.splitlines():
+        l = l.strip()
+        if l.startswith("$(ls ") and l.endswith(")"):       # $(ls web/src/.../egg_*.c)
+            srcs += sorted(_glob.glob(os.path.join(ROOT, l[5:-1])))
+        elif l.endswith((".cpp", ".c")):
+            srcs.append(l.replace("$E", E))
     srcs = [s if os.path.isabs(s) else os.path.join(ROOT, s) for s in srcs]
     srcs.append(os.path.join(ROOT, main_src))
     objs = []
@@ -44,9 +53,34 @@ def build(main_src="test/native_harness.cpp", name="harness"):
         if not os.path.exists(o) or os.path.getmtime(o) < max(os.path.getmtime(s), HEADERS_MTIME):
             subprocess.check_call(cc + cf + extra + ["-c", s, "-o", o])
         objs.append(o)
+    objs.append(cardstate_obj(objs, "harness_"))
     exe = os.path.join(OBJ, name)
     subprocess.check_call(["g++"] + objs + ["-o", exe])
     return exe
+
+def cardstate_obj(objs, prefix):
+    """The card firmware's globals saved with the card state, as build.sh
+    lists them (build/obj/cardstate_regions.c), from the card objects."""
+    skip = {"routinesDirHandle", "routinesFile", "routinesFileInfo", "routinesLFSFile", "tvc256k_funct_struct_array"}
+    syms = []
+    for o in objs:
+        if not any(("tvc-%s.c" % n) in o for n in ("graphics", "io-regs", "routines", "sid", "card-data")):
+            continue
+        for line in subprocess.check_output(["nm", "-S", o]).decode().splitlines():
+            f = line.split()
+            if len(f) == 4 and f[2] in ("D", "B", "d", "b") and f[2].isupper() and not f[3].startswith(".") and f[3] not in skip:
+                syms.append((f[3], f[1]))
+    syms.sort()
+    c = os.path.join(OBJ, prefix + "cardstate_regions.c")
+    with open(c, "w") as fh:
+        fh.write("struct card_state_region { void *p; unsigned n; };\n")
+        fh.writelines("extern char %s[];\n" % n for n, _ in syms)
+        fh.write("const struct card_state_region card_state_regions[] = {\n")
+        fh.writelines("  { %s, 0x%s },\n" % (n, z) for n, z in syms)
+        fh.write("};\nconst unsigned card_state_region_count = sizeof(card_state_regions) / sizeof(card_state_regions[0]);\n")
+    o = c[:-2] + ".o"
+    subprocess.check_call(["gcc", "-O1", "-w", "-c", c, "-o", o])
+    return o
 
 # --- a very small Z80 assembler (only what the test needs) -----------------
 class Asm:
@@ -175,6 +209,7 @@ VENDORED = ["web/src/card/tvc-lfs.c", "web/src/card/littlefs/lfs.c", "web/src/ca
 def unit_checks():
     """Card model on its own (test/card_test.cpp): ports, registers, paging, ROM."""
     objs = compile_objs(VENDORED + ["web/src/tvc256kpp.cpp", "web/src/tvc256kpp_rom.cpp", "test/card_test.cpp"], "unit_")
+    objs.append(cardstate_obj(objs, "unit_"))
     exe = os.path.join(OBJ, "card_test")
     subprocess.check_call(["g++"] + objs + ["-o", exe])
     r = subprocess.run([exe], stdout=subprocess.PIPE, universal_newlines=True)
@@ -190,9 +225,13 @@ def fs_checks(repo):
     objs = compile_objs(VENDORED + ["test/card_fs_test.cpp"], "fs_")
     exe = os.path.join(OBJ, "card_fs_test")
     subprocess.check_call(["g++"] + objs + ["-o", exe])
-    r = subprocess.run([exe, files[0], files[1]], stdout=subprocess.PIPE, universal_newlines=True)
-    print("fs: %s" % r.stdout.strip().splitlines()[-1] if r.stdout.strip() else "fs: no output")
-    return 0 if r.returncode == 0 else 1
+    bad = 0
+    for fw in ("25", "24"):                     # both firmware versions
+        r = subprocess.run([exe, files[0], files[1]], stdout=subprocess.PIPE, universal_newlines=True,
+                           env=dict(os.environ, CARD_FW=fw))
+        print("fs (firmware 0.%s): %s" % (fw, r.stdout.strip().splitlines()[-1] if r.stdout.strip() else "no output"))
+        bad += 0 if r.returncode == 0 else 1
+    return bad
 
 def boot_checks(pkg, repo=None):
     # real TVC BASIC 2.2 ROMs (from the ep128emu ROM package) with the card in slot 2
@@ -242,7 +281,7 @@ def boot_checks(pkg, repo=None):
 
 def main():
     exe = build()
-    want = [0x4D, 0x2E, 0xC0, 24, 0, 0xAA, 0x55, 0, 0x10, 0, 0xDE, 0xDE,
+    want = [0x4D, 0x2E, 0xC0, 25, 0, 0xAA, 0x55, 0, 0x10, 0, 0xDE, 0xDE,
             0x77, 0x33, 0x77, 0x42]
     bad = 0
     for slot in (1, 2, 3):
@@ -255,7 +294,7 @@ def main():
             print("  want", " ".join("%02x" % x for x in want))
     # card disabled: ordinary TVC behaviour, no card ROM in the slot
     pc, mem = run(exe, program(1), 0, 1)
-    ok = mem[15] == 0x42 and mem[0] != 0x4D and mem[3] != 24
+    ok = mem[15] == 0x42 and mem[0] != 0x4D and mem[3] != 25
     print("card off: %s (mem %s)" % ("OK" if ok else "FAIL", " ".join("%02x" % x for x in mem)))
     bad += 0 if ok else 1
     import argparse
