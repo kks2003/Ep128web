@@ -366,9 +366,23 @@ uint8_t copy_dir_to_psram(uint8_t *bufStart) {
     char sourceFolder[256] = "./";
     if(bufStart[0] != 0) {
         uint8_t len = bufStart[0];
+        if(CARD_FW25 && (len==255)) {
+            return 134; // not enough room for full filenames
+        }
         memmove(sourceFolder, &bufStart[1], len);
-        sourceFolder[len] = 0;
+        if(!CARD_FW25) {
+            sourceFolder[len] = 0;
+        } else if(sourceFolder[len-1] != '/') {
+            if(len==254) {
+                return 134; // not enough room for full filenames
+            }
+            sourceFolder[len] = '/';
+            sourceFolder[len+1] = 0;
+        } else {
+            sourceFolder[len] = 0;  /* Ep128web: terminated as in FW 0.24 */
+        }
     }
+    int sourceFolderLength = strlen(sourceFolder);
     *progress = 0;
 
     uint8_t screenColor = 15;
@@ -386,6 +400,9 @@ uint8_t copy_dir_to_psram(uint8_t *bufStart) {
         print_string_ascii((uint8_t *)sourceFolder);
         print_string_ascii((uint8_t *)"\r\n");
     }
+
+    if(CARD_FW25 && (res!=FR_OK))
+        return 133;
 
     uint64_t sizeSum = 0;
     uint8_t numOfFiles = 0;
@@ -490,10 +507,15 @@ uint8_t copy_dir_to_psram(uint8_t *bufStart) {
         prevLen = len;
         char temp[256];
         strcpy(temp, sourceFolder);
-        if(temp[strlen(temp) - 1] != '/')
-            strcat(temp, "/");
-
-        strcat(temp, routinesFileInfo.fname);
+        if(!CARD_FW25) {
+            if(temp[strlen(temp) - 1] != '/')
+                strcat(temp, "/");
+            strcat(temp, routinesFileInfo.fname);
+        } else if(sourceFolderLength + len > 255) {
+            strncat(temp, routinesFileInfo.fname, 255 - sourceFolderLength);
+        } else {
+            strcat(temp, routinesFileInfo.fname);
+        }
 
         res = f_open(&routinesFile, temp, FA_READ);
         if(res != FR_OK) {
@@ -506,6 +528,8 @@ uint8_t copy_dir_to_psram(uint8_t *bufStart) {
         if(res<0) {
             if(displayProgressEnabled)
                 print_string_ascii((uint8_t *)" failed to create");
+            if(CARD_FW25)
+                f_close(&routinesFile);
             continue;
         }
         unsigned int remainingSize = routinesFileInfo.fsize;
@@ -609,15 +633,16 @@ uint8_t memory_move_chunks_from_block(uint8_t *bufStart) {
     if((chunkSize == 0) || (increment == 0) || (count == 0)) {
         return 1;
     }
-    if((uint32_t)chunkSize + (uint32_t)increment*(count-1) + destination > 256*1024) {
+    if((CARD_FW25 ? (uint64_t)chunkSize + (uint32_t)increment*(count-1) + destination
+                  : (uint64_t)(uint32_t)((uint32_t)chunkSize + (uint32_t)increment*(count-1) + destination)) > 256*1024) {
         return 2;
     }
     if(sourceInPSRAM) {
-        if ((source + (uint32_t)chunkSize * count) > 8192*1024) {
+        if ((CARD_FW25 ? (uint64_t)source + (uint32_t)chunkSize * count : (uint64_t)(uint32_t)(source + (uint32_t)chunkSize * count)) > 8192*1024) {
             return 3;
         }
     } else {
-        if ( (source + (uint32_t)chunkSize * count) > 256*1024) {
+        if ( (CARD_FW25 ? (uint64_t)source + (uint32_t)chunkSize * count : (uint64_t)(uint32_t)(source + (uint32_t)chunkSize * count)) > 256*1024) {
             return 3;
         }
     }
@@ -664,13 +689,16 @@ uint8_t memory_move_chunks(uint32_t destination,
     if((chunkSize == 0) || ((incrementSource == 0) && (incrementDestination == 0)) || (count == 0)) {
         return 1;
     }
-    if(destination + chunkSize + (uint32_t)(count-1)*incrementDestination > 256*1024) {
+    if((CARD_FW25 ? (uint64_t)destination + chunkSize + (uint32_t)(count-1)*incrementDestination
+                  : (uint64_t)(uint32_t)(destination + chunkSize + (uint32_t)(count-1)*incrementDestination)) > 256*1024) {
         return 2;
     }
-    if(sourceInPSRAM && ((source + chunkSize + (uint32_t)(count-1)*incrementSource) > 8192*1024)) {
+    if(sourceInPSRAM && ((CARD_FW25 ? (uint64_t)source + chunkSize + (uint32_t)(count-1)*incrementSource
+                                    : (uint64_t)(uint32_t)(source + chunkSize + (uint32_t)(count-1)*incrementSource)) > 8192*1024)) {
         return 3;
     }
-    if(!sourceInPSRAM && ((source + chunkSize + (uint32_t)(count-1)*incrementSource) > 256*1024)) {
+    if(!sourceInPSRAM && ((CARD_FW25 ? (uint64_t)source + chunkSize + (uint32_t)(count-1)*incrementSource
+                                     : (uint64_t)(uint32_t)(source + chunkSize + (uint32_t)(count-1)*incrementSource)) > 256*1024)) {
         return 3;
     }
 
@@ -683,7 +711,7 @@ uint8_t memory_move_chunks(uint32_t destination,
         }
     } else {
         // source is in fast RAM
-        if((destination < source + chunkSize + (count - 1) * incrementDestination) && (destination > source)) {
+        if((destination < source + chunkSize + (count - 1) * (CARD_FW25 ? incrementSource : incrementDestination)) && (destination > source)) {
             // destination is within the source blocks, copy backwards to handle overlap
             destination += (count - 1) * incrementDestination;
             source += (count - 1) * incrementSource;
@@ -1480,8 +1508,10 @@ uint8_t delete_psram_drive(__unused uint8_t *bufStart) {
         /* Ep128web: the firmware computed psram_size() * 1024 * 1024 - free_psram_start
          * here (psram_size() is in bytes: the length overflows); this erases
          * the drive's area */
+        /* FW 0.25 leaves the PSRAM as it is */
         uint32_t len = (free_psram_start > psram_size()) ? psram_size() : free_psram_start;
-        memset(psram_array, 0xff, len);
+        if(!CARD_FW25)
+            memset(psram_array, 0xff, len);
         psram_drive_initialized = false;
         free_psram_start = 0;
         TVC_ROM[0x1824] = 0;
@@ -1532,7 +1562,9 @@ uint8_t copy_sub_image(uint8_t *bufStart) {
 
     sourceAddress &= 0x007FFFFF;
 
-    uint8_t swMultiplier = ((sWidth - 1) >> 1) + 1;
+    uint16_t swMultiplier = ((sWidth - 1) >> 1) + 1;
+    if(!CARD_FW25)
+        swMultiplier &= 0xFF;   /* FW 0.24: uint8_t */
     
     uint8_t color;
     int sy = srcY;
@@ -2471,13 +2503,25 @@ int8_t evaluate_math_impl() {
                     }
                     break;
                 case DIV:
+                    if(CARD_FW25) {     /* FW 0.25: division by zero is an error */
+                        if(val2->type == TYPE_FLOAT) {
+                            if(val2->value.valf == 0.0f) {
+                                return -10;
+                            }
+                        } else {
+                            if(val2->value.vali == 0) {
+                                return -10;
+                            }
+                        }
+                    }
                     if((val1->type == TYPE_FLOAT) || (val2->type == TYPE_FLOAT)) {
                         float result = (val1->type == TYPE_FLOAT ? val1->value.valf  : (float)val1->value.vali) /
                                         (val2->type == TYPE_FLOAT ? val2->value.valf : (float)val2->value.vali);
                         val1->type = TYPE_FLOAT;
                         val1->value.valf = result;
                     } else {
-                        val1->value.vali = (int32_t)val1->value.vali / (int32_t)val2->value.vali;
+                        /* Ep128web: FW 0.24 divides by zero: 0, as on the card's ARM core */
+                        val1->value.vali = val2->value.vali ? (int32_t)val1->value.vali / (int32_t)val2->value.vali : 0;
                         if((val1->type == TYPE_INT32) || (val2->type == TYPE_INT32)) {
                             val1->type = TYPE_INT32;
                         } else if((val1->type == TYPE_INT16) || (val2->type == TYPE_INT16)) {
@@ -2520,7 +2564,7 @@ int8_t evaluate_math_impl() {
                     }
                     break;
                 default:
-                    return -10;
+                    return CARD_FW25 ? -11 : -10;
             }
             opst_pos++; // push back val
         } else if(((type>=TYPE_UINT8) && (type<=TYPE_VARREF)) ||

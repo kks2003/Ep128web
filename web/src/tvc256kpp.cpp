@@ -108,6 +108,10 @@ const size_t TVC256kpp::kIoAreaSize;
 const uint8_t TVC256kpp::kFwMajor;
 const uint8_t TVC256kpp::kFwMinor;
 
+// the firmware version emulated (24 or 25, defined in tvc256kpp_fs.cpp), see
+// card/card_shim.h
+extern "C" { extern int card_fw_minor; }
+
 TVC256kpp *TVC256kpp::current = (TVC256kpp *) 0;
 
 TVC256kpp::TVC256kpp()
@@ -258,8 +262,9 @@ bool TVC256kpp::formatPsramDrive(uint32_t numBlocks)
 
 void TVC256kpp::mapPsram(int i)
 {
+  // FW 0.24 took only the low byte (the upper 4 MB could not be mapped)
   int page = int(regs_[REG_MEMORY_MAP_8M_P2_LOW + 2 * i])
-             | (int(psramHi_[i] & 1) << 8);
+             | (card_fw_minor >= 25 ? (int(psramHi_[i] & 1) << 8) : 0);
   if (psramCached_[i] != page) {
     // the previously cached page goes back to the PSRAM first
     writebackBuffer(i);
@@ -306,7 +311,7 @@ uint8_t TVC256kpp::regRead(uint8_t r)
   case REG_FW_VERSION_MAJOR:
     return kFwMajor;
   case REG_FW_VERSION_MINOR:
-    return kFwMinor;
+    return uint8_t(card_fw_minor);
   case REG_DRIVE_SELECT:                   // firmware: TVC_ROM[0x1810]
     return ioRam_[kDriveSelectOffset - kRamOffset];
   case REG_DRIVE_PSRAM_VALID:
@@ -592,6 +597,7 @@ extern "C" {
 namespace {
 
   const uint32_t kCardStateMagic = 0x32354B43U;      // "CK52"
+  const uint32_t kCardStateFwTag = 0x57460000U;      // "\0\0FW" + version
 
   void put32(std::vector<uint8_t>& out, uint32_t v)
   {
@@ -653,6 +659,8 @@ void TVC256kpp::saveState(std::vector<uint8_t>& out)
   putBytes(out, &psram_[0], psram_.size());
   for (unsigned i = 0; i < card_state_region_count; i++)
     putBytes(out, card_state_regions[i].p, card_state_regions[i].n);
+  // the firmware version (added later: older states end before it)
+  put32(out, kCardStateFwTag | uint32_t(card_fw_minor & 0xFF));
 }
 
 bool TVC256kpp::loadState(const uint8_t *p, size_t n)
@@ -673,8 +681,17 @@ bool TVC256kpp::loadState(const uint8_t *p, size_t n)
                 + TVC256kppFS::fastRamSize() + TVC256kppFS::ioAreaSize() + psram_.size();
   for (unsigned i = 0; i < card_state_region_count; i++)
     need += card_state_regions[i].n;
-  if (r.bad || r.n != need)
+  // the firmware version at the end, if the state has it
+  if (r.bad || (r.n != need && r.n != need + 4))
     return false;
+  if (r.n == need + 4) {
+    uint32_t tag = uint32_t(r.p[need]) | (uint32_t(r.p[need + 1]) << 8)
+                   | (uint32_t(r.p[need + 2]) << 16) | (uint32_t(r.p[need + 3]) << 24);
+    if ((tag & 0xFFFFFF00U) != kCardStateFwTag)
+      return false;
+    int fw = int(tag & 0xFF);
+    card_fw_minor = (fw <= 24 ? 24 : 25);
+  }
   border_ = *r.bytes(1);
   std::memcpy(regs_, r.bytes(sizeof(regs_)), sizeof(regs_));
   std::memcpy(sel_, r.bytes(2), 2);

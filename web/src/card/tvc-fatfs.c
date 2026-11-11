@@ -206,6 +206,8 @@ void set_active_drive(uint8_t ld_num) {
                     if(((fileInfo.fattrib & AM_DIR)==0) && (strstr(fileInfo.fname, fNameBuf) == fileInfo.fname)) {
                         // strcpy(fNameBuf, drive_select);
                         strcpy(fNameBuf, fileInfo.fname);
+                        if(CARD_FW25)
+                            fileSize = fileInfo.fsize;
 
                         // strncpy(fNameBuf, fileInfo.fname, 255);
                         fNameBuf[255] = 0;
@@ -278,9 +280,14 @@ void set_active_drive(uint8_t ld_num) {
                     f_close(fileHandle);
                     releaseFileHandle(fileHandle);
                     return 21;  // invalid CAS file, no proper first byte
-                } else {
+                } else if(!CARD_FW25 || (fileSize > 0x80)) {
                     f_lseek(fileHandle, 0x80);
                     fileSize -= 0x80;
+                } else {
+                    /* FW 0.25: a .cas file shorter than its header */
+                    f_close(fileHandle);
+                    releaseFileHandle(fileHandle);
+                    return 22;
                 }
             } else if(openMode & (FA_CREATE_NEW | FA_CREATE_ALWAYS)) {
                 uint8_t byteToWrite = fileType;

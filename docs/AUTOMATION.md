@@ -49,10 +49,10 @@ const text = await page.evaluate(async () => {
 | --- | --- |
 | `ep.machines()` | `[{id, name, type: 'ep' \| 'tvc'}]` – the available machines |
 | **async** `ep.ready({timeout, prompt})` | Waits until the emulator runs, then (unless `prompt: false`) until BASIC shows `ok`. At the start-up logo it presses Space (only if no key was pressed since the reset). Default timeout 60 s. |
-| **async** `ep.machine(id, opts)` | Switches to a machine with a cold start and waits for `ok`. `opts.slots` (TVC expansion ports 0–3): four of `'empty'`, `'file'`, `'vtdos'`, `'upm'`, `'gamecard'`, `'soundcard'`, `'card256'`; `opts.fx: true` adds the 2dfx graphics card; `opts.wait: false` does not wait. |
+| **async** `ep.machine(id, opts)` | Switches to a machine with a cold start and waits for `ok`. `opts.slots` (TVC expansion ports 0–3): four of `'empty'`, `'file'`, `'vtdos'`, `'upm'`, `'gamecard'`, `'soundcard'`, `'card256'`; `opts.fx: true` adds the 2dfx graphics card; `opts.card256fw: '0.24'` or `'0.25'` (default) is the TVC256k++ card's firmware version (also on the page: Expansions tab); `opts.wait: false` does not wait. |
 | **async** `ep.load(src, name)` | Loads files as if dropped on the screen: programs start automatically (`.cas`, `.com`, `.bas`, `.zip`…), `.tap`/`.wav` go to the tape, `.dsk`/`.img` to drive A:, `.ep128s`/`.ep128d` are snapshots / demos, `.bin`/`.rom` are ROMs. `src`: URL, `ArrayBuffer`, `Uint8Array`, `Blob`/`File`, or `[{name, bytes}]`; in the MCP server also a local path (`/home/me/game.cas`, `C:\games\game.cas`, `~/game.cas`). Resolves when the start command has been typed. |
 | `ep.reset(cold)` | Warm / cold reset |
-| `ep.state()` | `{machine, type, ready, paused, stopped, typing, timeMs, manual, cycles, beam, regs, stop, io, keys, breakError, tvcSlots, fx}` (`io`: see `ep.io()`; `keys`: the keys held by the program; `breakError`: the last exception thrown by the `onBreak` handler) |
+| `ep.state()` | `{machine, type, ready, paused, stopped, typing, timeMs, manual, cycles, beam, regs, stop, io, keys, breakError, tvcSlots, fx, card256fw}` (`io`: see `ep.io()`; `keys`: the keys held by the program; `breakError`: the last exception thrown by the `onBreak` handler) |
 | `ep.version()` | The build (date and commit) |
 
 TVC programs: the default TVC is `tvc64-12` (BASIC 1.2, ports: FILE:, VT-DOS, GameCard,

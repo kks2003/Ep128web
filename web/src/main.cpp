@@ -512,6 +512,16 @@ EMSCRIPTEN_KEEPALIVE void ep_card_mouse(int on)
   TVC256kpp::setMouseConnected(on != 0);
 }
 
+// TVC256k++: the firmware version emulated (24 or 25); v < 0: only reads it.
+// A loaded card state brings its own version.
+extern "C" int card_fw_minor;
+EMSCRIPTEN_KEEPALIVE int ep_card_fw(int v)
+{
+  if (v >= 0)
+    card_fw_minor = (v <= 24 ? 24 : 25);
+  return card_fw_minor;
+}
+
 EMSCRIPTEN_KEEPALIVE const uint32_t *ep_frame_buffer()
 {
   return display->getFrameBuffer();

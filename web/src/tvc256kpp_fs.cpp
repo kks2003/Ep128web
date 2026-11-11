@@ -20,6 +20,8 @@ uint8_t *psram_array = 0;
 uint32_t psram_size_mb = 8;
 
 // PSRAM drive state used by the card's built-in functions (tvc-routines.c)
+// the card firmware version emulated: 24 or 25 (card/card_shim.h)
+int card_fw_minor = 25;
 bool psram_drive_initialized = false;
 uint32_t free_psram_start = 0;
 // the PSRAM drive's littlefs (also used by copy_dir_to_psram())
@@ -162,7 +164,8 @@ bool formatPsramDrive(uint32_t numBlocks)
   psram_drive_initialized = psramDrive.ok;
   if (psramDrive.ok) {
     // tvc-lfs-psram.c: first byte of the PSRAM after the drive
-    free_psram_start = (size_t(numBlocks) * kBlockSize < size_t(psram_size_mb) * 1024 * 1024
+    // (FW 0.24 compared with an overflowed size: always "no free PSRAM")
+    free_psram_start = (CARD_FW25 && size_t(numBlocks) * kBlockSize < size_t(psram_size_mb) * 1024 * 1024
                         ? numBlocks * kBlockSize : 0x00FFFFFFU);
   }
   return psramDrive.ok;
@@ -195,7 +198,8 @@ void remountPsramDrive(uint32_t numBlocks)
   TVC_ROM[0x1824] = psramDrive.ok ? 1 : 0;
   psram_drive_initialized = psramDrive.ok;
   if (psramDrive.ok) {
-    free_psram_start = (size_t(numBlocks) * kBlockSize < size_t(psram_size_mb) * 1024 * 1024
+    // (FW 0.24 compared with an overflowed size: always "no free PSRAM")
+    free_psram_start = (CARD_FW25 && size_t(numBlocks) * kBlockSize < size_t(psram_size_mb) * 1024 * 1024
                         ? numBlocks * kBlockSize : 0x00FFFFFFU);
   }
 }
@@ -478,7 +482,8 @@ uint8_t driveCommand(uint8_t drive, uint8_t cmd)
   else {
     lfs_t *l = (d == &psramDrive ? &lfs_psram : &d->lfs);
     switch (cmd) {
-    case 0x01: fres = tvc_lfs_file_open(l, true, d->wd); break;           // MSC_FOPENFILE
+    // FW 0.25: the PSRAM drive is writable (0.24 opened it read-only too)
+    case 0x01: fres = tvc_lfs_file_open(l, isFlash || !CARD_FW25, d->wd); break;   // MSC_FOPENFILE
     case 0x02: fres = tvc_lfs_file_close(l); break;                       // MSC_FCLOSEFILE
     case 0x03: fres = tvc_lfs_file_read(l); break;                        // MSC_FREAD
     case 0x04: fres = isFlash ? uint8_t(FR_WRITE_PROTECTED) : tvc_lfs_file_write(l); break;

@@ -92,7 +92,7 @@ uint8_t tvc_lfs_file_open(lfs_t *lfs, bool readOnly, char *working_dir) {
     uint8_t fileType = TVC_ROM[0x1901]; 
     uint8_t len = TVC_ROM[0x1902];
 
-    if(readOnly && ((openMode & FA_READ) == 0))
+    if(readOnly && (CARD_FW25 ? ((openMode & 3) != FA_READ) : ((openMode & FA_READ) == 0)))
         return LFS_ERR_READONLY_FS;
     
     TVC_ROM[0x1903 + len] = 0x00; // Null-terminate the string
@@ -108,8 +108,13 @@ uint8_t tvc_lfs_file_open(lfs_t *lfs, bool readOnly, char *working_dir) {
     if(openMode & FA_WRITE) flags |= LFS_O_WRONLY;
     if(openMode & FA_CREATE_ALWAYS) flags |= LFS_O_CREAT | LFS_O_TRUNC;
     else if(openMode & FA_CREATE_NEW) flags |= LFS_O_CREAT | LFS_O_EXCL;
-    else if(openMode & FA_OPEN_ALWAYS) flags |= LFS_O_CREAT;
-    else if(openMode & FA_OPEN_EXISTING) flags |= 0; // No additional flags needed
+    else if(openMode & FA_OPEN_ALWAYS) {
+        flags |= LFS_O_CREAT;
+        if(CARD_FW25 && (openMode & 0x20)) {   // FA_OPEN_APPEND (FW 0.25)
+            flags |= LFS_O_APPEND;
+            flags &= ~LFS_O_TRUNC; // Don't truncate if appending
+        }
+    }
 
     // usb_printf("tvc_lfs_file_open: filename: %s, workingDir: %s, openMode: %d, type: %d, flags: %d\n", 
     //                               fileName, working_dir, openMode, fileType, flags);main_loop_task();sleep_ms(50);
@@ -117,6 +122,9 @@ uint8_t tvc_lfs_file_open(lfs_t *lfs, bool readOnly, char *working_dir) {
     bool casFile = false;
     uint32_t fileSize = 0;
     if(len==0) {
+        if(CARD_FW25 && !(openMode & FA_READ)) {
+            return FR_INVALID_PARAMETER; // Open for write, 
+        }
         // No filename provided, find the first .cas file
         bool found = false;
         
@@ -143,6 +151,24 @@ uint8_t tvc_lfs_file_open(lfs_t *lfs, bool readOnly, char *working_dir) {
         if (!found) {
             // usb_printf("tvc_lfs_file_open: no .cas file found in directory: %s\n", working_dir);main_loop_task();sleep_ms(50);
             return FR_NO_FILE; // No .cas file found
+        }
+    } else if(CARD_FW25 && (openMode & (FA_CREATE_NEW | FA_CREATE_ALWAYS))) {
+        if(fileName[0] != '/') {
+            strcpy(temp_path, working_dir);
+            if(strlen(temp_path) + strlen(fileName) >= 256) {
+                return FR_INVALID_NAME; // Filename too long
+            }
+            strcat(temp_path, fileName);
+        } else {
+            strcpy(temp_path, fileName);
+        }
+        if(ends_with_cas(temp_path)) {
+            casFile = true;
+        } else if((strlen(temp_path) < 5) || ((temp_path[strlen(temp_path) - 4] != '.') && (strlen(temp_path) < 252))) {
+            strcat(temp_path, ".cas");
+            casFile = true;
+        } else {
+            casFile = false;
         }
     } else {
         // Filename provided, use it directly
@@ -211,6 +237,14 @@ uint8_t tvc_lfs_file_open(lfs_t *lfs, bool readOnly, char *working_dir) {
                 casFile = true;
                 strcat(fileName, ".cas");
             }
+        } else if(CARD_FW25) {
+            int res = lfs_stat(lfs, temp_path, &info);
+            if(res >= 0) {
+                fileSize = info.size;
+                casFile = false; // Path too long to append .cas, treat as non-CAS file
+            } else {
+                return res; // File not found
+            }
         }
     }
 
@@ -222,16 +256,46 @@ uint8_t tvc_lfs_file_open(lfs_t *lfs, bool readOnly, char *working_dir) {
     int res = lfs_file_open(lfs, fileHandle, temp_path, flags);
     // usb_printf("tvc_lfs_file_open: lfs_file_open result: %d\n", res);main_loop_task();sleep_ms(50);
     if(res == 0) {
-        if(casFile) {
+        if(casFile && CARD_FW25) {
+            if(openMode & (FA_CREATE_NEW | FA_CREATE_ALWAYS)) {
+                uint8_t byteToWrite = fileType;
+                res = lfs_file_write(lfs, fileHandle, &byteToWrite, 1); // Write CAS type byte
+                byteToWrite = 0x00;
+                for(int i=1; (res>=0) && (i<128); i++) {
+                    res = lfs_file_write(lfs, fileHandle, &byteToWrite, 1); // Write dummy header
+                }
+                if(res>=0) {
+                    res = lfs_file_sync(lfs, fileHandle);
+                }
+                if(res<0) {
+                    lfs_file_close(lfs, fileHandle);
+                    release_file_handle(fileHandle);
+                    return res; // Error during sync
+                }
+                fileSize = 0; // New file, size is 0 after header
+            } else if(openMode & FA_READ) {
+                res = lfs_file_read(lfs, fileHandle, &fileType, 1); // Read first byte to determine CAS type
+                if((res < 0) ||
+                    ((fileType != 0x01) && (fileType != 0x11)) ||
+                    (fileSize < 0x80) ||
+                    (lfs_file_seek(lfs, fileHandle, 0x80, LFS_SEEK_SET) != 0x80)) {
+                        lfs_file_close(lfs, fileHandle);
+                        release_file_handle(fileHandle);
+                        return 21; // Invalid CAS header
+                } else {
+                    fileSize -= 0x80;
+                }
+                res = 0;
+            }
+        } else if(casFile) {
+            /* FW 0.24 */
             lfs_file_read(lfs, fileHandle, &fileType, 1); // Read first byte to determine CAS type
-            // usb_printf("tvc_lfs_file_open: CAS type byte read: %02x\n", fileType);main_loop_task();sleep_ms(50);
             if((fileType != 0x01) && (fileType != 0x11)) {
                 lfs_file_close(lfs, fileHandle);
                 return 21; // Invalid CAS file, no proper first byte
             } else {
                 lfs_file_seek(lfs, fileHandle, 0x80, LFS_SEEK_SET); // Skip CAS header
                 fileSize -= 0x80;
-                // usb_printf("tvc_lfs_file_open: CAS header skipped, new fileSize: %d\n", fileSize);main_loop_task();sleep_ms(50);
             }
         }
     } else {
@@ -282,7 +346,8 @@ uint8_t tvc_lfs_file_read(lfs_t *lfs) {
     }
     lfs_ssize_t bytesRead = lfs_file_read(lfs, fileHandle, buffer, bytesToRead);
     uint8_t res = 0;
-    if(bytesRead > 0) {
+    if((bytesRead > 0) || (CARD_FW25 && (bytesRead == 0))) {
+        /* FW 0.25: reading at the end gives 0 bytes and no error */
         *(uint16_t *)&TVC_ROM[0x1a00] = (uint16_t)bytesRead;
         res = 0;
     } else if(bytesRead == 0) {
@@ -305,7 +370,7 @@ uint8_t tvc_lfs_file_write(lfs_t *lfs) {
     void *buffer = (void *)&TVC_ROM[0x1906];
     uint16_t bytesToWrite = (*(uint16_t *)&TVC_ROM[0x1904]);
     // usb_printf("tvc_lfs_file_write: bytesToWrite: %d\n", bytesToWrite);main_loop_task();sleep_ms(100);
-    if((bytesToWrite == 0) || (bytesToWrite > 6 * 256 - 6)) {
+    if((bytesToWrite == 0) || (CARD_FW25 ? ((bytesToWrite + 0x1906) > 0x2000) : (bytesToWrite > 6 * 256 - 6))) {
         return FR_INVALID_PARAMETER;
     }
     lfs_ssize_t res = lfs_file_write(lfs, fileHandle, buffer, bytesToWrite);
@@ -458,7 +523,13 @@ uint8_t tvc_lfs_file_read_dest(lfs_t *lfs) {
 
     int bytesRead = lfs_file_read(lfs, fileHandle, bufferAddr, bytesToRead);
     uint8_t res = 0;
-    if(bytesRead == bytesToRead) {
+    if(CARD_FW25) {
+        /* FW 0.25: as many as there are (0 at the end), no error */
+        if(bytesRead >= 0) {
+            *(uint32_t *)&TVC_ROM[0x1a00] = (uint32_t)bytesRead;
+        }
+        res = 0;
+    } else if(bytesRead == bytesToRead) {
         *(uint32_t *)&TVC_ROM[0x1a00] = (uint32_t)bytesRead;
         res = 0;
     } else if(bytesRead == 0) {
@@ -623,7 +694,7 @@ uint8_t tvc_lfs_mkdir(lfs_t *lfs, char *working_dir) {
     TVC_ROM[0x1901 + len] = 0x00; // Null-terminate the string
     char *dirName = (char *)&TVC_ROM[0x1901];
     // usb_printf("tvc_lfs_mkdir: dirName: %s\r\n", dirName);main_loop_task();sleep_ms(100);
-    if(strlen(temp_path) + strlen(dirName) >= 256) {
+    if(CARD_FW25 ? (strlen(working_dir) + strlen(dirName) > 255) : (strlen(temp_path) + strlen(dirName) >= 256)) {
         return FR_INVALID_NAME; // Filename too long
     }
     str_tolower(dirName);
@@ -643,7 +714,7 @@ uint8_t tvc_lfs_delete(lfs_t *lfs, char *working_dir) {
     TVC_ROM[0x1901 + len] = 0x00; // Null-terminate the string
     char *fileName = (char *)&TVC_ROM[0x1901];
     // usb_printf("tvc_lfs_delete: filename: %s\r\n", fileName);main_loop_task();sleep_ms(50);
-    if(strlen(temp_path) + strlen(fileName) >= 256) {
+    if(CARD_FW25 ? (strlen(working_dir) + strlen(fileName) > 255) : (strlen(temp_path) + strlen(fileName) >= 256)) {
         return FR_INVALID_NAME; // Filename too long
     }
     str_tolower(fileName);
@@ -662,7 +733,7 @@ uint8_t tvc_lfs_getstat(lfs_t *lfs, char *working_dir) {
     }
     TVC_ROM[0x1901 + len] = 0x00; // Null-terminate the string
     char *fileName = (char *)&TVC_ROM[0x1901];
-    if(strlen(temp_path) + strlen(fileName) >= 256) {
+    if(CARD_FW25 ? (strlen(working_dir) + strlen(fileName) > 255) : (strlen(temp_path) + strlen(fileName) >= 256)) {
         return FR_INVALID_NAME; // Filename too long
     }
     str_tolower(fileName);
@@ -727,7 +798,8 @@ uint8_t tvc_lfs_file_rename(lfs_t *lfs, char *working_dir) {
     str_tolower(oldName);
     str_tolower(newName);
     
-    if(strlen(temp_path) + strlen(oldName) >= 256 || strlen(temp_path) + strlen(newName) >= 256) {
+    if(CARD_FW25 ? (((strlen(working_dir) + strlen(oldName)) > 255) || ((strlen(working_dir) + strlen(newName)) > 255))
+                 : (strlen(temp_path) + strlen(oldName) >= 256 || strlen(temp_path) + strlen(newName) >= 256)) {
         return FR_INVALID_NAME; // Filename too long
     }
     

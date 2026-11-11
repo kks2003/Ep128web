@@ -316,6 +316,8 @@
         <label class="slot" title="Melyik kártya legyen az alapértelmezett tároló (LOAD/SAVE, a parancssora: VT-DOS EXT 2, TVC256k++ EXT + port). Automatikus: a legnagyobb sorszámú portban lévő, mint a valódi gépen.">Alapértelmezett tároló <select id="tvc-defdev">
           <option value="-1">automatikus (a legnagyobb port)</option><option value="1">VT-DOS</option><option value="2">FILE:</option><option value="5">TVC256k++</option></select></label>
         <span class="name" id="tvc-defdev-note"></span>
+        <label class="slot" title="A TVC256k++ kártya firmware-verziója. A 0.25 javítja a 0.24 hibáit (fájl vége, hozzáfűzés, írás a PSRAM meghajtóra, görgetés, SID reset…); a régebbi programok kipróbálásához a 0.24 is választható. Váltáskor a gép újraindul.">TVC256k++ firmware <select id="card256-fw">
+          <option value="25">0.25 (legújabb)</option><option value="24">0.24</option></select></label>
         <button id="tvc-slots-apply" title="A kártyák betöltése és hideg újraindítás">Portok betöltése, újraindítás</button>
         <button id="tvc-slots-default" title="FILE:, VT-DOS, GameCard, üres (betöltés a gombbal)">Alapbeállítás</button>
         <span class="name" id="tvc-slots-note"></span>

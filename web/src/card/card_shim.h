@@ -17,6 +17,12 @@ extern "C" {
 /* FatFS (the card firmware's version and configuration) */
 #include "fatfs/ff.h"
 
+/* Ep128web: the firmware version the card emulates (FW_VERSION_MINOR: 24 or
+ * 25, chosen on the page; defined in tvc256kpp.cpp). The code is FW 0.25's,
+ * with FW 0.24's behaviour where the two differ (if (!CARD_FW25) ...). */
+extern int card_fw_minor;
+#define CARD_FW25 (card_fw_minor >= 25)
+
 #ifndef MIN
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #endif

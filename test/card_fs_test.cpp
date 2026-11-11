@@ -8,6 +8,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <cstdlib>
 
 static int failures = 0, checks = 0;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; \
@@ -55,6 +56,10 @@ int main(int argc, char **argv)
 {
   if (argc < 3) { std::fprintf(stderr, "usage: %s flash.bin launcher.cas\n", argv[0]); return 2; }
   std::vector<uint8_t> image = slurp(argv[1]), expected = slurp(argv[2]);
+  // the firmware version to test (CARD_FW=24 or 25, default 25)
+  if (std::getenv("CARD_FW")) card_fw_minor = std::atoi(std::getenv("CARD_FW"));
+  const bool fw25 = card_fw_minor >= 25;
+  std::printf("firmware 0.%d\n", card_fw_minor);
   static std::vector<uint8_t> psram(8 << 20);
   TVC256kppFS::attachPsram(&psram[0], 8);
 
@@ -86,8 +91,8 @@ int main(int argc, char **argv)
     io[0x104] = 0x00; io[0x105] = 0x04;                               // 1024 bytes
     uint8_t r = TVC256kppFS::mscCommand(READ, io);
     unsigned n = io[0x200] | (io[0x201] << 8);
-    if (r != 0) { CHECK(r == 0xA9 && n == 0); break; }          // end of file: LFS_ERR_END_OF_FILE + $80
-    CHECK(n > 0);
+    if (r != 0) { CHECK(!fw25 && r == 0xA9 && n == 0); break; } // 0.24 end of file: LFS_ERR_END_OF_FILE + $80
+    if (n == 0) { CHECK(fw25); break; }                         // 0.25 end of file: 0 bytes, no error
     got.insert(got.end(), &io[0x202], &io[0x202] + n);
   }
   CHECK(got.size() == size);
@@ -153,7 +158,8 @@ int main(int argc, char **argv)
   par[0] = 32; par[1] = 0;
   CHECK(func(34) == 0 && TVC_ROM[0x1824] == 1);
   std::memset(par, 0, 4);
-  CHECK(func(35) == 0 && (par[0] | (par[1] << 8) | (par[2] << 16)) == 32 * 4096);
+  // (0.24: always "no free PSRAM", its size check overflowed)
+  CHECK(func(35) == 0 && (par[0] | (par[1] << 8) | (par[2] << 16)) == (fw25 ? 32 * 4096 : 0xFFFFFF));
   // write a file on it and read it back (functions 0x81, 0x84, 0x82, 0x83)
   TVC_ROM[0x1810] = 1;
   par[0] = 0x0B; par[1] = 0x01; par[2] = 5; std::memcpy(&par[3], "x.bin", 5);   // the firmware needs FA_READ
@@ -169,6 +175,30 @@ int main(int argc, char **argv)
   CHECK(func(0x83) == 0 && par[4] == 5 && std::memcmp(&par[6], "HELLO", 5) == 0);
   std::memcpy(par, fh, 4);
   CHECK(func(0x82) == 0);
+  // FA_OPEN_APPEND ($30): 0.25 appends, 0.24 ignores it and writes at the start
+  par[0] = 0x33; par[1] = 0x01; par[2] = 5; std::memcpy(&par[3], "x.bin", 5);
+  CHECK(func(0x81) == 0);
+  std::memcpy(fh, par, 4);
+  par[4] = 5; par[5] = 0; std::memcpy(&par[6], "WORLD", 5);
+  CHECK(func(0x84) == 0);
+  std::memcpy(par, fh, 4);
+  CHECK(func(0x82) == 0);
+  par[0] = 0x01; par[1] = 0x01; par[2] = 5; std::memcpy(&par[3], "x.bin", 5);
+  CHECK(func(0x81) == 0 && par[4] == (fw25 ? 10 : 5));
+  std::memcpy(fh, par, 4);
+  par[4] = 16; par[5] = 0;
+  CHECK(func(0x83) == 0);
+  CHECK(fw25 ? (par[4] == 10 && std::memcmp(&par[6], "HELLOWORLD", 10) == 0)
+             : (par[4] == 5 && std::memcmp(&par[6], "WORLD", 5) == 0));
+  // reading at the end: 0.25 gives 0 bytes and no error, 0.24 an error
+  std::memcpy(par, fh, 4); par[4] = 16; par[5] = 0;
+  { uint8_t r = uint8_t(func(0x83)); CHECK(fw25 ? (r == 0 && par[4] == 0 && par[5] == 0) : r != 0); }
+  std::memcpy(par, fh, 4);
+  CHECK(func(0x82) == 0);
+  // opening for writing only: 0.25 allows it on the PSRAM drive
+  par[0] = 0x0A; par[1] = 0x01; par[2] = 5; std::memcpy(&par[3], "y.bin", 5);
+  { uint8_t r = uint8_t(func(0x81)); CHECK(fw25 ? r == 0 : r != 0);
+    if (r == 0) { std::memcpy(fh, par, 4); std::memcpy(par, fh, 4); CHECK(func(0x82) == 0); } }
   CHECK(func(36) == 0 && TVC_ROM[0x1824] == 0);
   io[0x10] = 1;
   CHECK(TVC256kppFS::mscCommand(OPENDIR, io) == 0x83);

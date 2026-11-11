@@ -209,7 +209,12 @@ A panelt a kép alatti sor végén lévő 💾 gomb nyitja/csukja (alapból csuk
   böngészőben maradnak (IndexedDB). Ha a mentés másik gépen (vagy TVC-n más
   bővítőkártyákkal, 2dfx-szel) készült, betöltéskor átvált arra. A TVC256k++
   és a 2dfx kártya állapota (regiszterek, RAM, PSRAM, sprite-ok, a 2dfx
-  videomemóriája) is a mentés része.
+  videomemóriája) is a mentés része, a TVC256k++ firmware-verziójával együtt.
+- **TVC256k++ firmware** (Bővítők fül): 0.25 (a legújabb, alapértelmezett) vagy
+  0.24. A 0.25 javítja a 0.24 hibáit (fájl vége, hozzáfűzés, írás a PSRAM
+  meghajtóra, görgetés, SID reset…); a 0.24 régebbi programok kipróbálásához
+  választható. Váltáskor a gép újraindul. Részletek:
+  [docs/tvc256kpp-firmware-hibak.md](docs/tvc256kpp-firmware-hibak.md).
   Minden hely alatt látszik, mennyi helyet foglal (a fejlécben az összes), a
   visszatekerésnél pedig, mennyi memóriát használ a puffer.
 - **Visszatekerés**: bekapcsolva másodpercenként pillanatképet tesz el az utolsó

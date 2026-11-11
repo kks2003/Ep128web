@@ -459,6 +459,29 @@
   // machine chooses it, the card in the highest numbered slot). It is set
   // after each boot, when the ROM and the cards have set theirs.
   let tvcDefDev = -1;
+  // the TVC256k++ firmware version emulated (24 or 25)
+  let card256Fw = 25;
+  try { if (localStorage.getItem('ep128web.card256Fw') === '24') card256Fw = 24; } catch (e) { }
+  // sets it (v: 24 / 25); a TVC with the card restarts (cold) unless noReset
+  function setCard256Fw(v, noReset) {
+    v = Number(v) <= 24 ? 24 : 25;
+    const changed = v !== card256Fw;
+    card256Fw = v;
+    try { localStorage.setItem('ep128web.card256Fw', String(v)); } catch (e) { }
+    if ($('card256-fw')) $('card256-fw').value = String(v);
+    if (api && api.cardFw) api.cardFw(v);
+    if (changed && !noReset && ready && machine && machine.type === 1 && tvcSlots.includes(SLOT_CARD256)) {
+      reset(true);
+      setMessage(F('TVC256k++ firmware 0.{0}: a gép újraindult', v));
+    }
+    return v;
+  }
+  // after a loaded state: the version it brought
+  function syncCard256Fw() {
+    if (!api || !api.cardFw) return;
+    const v = api.cardFw(-1);
+    if (v !== card256Fw) setCard256Fw(v, true);
+  }
   try { tvcDefDev = Number(localStorage.getItem('ep128web.tvcDefDev') ?? -1); } catch (e) { }
   if (![-1, SLOT_VTDOS, SLOT_FILEIO, SLOT_CARD256].includes(tvcDefDev)) tvcDefDev = -1;
   // after a reset: waits until the ROM and the cards have set the redirect
@@ -1038,6 +1061,7 @@
 
   function applyMachine(m, coldReset) {
     machine = m;
+    if (api && api.cardFw) api.cardFw(card256Fw);
     if (m.type === 1 && !m.cart) lastPlainTvc = m.id;
     const sel = $('machine');
     if (sel && sel.value !== m.id) sel.value = m.id;
@@ -3411,6 +3435,8 @@ registerProcessor('ep-output', EPOutput);
       canvas.focus({ preventScroll: true });
     };
     ddShow();
+    $('card256-fw').value = String(card256Fw);
+    $('card256-fw').onchange = (e) => { setCard256Fw(e.target.value); canvas.focus({ preventScroll: true }); };
     refreshTvcSlotsUI = () => { show(); update(); ddShow(); };
     $('tvc-slots-apply').onclick = () => {
       const p = pending();
@@ -3553,6 +3579,7 @@ registerProcessor('ep-output', EPOutput);
       M.FS.writeFile('/tmp/card.st', st.card);
       if (api.loadCardState('/tmp/card.st') !== 0)
         setMessage(T('A bővítőkártyák állapota nem tölthető vissza (más változattal készült mentés?)'), true);
+      syncCard256Fw();
     }
     releaseAllKeys();
   }
@@ -7429,6 +7456,7 @@ registerProcessor('ep-output', EPOutput);
         tvcSlots = v;
         try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots)); } catch (e) { }
       }
+      if (opts.card256fw !== undefined) setCard256Fw(String(opts.card256fw).replace(/^0\./, ''), true);
       if (opts.fx !== undefined) {
         fxOn = !!opts.fx;
         try { localStorage.setItem('ep128web.2dfx', fxOn ? '1' : '0'); } catch (e) { }
@@ -7504,7 +7532,8 @@ registerProcessor('ep-output', EPOutput);
       io: ready ? epIoObj() : null,
       keys: [...new Set([...aiHeld, ...aiFrame, ...aiPresses.map((p) => p.name)])],
       breakError: dbgBreakError,
-      tvcSlots: machine && machine.type === 1 ? tvcSlots.slice() : null, fx: fxOn
+      tvcSlots: machine && machine.type === 1 ? tvcSlots.slice() : null, fx: fxOn,
+      card256fw: machine && machine.type === 1 ? '0.' + card256Fw : null
     }),
     // the machine's state (with the TVC256k++ / 2dfx cards), to restore later
     snapshot: () => {
@@ -8185,6 +8214,7 @@ ep.log('CTRL+ESC megnyomva');`)
       cardPutFile: c('ep_tvc_card_put_file', 'number', ['string', 'string']),
       setMouse: c('ep_set_mouse', null, ['number', 'number', 'number', 'number']),
       cardMouse: c('ep_card_mouse', null, ['number']),
+      cardFw: c('ep_card_fw', 'number', ['number']),
       tapeCue: c('ep_tape_cue', 'number', ['number']),
       demoRecord: c('ep_demo_record', 'number', ['number', 'string']),
       demoState: c('ep_demo_state', 'number', []),

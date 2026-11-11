@@ -23,7 +23,7 @@ class TVC256kpp {
   static const size_t kRomPageSize = 0x1800;       // 6 kB per ROM page
   static const size_t kIoAreaSize  = 0x2000;       // $C000-$DFFF in IOMEM
   static const uint8_t kFwMajor    = 0;
-  static const uint8_t kFwMinor    = 24;
+  static const uint8_t kFwMinor    = 25;  // the newest; card_fw_minor: the one emulated
 
   TVC256kpp();
   ~TVC256kpp();
