@@ -74,6 +74,11 @@ letöltését külön kell betölteni.
   kártyákkal). Kikapcsolva a gép marad, ami van: a másik gépre való fájlt nem
   tölti be, és üzenetben jelzi; a katalógus programja a mostani gépen indul.
   A mentések (gyorsmentés, `.ep128s`, demó) mindig a saját gépükre váltanak.
+- **TVC lemez ráhúzásakor** (Gép menü): mit tegyen a gép egy ráhúzott VT-DOS
+  lemezzel: a könyvtárát mutatja (`EXT 2`, `DIR`; alapértelmezett), betölti az
+  első programot (`LOAD "*"`, az AutoRun jelzésű elindul), vagy csak beteszi az
+  A: meghajtóba. (UPM lemeznél programválasztó jön, a cartridge-es gépek a
+  lemezről indulnak; ezekre nem vonatkozik.)
 - **Adatfájlok a TVC256k++ kártyán:** ha a ráhúzott fájlok között nincs
   `.cas` program (pl. egy `.sis` zene), a kártya pendrive-jára kerülnek, és az
   oldal nem próbálja betölteni őket; a programok onnan nyitják meg.

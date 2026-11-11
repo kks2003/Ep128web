@@ -1859,10 +1859,20 @@ registerProcessor('ep-output', EPOutput);
       setMessage(T('UPM lemez az A: meghajtóban') + moved);
       if (names.length) chooseUpmProgram(names);
     } else {
-      setMessage(T('Lemez az A: meghajtóban – VT-DOS indítása…') + moved);
-      // the VT-DOS commands (EXT 2) need the default device to be the DOS
-      startAutostart('ext 2\n' + PAUSE + 'dir\n' + PAUSE + PRESS_ESC, null, false,
-                     tvcRedirectFor(SLOT_VTDOS));
+      // what to do with it (Machine menu): the directory, LOAD "*" or nothing
+      let act = 'dir';
+      try { act = localStorage.getItem('ep128web.tvcDiskAction') || 'dir'; } catch (e) { }
+      if (act === 'none') {
+        setMessage(T('Lemez az A: meghajtóban') + moved + wrong);
+      } else if (act === 'load') {
+        setMessage(T('Lemez az A: meghajtóban – LOAD "*"…') + moved + wrong);
+        startAutostart('load "*"\n', null, false, tvcRedirectFor(SLOT_VTDOS));
+      } else {
+        setMessage(T('Lemez az A: meghajtóban – VT-DOS indítása…') + moved);
+        // the VT-DOS commands (EXT 2) need the default device to be the DOS
+        startAutostart('ext 2\n' + PAUSE + 'dir\n' + PAUSE + PRESS_ESC, null, false,
+                       tvcRedirectFor(SLOT_VTDOS));
+      }
     }
   }
 

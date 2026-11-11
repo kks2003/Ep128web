@@ -155,6 +155,10 @@
   const am = $('auto-machine');
   am.checked = load('autoMachine') !== '0';
   am.addEventListener('change', () => store('autoMachine', am.checked ? '1' : '0'));
+  // TVC: what a dropped VT-DOS disk does (ep128.js reads ep128web.tvcDiskAction)
+  const da = $('tvc-disk-action');
+  da.value = ['dir', 'load', 'none'].includes(load('tvcDiskAction')) ? load('tvcDiskAction') : 'dir';
+  da.addEventListener('change', () => store('tvcDiskAction', da.value));
 
   // the debugger's close button (the Debugger item turns it on and off)
   $('dbg-close').addEventListener('click', () => $('btn-debug').click());

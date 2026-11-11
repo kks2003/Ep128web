@@ -53,6 +53,8 @@
       <hr>
       <label class="item check" data-tvc title="A betöltött programok akkor is elindulnak, ha a fejlécükben nincs AutoRun jelzés"><input type="checkbox" id="tvc-autorun"> Automatikus indítás (TVC)</label>
       <label class="item check" title="Bekapcsolva a betöltött fájlhoz illő gépre vált (pl. .com, .tap: Enterprise; .cas, .wav: TVC; Enterprise lemez: EXDOS-os gép; a katalógus programjai a címük szerinti TVC-re, kártyákkal). Kikapcsolva a gép marad, ami van. A mentések mindig a saját gépükre váltanak."><input type="checkbox" id="auto-machine"> Automatikus gépváltás</label>
+      <label class="sel item" data-tvc title="Mit tegyen a TVC egy ráhúzott VT-DOS lemezzel: a könyvtárát mutatja (EXT 2, DIR), betölti az első programot (LOAD &quot;*&quot;), vagy csak beteszi az A: meghajtóba">TVC lemez ráhúzásakor
+        <select id="tvc-disk-action"><option value="dir">könyvtár (DIR)</option><option value="load">LOAD "*"</option><option value="none">semmi</option></select></label>
     </div></div>
     <div class="menu"><button class="menu-btn">Nézet</button><div class="drop">
       <label class="sel item">Kép
