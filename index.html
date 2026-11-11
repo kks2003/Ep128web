@@ -12,12 +12,12 @@
     if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   } catch (e) { }
 </script>
-<link rel="stylesheet" href="style.css?v=202611071641-5b17518">
+<link rel="stylesheet" href="style.css?v=202611112115-4535801">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <meta name="theme-color" content="#1b1f45">
-<meta name="build" content="202611071641-5b17518">
+<meta name="build" content="202611112115-4535801">
 </head>
 <body>
 <header id="bar">
@@ -52,6 +52,9 @@
       <button data-act="btn-turbo">Turbó <kbd>F12</kbd></button>
       <hr>
       <label class="item check" data-tvc title="A betöltött programok akkor is elindulnak, ha a fejlécükben nincs AutoRun jelzés"><input type="checkbox" id="tvc-autorun"> Automatikus indítás (TVC)</label>
+      <label class="item check" title="Bekapcsolva a betöltött fájlhoz illő gépre vált (pl. .com, .tap: Enterprise; .cas, .wav: TVC; Enterprise lemez: EXDOS-os gép; a katalógus programjai a címük szerinti TVC-re, kártyákkal). Kikapcsolva a gép marad, ami van. A mentések mindig a saját gépükre váltanak."><input type="checkbox" id="auto-machine"> Automatikus gépváltás</label>
+      <label class="sel item" data-tvc title="Mit tegyen a TVC egy ráhúzott VT-DOS lemezzel: a könyvtárát mutatja (EXT 2, DIR), betölti az első programot (LOAD &quot;*&quot;), vagy csak beteszi az A: meghajtóba">TVC lemez ráhúzásakor
+        <select id="tvc-disk-action"><option value="dir">könyvtár (DIR)</option><option value="load">LOAD "*"</option><option value="none">semmi</option></select></label>
     </div></div>
     <div class="menu"><button class="menu-btn">Nézet</button><div class="drop">
       <label class="sel item">Kép
@@ -107,7 +110,7 @@
       <a class="item" href="https://github.com/kks2003/Ep128web" target="_blank" rel="noopener">Ep128web a GitHubon</a>
       <a class="item" href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu (Varga István)</a>
       <hr>
-      <div class="about"><b>Enterprise 128 · TVC</b><span>ep128emu · web</span><small id="build" title="Fordítás ideje és verziója">2026.11.07 17:41 · 5b17518</small></div>
+      <div class="about"><b>Enterprise 128 · TVC</b><span>ep128emu · web</span><small id="build" title="Fordítás ideje és verziója">2026.11.11 22:15 · 4535801</small></div>
     </div></div>
   </nav>
   <div id="quick">
@@ -316,6 +319,8 @@
         <label class="slot" title="Melyik kártya legyen az alapértelmezett tároló (LOAD/SAVE, a parancssora: VT-DOS EXT 2, TVC256k++ EXT + port). Automatikus: a legnagyobb sorszámú portban lévő, mint a valódi gépen.">Alapértelmezett tároló <select id="tvc-defdev">
           <option value="-1">automatikus (a legnagyobb port)</option><option value="1">VT-DOS</option><option value="2">FILE:</option><option value="5">TVC256k++</option></select></label>
         <span class="name" id="tvc-defdev-note"></span>
+        <label class="slot" title="A TVC256k++ kártya firmware-verziója. A 0.25 javítja a 0.24 hibáit (fájl vége, hozzáfűzés, írás a PSRAM meghajtóra, görgetés, SID reset…); a régebbi programok kipróbálásához a 0.24 is választható. Váltáskor a gép újraindul.">TVC256k++ firmware <select id="card256-fw">
+          <option value="25">0.25 (legújabb)</option><option value="24">0.24</option></select></label>
         <button id="tvc-slots-apply" title="A kártyák betöltése és hideg újraindítás">Portok betöltése, újraindítás</button>
         <button id="tvc-slots-default" title="FILE:, VT-DOS, GameCard, üres (betöltés a gombbal)">Alapbeállítás</button>
         <span class="name" id="tvc-slots-note"></span>
@@ -630,11 +635,11 @@
     (Varga István, GPL v2) változatlan forráskódja, WebAssemblyre fordítva.</p>
   </dialog>
 
-<script src="i18n-strings.js?v=202611071641-5b17518"></script>
-<script src="i18n.js?v=202611071641-5b17518"></script>
-<script src="ep128emu.js?v=202611071641-5b17518"></script>
-<script src="screenfx.js?v=202611071641-5b17518"></script>
-<script src="ep128.js?v=202611071641-5b17518"></script>
-<script src="ui.js?v=202611071641-5b17518"></script>
+<script src="i18n-strings.js?v=202611112115-4535801"></script>
+<script src="i18n.js?v=202611112115-4535801"></script>
+<script src="ep128emu.js?v=202611112115-4535801"></script>
+<script src="screenfx.js?v=202611112115-4535801"></script>
+<script src="ep128.js?v=202611112115-4535801"></script>
+<script src="ui.js?v=202611112115-4535801"></script>
 </body>
 </html>

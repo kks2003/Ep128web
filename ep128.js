@@ -459,6 +459,29 @@
   // machine chooses it, the card in the highest numbered slot). It is set
   // after each boot, when the ROM and the cards have set theirs.
   let tvcDefDev = -1;
+  // the TVC256k++ firmware version emulated (24 or 25)
+  let card256Fw = 25;
+  try { if (localStorage.getItem('ep128web.card256Fw') === '24') card256Fw = 24; } catch (e) { }
+  // sets it (v: 24 / 25); a TVC with the card restarts (cold) unless noReset
+  function setCard256Fw(v, noReset) {
+    v = Number(v) <= 24 ? 24 : 25;
+    const changed = v !== card256Fw;
+    card256Fw = v;
+    try { localStorage.setItem('ep128web.card256Fw', String(v)); } catch (e) { }
+    if ($('card256-fw')) $('card256-fw').value = String(v);
+    if (api && api.cardFw) api.cardFw(v);
+    if (changed && !noReset && ready && machine && machine.type === 1 && tvcSlots.includes(SLOT_CARD256)) {
+      reset(true);
+      setMessage(F('TVC256k++ firmware 0.{0}: a gép újraindult', v));
+    }
+    return v;
+  }
+  // after a loaded state: the version it brought
+  function syncCard256Fw() {
+    if (!api || !api.cardFw) return;
+    const v = api.cardFw(-1);
+    if (v !== card256Fw) setCard256Fw(v, true);
+  }
   try { tvcDefDev = Number(localStorage.getItem('ep128web.tvcDefDev') ?? -1); } catch (e) { }
   if (![-1, SLOT_VTDOS, SLOT_FILEIO, SLOT_CARD256].includes(tvcDefDev)) tvcDefDev = -1;
   // after a reset: waits until the ROM and the cards have set the redirect
@@ -999,6 +1022,13 @@
   }
 
   // a TVC without a system cartridge (the last one used)
+  // switching the machine to suit a loaded file (Machine menu); a snapshot
+  // always goes to its own machine
+  function autoMachine() {
+    try { return localStorage.getItem('ep128web.autoMachine') !== '0'; } catch (e) { return true; }
+  }
+  const AUTO_OFF = () => T(' (az automatikus gépváltás ki van kapcsolva, Gép menü)');
+
   function plainTvc() {
     return MACHINES.find((x) => x.id === lastPlainTvc) || MACHINES.find((x) => x.id === DEFAULT_TVC);
   }
@@ -1038,6 +1068,7 @@
 
   function applyMachine(m, coldReset) {
     machine = m;
+    if (api && api.cardFw) api.cardFw(card256Fw);
     if (m.type === 1 && !m.cart) lastPlainTvc = m.id;
     const sel = $('machine');
     if (sel && sel.value !== m.id) sel.value = m.id;
@@ -1828,10 +1859,20 @@ registerProcessor('ep-output', EPOutput);
       setMessage(T('UPM lemez az A: meghajtóban') + moved);
       if (names.length) chooseUpmProgram(names);
     } else {
-      setMessage(T('Lemez az A: meghajtóban – VT-DOS indítása…') + moved);
-      // the VT-DOS commands (EXT 2) need the default device to be the DOS
-      startAutostart('ext 2\n' + PAUSE + 'dir\n' + PAUSE + PRESS_ESC, null, false,
-                     tvcRedirectFor(SLOT_VTDOS));
+      // what to do with it (Machine menu): the directory, LOAD "*" or nothing
+      let act = 'dir';
+      try { act = localStorage.getItem('ep128web.tvcDiskAction') || 'dir'; } catch (e) { }
+      if (act === 'none') {
+        setMessage(T('Lemez az A: meghajtóban') + moved + wrong);
+      } else if (act === 'load') {
+        setMessage(T('Lemez az A: meghajtóban – LOAD "*"…') + moved + wrong);
+        startAutostart('load "*"\n', null, false, tvcRedirectFor(SLOT_VTDOS));
+      } else {
+        setMessage(T('Lemez az A: meghajtóban – VT-DOS indítása…') + moved);
+        // the VT-DOS commands (EXT 2) need the default device to be the DOS
+        startAutostart('ext 2\n' + PAUSE + 'dir\n' + PAUSE + PRESS_ESC, null, false,
+                       tvcRedirectFor(SLOT_VTDOS));
+      }
     }
   }
 
@@ -2065,6 +2106,11 @@ registerProcessor('ep-output', EPOutput);
       startAutostart('load "' + (d ? 'B:' : '') + base + '"\n', null, false, tvcRedirectFor(card));
     } else {
       if (!machine.roms.some((r) => r[0].startsWith('exdos'))) {
+        if (!autoMachine()) {
+          setMessage(T('A lemezhez EXDOS-os gép kell') + AUTO_OFF(), true);
+          canvas.focus({ preventScroll: true });
+          return;
+        }
         applyMachine(MACHINES.find((x) => x.id === 'ep128uk-exdos'));
         $('machine').value = machine.id;
         mountDrive(0); mountDrive(1);
@@ -2398,9 +2444,15 @@ registerProcessor('ep-output', EPOutput);
       }
       loadTvcDisk(f.bytes);
     } else {
-      if (!machine.roms.some((r) => r[0].startsWith('exdos'))) {
+      const noExdos = !machine.roms.some((r) => r[0].startsWith('exdos'));
+      if (noExdos && autoMachine()) {
         applyMachine(MACHINES.find((x) => x.id === 'ep128uk-exdos'));
         $('machine').value = machine.id;
+      } else if (noExdos) {
+        // the disk goes into the drive, but this machine has no disk ROM
+        check(api.setDisk(0, '/disk/' + diskName), T('lemez'));
+        setMessage(T('Lemez az A: meghajtóban; a használatához EXDOS-os gép kell') + AUTO_OFF(), true);
+        return;
       }
       check(api.setDisk(0, '/disk/' + diskName), T('lemez'));
       setMessage(T('Lemez az A: meghajtóban'));
@@ -2424,6 +2476,25 @@ registerProcessor('ep-output', EPOutput);
     listFiles();
     // a single file is started even if its extension is not a known one
     return (startable.length === 0 && stored.length === 1) ? stored : startable;
+  }
+
+  // data files (from /files) onto the TVC256k++ card's pendrive (plugged in
+  // if needed), into its root as the programs dropped with files
+  function putFilesOnCard(names) {
+    if (!usbPlugged) {
+      usbOn = true;
+      try { localStorage.setItem('ep128web.usbOn', '1'); } catch (e) { }
+      applyTvcUsb();
+    }
+    if (!usbPlugged) {
+      setMessage(T('A pendrive nem dugható be: ') + names.join(', '), true);
+      return;
+    }
+    const failed = names.filter((f) => !usbPutBytes(f, M.FS.readFile('/files/' + f)));
+    saveUsb();
+    renderUsb();
+    if (failed.length) setMessage(T('Nem fért a pendrive-ra: ') + failed.join(', '), true);
+    else setMessage(T('A TVC256k++ pendrive-jára került: ') + names.join(', '));
   }
 
   // the files of the last drop (in /files), copied to the TVC256k++ card's
@@ -2761,6 +2832,10 @@ registerProcessor('ep-output', EPOutput);
         const ext = extOf(f.name);
         return ['tap', 'tzx', 'cdt'].includes(ext);
       });
+      if ((isEpProg || isEpTape) && !autoMachine()) {
+        setMessage(T('Enterprise-ra való fájl, a TVC nem tudja betölteni') + AUTO_OFF(), true);
+        return;
+      }
       if (isEpProg || isEpTape) {
         const ep = MACHINES.find((x) => x.id === 'ep128hu-exdos') || MACHINES.find((x) => x.id === 'ep128uk-exdos');
         if (ep) applyMachine(ep);
@@ -2768,6 +2843,10 @@ registerProcessor('ep-output', EPOutput);
     } else if (machine.type === 0) {
       const isTvcProg = progFiles.some((f) => extOf(f.name) === 'cas');
       const isTvcTape = tapes.some((f) => extOf(f.name) === 'wav');
+      if ((isTvcProg || isTvcTape) && !autoMachine()) {
+        setMessage(T('TVC-re való fájl, az Enterprise nem tudja betölteni') + AUTO_OFF(), true);
+        return;
+      }
       if (isTvcProg || isTvcTape) {
         const tvc = MACHINES.find((x) => x.id === DEFAULT_TVC) || MACHINES.find((x) => x.type === 1);
         if (tvc) applyMachine(tvc);
@@ -2785,6 +2864,10 @@ registerProcessor('ep-output', EPOutput);
       loadDiskFile(disks[0]);
     } else if (tapes.length) {
       loadTapeFile(tapes[0]);
+    } else if (machine.type === 1 && tvcSlotOf(SLOT_CARD256) >= 0 && !startable.some(isStartable)) {
+      // TVC256k++: data files (no .cas program among them) go to the card's
+      // pendrive for the programs that open them, nothing is loaded
+      putFilesOnCard(lastStoredFiles);
     } else if (startable.length === 1) {
       startProgram(startable[0]);
     } else if (startable.length > 1) {
@@ -3411,6 +3494,8 @@ registerProcessor('ep-output', EPOutput);
       canvas.focus({ preventScroll: true });
     };
     ddShow();
+    $('card256-fw').value = String(card256Fw);
+    $('card256-fw').onchange = (e) => { setCard256Fw(e.target.value); canvas.focus({ preventScroll: true }); };
     refreshTvcSlotsUI = () => { show(); update(); ddShow(); };
     $('tvc-slots-apply').onclick = () => {
       const p = pending();
@@ -3553,6 +3638,7 @@ registerProcessor('ep-output', EPOutput);
       M.FS.writeFile('/tmp/card.st', st.card);
       if (api.loadCardState('/tmp/card.st') !== 0)
         setMessage(T('A bővítőkártyák állapota nem tölthető vissza (más változattal készült mentés?)'), true);
+      syncCard256Fw();
     }
     releaseAllKeys();
   }
@@ -3918,6 +4004,13 @@ registerProcessor('ep-output', EPOutput);
     return changed;
   }
 
+  // the cards a catalog program asks for are not in the machine
+  function catalogNeedsCards(item) {
+    const tags = catalogTags(item.title);
+    return (tags.includes('256k++') && (tvcSlotOf(SLOT_CARD256) < 0 || fxOn)) ||
+           (tags.includes('2dfx') && (!fxOn || tvcSlotOf(SLOT_CARD256) >= 0));
+  }
+
   async function launchCatalogItem(item) {
     const fileName = item.file_name || (item.title ? item.title + '.zip' : 'program.zip');
     // Use dl.php on homeserver which provides Access-Control-Allow-Origin: *
@@ -3937,9 +4030,12 @@ registerProcessor('ep-output', EPOutput);
       }
 
       const blob = await res.blob();
-      const id = catalogMachine(item);
+      const auto = autoMachine();
+      const id = auto ? catalogMachine(item) : machine.id;
       const m = MACHINES.find((x) => x.id === id);
-      const cardsChanged = catalogCards(item);
+      const cardsChanged = auto ? catalogCards(item) : false;
+      const note = !auto && (catalogMachine(item) !== machine.id || catalogNeedsCards(item))
+        ? ' – ' + T('más gépet vagy kártyát kér: ') + catalogTags(item.title).join(', ') + AUTO_OFF() : '';
       if (m && (m !== machine || cardsChanged)) {
         autoTask = null;
         releaseAllKeys();
@@ -3954,7 +4050,7 @@ registerProcessor('ep-output', EPOutput);
 
       await loadFiles([file]);
       shareSrc = { cat: item.file_name || fileName };
-      setMessage(T('Program betöltve: ') + (item.title || fileName));
+      setMessage(T('Program betöltve: ') + (item.title || fileName) + note, !!note);
     } catch (e) {
       console.error(e);
       setMessage(T('Hiba a program letöltésekor: ') + T(T(String(e.message || e))), true);
@@ -7429,6 +7525,7 @@ registerProcessor('ep-output', EPOutput);
         tvcSlots = v;
         try { localStorage.setItem('ep128web.tvcSlots', JSON.stringify(tvcSlots)); } catch (e) { }
       }
+      if (opts.card256fw !== undefined) setCard256Fw(String(opts.card256fw).replace(/^0\./, ''), true);
       if (opts.fx !== undefined) {
         fxOn = !!opts.fx;
         try { localStorage.setItem('ep128web.2dfx', fxOn ? '1' : '0'); } catch (e) { }
@@ -7504,7 +7601,8 @@ registerProcessor('ep-output', EPOutput);
       io: ready ? epIoObj() : null,
       keys: [...new Set([...aiHeld, ...aiFrame, ...aiPresses.map((p) => p.name)])],
       breakError: dbgBreakError,
-      tvcSlots: machine && machine.type === 1 ? tvcSlots.slice() : null, fx: fxOn
+      tvcSlots: machine && machine.type === 1 ? tvcSlots.slice() : null, fx: fxOn,
+      card256fw: machine && machine.type === 1 ? '0.' + card256Fw : null
     }),
     // the machine's state (with the TVC256k++ / 2dfx cards), to restore later
     snapshot: () => {
@@ -8185,6 +8283,7 @@ ep.log('CTRL+ESC megnyomva');`)
       cardPutFile: c('ep_tvc_card_put_file', 'number', ['string', 'string']),
       setMouse: c('ep_set_mouse', null, ['number', 'number', 'number', 'number']),
       cardMouse: c('ep_card_mouse', null, ['number']),
+      cardFw: c('ep_card_fw', 'number', ['number']),
       tapeCue: c('ep_tape_cue', 'number', ['number']),
       demoRecord: c('ep_demo_record', 'number', ['number', 'string']),
       demoState: c('ep_demo_state', 'number', []),
