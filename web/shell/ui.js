@@ -150,6 +150,11 @@
   const ar = $('tvc-autorun');
   ar.checked = load('tvcAutorun') === '1';
   ar.addEventListener('change', () => store('tvcAutorun', ar.checked ? '1' : '0'));
+  // automatic machine switching when loading (on unless switched off;
+  // ep128.js reads ep128web.autoMachine)
+  const am = $('auto-machine');
+  am.checked = load('autoMachine') !== '0';
+  am.addEventListener('change', () => store('autoMachine', am.checked ? '1' : '0'));
 
   // the debugger's close button (the Debugger item turns it on and off)
   $('dbg-close').addEventListener('click', () => $('btn-debug').click());
