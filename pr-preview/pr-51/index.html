@@ -13,15 +13,15 @@
     if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   } catch (e) { }
 </script>
-<link rel="stylesheet" href="style.css?v=202611112057-5c5e376">
+<link rel="stylesheet" href="style.css?v=202611112112-733f39f">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <meta name="theme-color" content="#1b1f45">
-<meta name="build" content="202611112057-5c5e376">
+<meta name="build" content="202611112112-733f39f">
 </head>
 <body>
-<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #51 előnézete, nem az éles oldal · fordítva: 2026.11.11 21:57 · 5c5e376 · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #51 előnézete, nem az éles oldal · fordítva: 2026.11.11 22:12 · 733f39f · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
 <header id="bar">
   <button id="menu-toggle" aria-label="Menü" aria-expanded="false">☰</button>
   <nav id="menus">
@@ -55,6 +55,8 @@
       <hr>
       <label class="item check" data-tvc title="A betöltött programok akkor is elindulnak, ha a fejlécükben nincs AutoRun jelzés"><input type="checkbox" id="tvc-autorun"> Automatikus indítás (TVC)</label>
       <label class="item check" title="Bekapcsolva a betöltött fájlhoz illő gépre vált (pl. .com, .tap: Enterprise; .cas, .wav: TVC; Enterprise lemez: EXDOS-os gép; a katalógus programjai a címük szerinti TVC-re, kártyákkal). Kikapcsolva a gép marad, ami van. A mentések mindig a saját gépükre váltanak."><input type="checkbox" id="auto-machine"> Automatikus gépváltás</label>
+      <label class="sel item" data-tvc title="Mit tegyen a TVC egy ráhúzott VT-DOS lemezzel: a könyvtárát mutatja (EXT 2, DIR), betölti az első programot (LOAD &quot;*&quot;), vagy csak beteszi az A: meghajtóba">TVC lemez ráhúzásakor
+        <select id="tvc-disk-action"><option value="dir">könyvtár (DIR)</option><option value="load">LOAD "*"</option><option value="none">semmi</option></select></label>
     </div></div>
     <div class="menu"><button class="menu-btn">Nézet</button><div class="drop">
       <label class="sel item">Kép
@@ -110,7 +112,7 @@
       <a class="item" href="https://github.com/kks2003/Ep128web" target="_blank" rel="noopener">Ep128web a GitHubon</a>
       <a class="item" href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu (Varga István)</a>
       <hr>
-      <div class="about"><b>Enterprise 128 · TVC</b><span>ep128emu · web</span><small id="build" title="Fordítás ideje és verziója">2026.11.11 21:57 · 5c5e376</small></div>
+      <div class="about"><b>Enterprise 128 · TVC</b><span>ep128emu · web</span><small id="build" title="Fordítás ideje és verziója">2026.11.11 22:12 · 733f39f</small></div>
     </div></div>
   </nav>
   <div id="quick">
@@ -635,11 +637,11 @@
     (Varga István, GPL v2) változatlan forráskódja, WebAssemblyre fordítva.</p>
   </dialog>
 
-<script src="i18n-strings.js?v=202611112057-5c5e376"></script>
-<script src="i18n.js?v=202611112057-5c5e376"></script>
-<script src="ep128emu.js?v=202611112057-5c5e376"></script>
-<script src="screenfx.js?v=202611112057-5c5e376"></script>
-<script src="ep128.js?v=202611112057-5c5e376"></script>
-<script src="ui.js?v=202611112057-5c5e376"></script>
+<script src="i18n-strings.js?v=202611112112-733f39f"></script>
+<script src="i18n.js?v=202611112112-733f39f"></script>
+<script src="ep128emu.js?v=202611112112-733f39f"></script>
+<script src="screenfx.js?v=202611112112-733f39f"></script>
+<script src="ep128.js?v=202611112112-733f39f"></script>
+<script src="ui.js?v=202611112112-733f39f"></script>
 </body>
 </html>

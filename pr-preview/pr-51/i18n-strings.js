@@ -1270,5 +1270,10 @@ window.EP_I18N_STRINGS = [
 ["Lemez az A: meghajtóban; a használatához EXDOS-os gép kell", "Disk in drive A:; it needs a machine with EXDOS", "Diskette in Laufwerk A:; sie braucht eine Maschine mit EXDOS", "Диск у приводі A:; для нього потрібна машина з EXDOS"],
 ["más gépet vagy kártyát kér: ", "it asks for another machine or card: ", "es verlangt eine andere Maschine oder Karte: ", "вона потребує іншої машини або картки: "],
 ["A pendrive nem dugható be: ", "The pendrive cannot be plugged in: ", "Der USB-Stick kann nicht eingesteckt werden: ", "Флешку не вдається під'єднати: "],
-["A TVC256k++ pendrive-jára került: ", "Put on the TVC256k++ pendrive: ", "Auf den USB-Stick der TVC256k++ kopiert: ", "Скопійовано на флешку TVC256k++: "]
+["A TVC256k++ pendrive-jára került: ", "Put on the TVC256k++ pendrive: ", "Auf den USB-Stick der TVC256k++ kopiert: ", "Скопійовано на флешку TVC256k++: "],
+["TVC lemez ráhúzásakor", "TVC disk dropped", "TVC-Diskette abgelegt", "Перетягнутий диск TVC"],
+["Mit tegyen a TVC egy ráhúzott VT-DOS lemezzel: a könyvtárát mutatja (EXT 2, DIR), betölti az első programot (LOAD \"*\"), vagy csak beteszi az A: meghajtóba", "What the TVC does with a dropped VT-DOS disk: shows its directory (EXT 2, DIR), loads the first program (LOAD \"*\"), or only puts it into drive A:", "Was der TVC mit einer abgelegten VT-DOS-Diskette tut: das Verzeichnis zeigen (EXT 2, DIR), das erste Programm laden (LOAD \"*\") oder sie nur in Laufwerk A: einlegen", "Що TVC робить із перетягнутим диском VT-DOS: показує каталог (EXT 2, DIR), завантажує першу програму (LOAD \"*\") або лише вставляє його в привід A:"],
+["könyvtár (DIR)", "directory (DIR)", "Verzeichnis (DIR)", "каталог (DIR)"],
+["semmi", "nothing", "nichts", "нічого"],
+["Lemez az A: meghajtóban – LOAD \"*\"…", "Disk in drive A: – LOAD \"*\"…", "Diskette in Laufwerk A: – LOAD \"*\"…", "Диск у приводі A: – LOAD \"*\"…"]
 ];
