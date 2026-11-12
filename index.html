@@ -12,12 +12,12 @@
     if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   } catch (e) { }
 </script>
-<link rel="stylesheet" href="style.css?v=202611112115-4535801">
+<link rel="stylesheet" href="style.css?v=202611120912-5f21a55">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <meta name="theme-color" content="#1b1f45">
-<meta name="build" content="202611112115-4535801">
+<meta name="build" content="202611120912-5f21a55">
 </head>
 <body>
 <header id="bar">
@@ -110,7 +110,7 @@
       <a class="item" href="https://github.com/kks2003/Ep128web" target="_blank" rel="noopener">Ep128web a GitHubon</a>
       <a class="item" href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu (Varga István)</a>
       <hr>
-      <div class="about"><b>Enterprise 128 · TVC</b><span>ep128emu · web</span><small id="build" title="Fordítás ideje és verziója">2026.11.11 22:15 · 4535801</small></div>
+      <div class="about"><b>Enterprise 128 · TVC</b><span>ep128emu · web</span><small id="build" title="Fordítás ideje és verziója">2026.11.12 10:12 · 5f21a55</small></div>
     </div></div>
   </nav>
   <div id="quick">
@@ -308,6 +308,27 @@
         <input type="file" id="usb-folder" webkitdirectory multiple hidden>
         <span class="name" id="usb-note"></span>
       </div>
+      <div class="group" id="sd-group" hidden>
+        <h3>SD kártya (NanoSD)</h3>
+        <label title="Az SD kártya a NanoSD kártya foglalatában (a NanoSD a Bővítők fülön tehető egy portba)">
+          <input type="checkbox" id="sd-on"> Behelyezve</label>
+        <label class="slot">Méret <select id="sd-size">
+          <option value="32">32 MB</option><option value="64">64 MB</option>
+          <option value="128">128 MB</option><option value="256">256 MB</option><option value="512">512 MB</option></select></label>
+        <span class="name" id="sd-space"></span>
+        <div id="sd-browser">
+          <div id="sd-path"></div>
+          <ul id="sd-list"></ul>
+          <div id="sd-drop">Húzd ide a fájlokat (a TVC a rövid, 8.3-as neveket látja; a ZIP kibontva kerül fel)</div>
+        </div>
+        <button id="sd-add">Fájlok hozzáadása…</button>
+        <button id="sd-add-dir">Mappa hozzáadása…</button>
+        <button id="sd-mkdir">Új mappa</button>
+        <button id="sd-clear" title="Az SD kártya teljes tartalmának törlése">SD kártya törlése</button>
+        <input type="file" id="sd-file" multiple hidden>
+        <input type="file" id="sd-folder" webkitdirectory multiple hidden>
+        <span class="name" id="sd-note"></span>
+      </div>
     </div>
     <div class="tab" id="tab-ext">
       <div class="group" id="tvc-cards-group">
@@ -317,7 +338,7 @@
         <label class="slot">Port 2 <select id="tvc-slot2"></select></label>
         <label class="slot">Port 3 <select id="tvc-slot3"></select></label>
         <label class="slot" title="Melyik kártya legyen az alapértelmezett tároló (LOAD/SAVE, a parancssora: VT-DOS EXT 2, TVC256k++ EXT + port). Automatikus: a legnagyobb sorszámú portban lévő, mint a valódi gépen.">Alapértelmezett tároló <select id="tvc-defdev">
-          <option value="-1">automatikus (a legnagyobb port)</option><option value="1">VT-DOS</option><option value="2">FILE:</option><option value="5">TVC256k++</option></select></label>
+          <option value="-1">automatikus (a legnagyobb port)</option><option value="1">VT-DOS</option><option value="2">FILE:</option><option value="5">TVC256k++</option><option value="7">NanoSD</option></select></label>
         <span class="name" id="tvc-defdev-note"></span>
         <label class="slot" title="A TVC256k++ kártya firmware-verziója. A 0.25 javítja a 0.24 hibáit (fájl vége, hozzáfűzés, írás a PSRAM meghajtóra, görgetés, SID reset…); a régebbi programok kipróbálásához a 0.24 is választható. Váltáskor a gép újraindul.">TVC256k++ firmware <select id="card256-fw">
           <option value="25">0.25 (legújabb)</option><option value="24">0.24</option></select></label>
@@ -635,11 +656,11 @@
     (Varga István, GPL v2) változatlan forráskódja, WebAssemblyre fordítva.</p>
   </dialog>
 
-<script src="i18n-strings.js?v=202611112115-4535801"></script>
-<script src="i18n.js?v=202611112115-4535801"></script>
-<script src="ep128emu.js?v=202611112115-4535801"></script>
-<script src="screenfx.js?v=202611112115-4535801"></script>
-<script src="ep128.js?v=202611112115-4535801"></script>
-<script src="ui.js?v=202611112115-4535801"></script>
+<script src="i18n-strings.js?v=202611120912-5f21a55"></script>
+<script src="i18n.js?v=202611120912-5f21a55"></script>
+<script src="ep128emu.js?v=202611120912-5f21a55"></script>
+<script src="screenfx.js?v=202611120912-5f21a55"></script>
+<script src="ep128.js?v=202611120912-5f21a55"></script>
+<script src="ui.js?v=202611120912-5f21a55"></script>
 </body>
 </html>

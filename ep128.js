@@ -88,7 +88,7 @@
   // TVC expansion cards; the ids are those of ep_set_tvc_slot(), except for
   // the UPM disk card, which is the VT-DOS card's hardware (hw) with the
   // ROM of the UPM compatible floppy interface
-  const SLOT_EMPTY = 0, SLOT_VTDOS = 1, SLOT_FILEIO = 2, SLOT_CARD256 = 5, SLOT_UPM = 6;
+  const SLOT_EMPTY = 0, SLOT_VTDOS = 1, SLOT_FILEIO = 2, SLOT_CARD256 = 5, SLOT_UPM = 6, SLOT_NANOSD = 7;
   const TVC_CARDS = [
     { id: SLOT_EMPTY, name: T('— üres —') },
     { id: SLOT_VTDOS, name: T('VT-DOS (lemez)'), rom: 'tvc_dos12d.rom', seg: 0x03 },
@@ -96,7 +96,8 @@
     { id: SLOT_FILEIO, name: T('FILE: (.cas fájlok)'), rom: 'tvcfileio.rom', seg: 0x04 },
     { id: 3, name: 'GameCard (SN76489 + Joy 3-4)' },
     { id: 4, name: 'Multichip Soundcard (SN, SAA, OPL2)' },
-    { id: SLOT_CARD256, name: 'TVC256k++' }
+    { id: SLOT_CARD256, name: 'TVC256k++' },
+    { id: SLOT_NANOSD, name: T('NanoSD (SD kártya)') }
   ];
   // the card initialized last (highest slot) of VT-DOS, FILE: and TVC256k++
   // becomes the default storage device, so VT-DOS comes after FILE:
@@ -483,7 +484,7 @@
     if (v !== card256Fw) setCard256Fw(v, true);
   }
   try { tvcDefDev = Number(localStorage.getItem('ep128web.tvcDefDev') ?? -1); } catch (e) { }
-  if (![-1, SLOT_VTDOS, SLOT_FILEIO, SLOT_CARD256].includes(tvcDefDev)) tvcDefDev = -1;
+  if (![-1, SLOT_VTDOS, SLOT_FILEIO, SLOT_CARD256, SLOT_NANOSD].includes(tvcDefDev)) tvcDefDev = -1;
   // after a reset: waits until the ROM and the cards have set the redirect
   // ($0B05 in U0 got a new value, a card's, at least 1 s after the reset,
   // and it does not change for 0.1 s), then sets the chosen one (in U0)
@@ -520,7 +521,13 @@
     if (tapeName) return 5;
     if (tvcDefDevRedirect()) return tvcDefDevRedirect();
     if (tvcLastLoadCard >= 0 && tvcSlotOf(tvcLastLoadCard) >= 0) return tvcRedirectFor(tvcLastLoadCard);
-    return tvcSlotOf(SLOT_CARD256) >= 0 ? tvcRedirectFor(SLOT_CARD256) : tvcRedirectFor(SLOT_FILEIO);
+    if (tvcSlotOf(SLOT_CARD256) >= 0) return tvcRedirectFor(SLOT_CARD256);
+    return nanoSdPreferred() ? tvcRedirectFor(SLOT_NANOSD) : tvcRedirectFor(SLOT_FILEIO);
+  }
+  // programs go through the NanoSD card (when there is no TVC256k++): it is
+  // in a slot, and FILE: is not chosen as the default storage
+  function nanoSdPreferred() {
+    return tvcSlotOf(SLOT_NANOSD) >= 0 && tvcSlotOf(SLOT_CARD256) < 0 && tvcDefDev !== SLOT_FILEIO;
   }
 
   function tvcRedirectFor(card) {
@@ -581,6 +588,7 @@
       api.setTvcSlot(slot, (c && c.hw) || card);
     });
     applyTvcUsb();
+    applySd();
     if (tvcSlotOf(SLOT_CARD256) >= 0) fetchDefaultCardFlash();
   }
 
@@ -875,6 +883,309 @@
     }, 5000);
   }
 
+  // --------------------------------------------------------------------------
+  // SD card of the TVC-NanoSD card: a FAT volume in the emulator, like the
+  // pendrive (IndexedDB key 'sdfiles'). The card's Nano sees the 8.3 names.
+
+  let sdOn = true, sdSize = 32, sdIn = false, sdCwd = '';
+  let sdSaved = null, sdSavedWrites = -1;
+  let nanoParams = '';            // the Nano's EEPROM settings, as stored
+  try {
+    sdOn = localStorage.getItem('ep128web.sdOn') !== '0';
+    sdSize = Number(localStorage.getItem('ep128web.sdSize')) || 32;
+  } catch (e) { }
+
+  function applySd() {
+    if (!api || !api.sdInsert) return;
+    if (sdOn && !sdIn) {
+      sdIn = (api.sdInsert(sdSize) === 0);
+      if (sdIn && sdSaved) restoreSd(sdSaved);
+      sdSavedWrites = api.sdInfo(2);
+    } else if (!sdOn && sdIn) { api.sdInsert(0); sdIn = false; }
+    renderSd();
+  }
+
+  // the Nano's settings (0: menu at boot, 1: sort order): restored at the
+  // start (default: no menu, so that LOAD typed by the page reaches BASIC),
+  // stored when the card's menu changes them
+  function loadNanoParams() {
+    if (!api || !api.nanosdParam) return;
+    let v = [0, 0];
+    try { const s = JSON.parse(localStorage.getItem('ep128web.nanosdParams')); if (Array.isArray(s)) v = s; } catch (e) { }
+    api.nanosdParam(0, v[0] & 255);
+    api.nanosdParam(1, v[1] & 255);
+    nanoParams = JSON.stringify([api.nanosdParam(0, -1), api.nanosdParam(1, -1)]);
+  }
+  function saveNanoParams() {
+    if (!api || !api.nanosdParam) return;
+    const s = JSON.stringify([api.nanosdParam(0, -1), api.nanosdParam(1, -1)]);
+    if (s === nanoParams) return;
+    nanoParams = s;
+    try { localStorage.setItem('ep128web.nanosdParams', s); } catch (e) { }
+  }
+
+  function sdWalk(dir, out) {
+    const list = JSON.parse(api.sdList(dir) || 'null') || [];
+    for (const e of list) {
+      const p = usbJoin(dir, e.n);
+      if (e.d) { out.push({ p, d: 1 }); sdWalk(p, out); }
+      else if (api.sdGet(p, '/tmp/sdfile') === 0) out.push({ p, b: M.FS.readFile('/tmp/sdfile') });
+    }
+    return out;
+  }
+
+  function saveSd() {
+    if (!sdIn) return;
+    try { M.FS.mkdir('/tmp'); } catch (e) { }
+    sdSaved = sdWalk('', []);
+    sdSavedWrites = api.sdInfo(2);
+    return db.put('sdfiles', sdSaved);
+  }
+
+  function restoreSd(entries) {
+    const failed = [];
+    for (const e of entries) {
+      if (e.d) api.sdMkdir(e.p);
+      else if (!sdPutBytes(e.p, e.b)) failed.push(e.p);
+    }
+    if (failed.length) setMessage(T('Nem fért az SD kártyára: ') + failed.join(', '), true);
+  }
+
+  function sdPutBytes(path, bytes) {
+    try { M.FS.mkdir('/tmp'); } catch (e) { }
+    M.FS.writeFile('/tmp/sdput', bytes);
+    const ok = api.sdPut(path, '/tmp/sdput') === 0;
+    M.FS.unlink('/tmp/sdput');
+    return ok;
+  }
+
+  // inserts the card if needed (for files dropped on the screen)
+  function ensureSd() {
+    if (!sdIn) {
+      sdOn = true;
+      try { localStorage.setItem('ep128web.sdOn', '1'); } catch (e) { }
+      applySd();
+    }
+    return sdIn;
+  }
+
+  async function addSdFiles(fileList, useRelativePath) {
+    if (!sdIn) { setMessage(T('Előbb tedd be az SD kártyát (Behelyezve)'), true); return; }
+    const entries = [];
+    for (const file of Array.from(fileList)) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const rel = (useRelativePath && file.webkitRelativePath) || file.name;
+      if (extOf(file.name) === 'zip') {
+        for (const z of await unzip(bytes)) entries.push({ path: z.path || z.name, bytes: z.bytes });
+      } else {
+        entries.push({ path: rel, bytes });
+      }
+    }
+    const failed = entries.filter((e) => !sdPutBytes(usbJoin(sdCwd, e.path), e.bytes)).map((e) => e.path);
+    if (failed.length)
+      setMessage(T('Nem sikerült (megtelt, vagy a név nem megengedett): ') + failed.join(', '), true);
+    else
+      setMessage(entries.length + T(' fájl az SD kártyára került'));
+    saveSd();
+    renderSd();
+  }
+
+  function renderSd() {
+    const grp = $('sd-group');
+    if (!grp) return;
+    grp.hidden = !(machine && machine.type === 1);
+    $('sd-on').checked = sdOn;
+    $('sd-size').value = String(sdSize);
+    const list = $('sd-list'), path = $('sd-path');
+    list.textContent = '';
+    path.textContent = '';
+    $('sd-note').textContent = (sdOn && tvcSlotOf(SLOT_NANOSD) < 0)
+      ? T('A NanoSD kártya nincs egyik portban sem (Bővítőportok).') : '';
+    if (!sdIn) {
+      $('sd-space').textContent = T('nincs behelyezve');
+      return;
+    }
+    const total = api.sdInfo(0), free = api.sdInfo(1);
+    $('sd-space').textContent = T('szabad: ') + fmtSize(free * 1024) + ' / ' + fmtSize(total * 1024);
+    const parts = sdCwd ? sdCwd.split('/') : [];
+    const link = (text, to) => {
+      const a = document.createElement('a');
+      a.textContent = text;
+      a.onclick = () => { sdCwd = to; renderSd(); };
+      path.appendChild(a);
+    };
+    link('SD:/', '');
+    parts.forEach((p, i) => { link(p + '/', parts.slice(0, i + 1).join('/')); });
+    let entries = JSON.parse(api.sdList(sdCwd) || 'null');
+    if (!entries) { sdCwd = ''; entries = JSON.parse(api.sdList('') || '[]'); }
+    entries.sort((a, b) => (b.d - a.d) || a.n.localeCompare(b.n));
+    const row = (name, title, cls, size, onOpen, actions) => {
+      const li = document.createElement('li');
+      const n = document.createElement('span');
+      n.className = 'n' + (cls ? ' ' + cls : '');
+      n.textContent = name;
+      if (title) n.title = title;
+      if (onOpen) n.onclick = onOpen;
+      li.appendChild(n);
+      const s = document.createElement('span');
+      s.className = 's';
+      s.textContent = size;
+      li.appendChild(s);
+      for (const [label, t, fn] of actions) {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.title = t;
+        b.onclick = fn;
+        li.appendChild(b);
+      }
+      list.appendChild(li);
+    };
+    if (sdCwd) row('..', '', 'dir', '', () => { sdCwd = parts.slice(0, -1).join('/'); renderSd(); }, []);
+    for (const e of entries) {
+      const p = usbJoin(sdCwd, e.n);
+      // the long name with the 8.3 name the TVC sees
+      const shown = e.a && e.a.toUpperCase() !== e.n.toUpperCase() ? e.n + '  (' + e.a + ')' : e.n;
+      const title = T('A TVC-n: ') + (e.a || e.n);
+      const del = ['✕', T('Törlés'), () => {
+        if (!confirm(T('Törlöd: ') + p + (e.d ? T(' (a mappa teljes tartalmával)') : '') + '?')) return;
+        api.sdDelete(p);
+        saveSd();
+        renderSd();
+      }];
+      if (e.d) {
+        row(shown + '/', title, 'dir', '', () => { sdCwd = p; renderSd(); }, [del]);
+      } else {
+        const runnable = extOf(e.n) === 'cas';
+        const run = () => runFromSd(sdCwd, e.a || e.n);
+        row(shown, title, runnable ? 'run' : '', fmtSize(e.s), runnable ? run : null, [
+          ...(runnable ? [['▶', T('Indítás az SD kártyáról (a NanoSD kártyán keresztül)'), run]] : []),
+          ['⬇', T('Letöltés'), () => {
+            try { M.FS.mkdir('/tmp'); } catch (err) { }
+            if (api.sdGet(p, '/tmp/sdfile') === 0) download(M.FS.readFile('/tmp/sdfile'), e.n);
+          }], del]);
+      }
+    }
+    if (!entries.length) row(T('(üres)'), '', '', '', null, []);
+  }
+
+  // starts a .cas program of the SD card: LOAD through the NanoSD card from
+  // that directory (name: the 8.3 name the TVC sees)
+  function runFromSd(dir, name) {
+    if (!machine || machine.type !== 1) return;
+    if (tvcSlotOf(SLOT_NANOSD) < 0) {
+      setMessage(T('Az SD kártyáról indításhoz tedd a NanoSD kártyát egy portba (Bővítőportok)'), true);
+      return;
+    }
+    const base = name.replace(/\.cas$/i, '');
+    if (tapeName) {
+      api.setTape('');
+      tapeName = '';
+      $('tape-name').textContent = T('nincs kazetta');
+    }
+    startAutostart('load "' + base + '"\n', null, false, tvcRedirectFor(SLOT_NANOSD), () => api.sdChdir(dir));
+    canvas.focus({ preventScroll: true });
+  }
+
+  // TVC with the NanoSD card (and no TVC256k++): the program and the files
+  // dropped with it go to the root of the SD card, LOAD runs through the card
+  function startProgramOnNanoSd(name) {
+    let base = name.replace(/\.cas$/i, '');
+    const files = lastStoredFiles.includes(name) ? lastStoredFiles.slice() : [name];
+    if (!ensureSd()) { setMessage(T('Az SD kártya nem tehető be'), true); return; }
+    if (!/^[A-Za-z0-9_\-]{1,8}$/.test(base)) {
+      // the Nano knows 8.3 names only: a copy with one
+      base = (sanitizeName(base).replace(/[^A-Za-z0-9_\-]/g, '') || 'program').slice(0, 8);
+      files.push(base + '.cas');
+      M.FS.writeFile('/files/' + base + '.cas', M.FS.readFile('/files/' + name));
+      listFiles();
+    }
+    const failed = files.filter((f) => !sdPutBytes(f, M.FS.readFile('/files/' + f)));
+    if (failed.length) setMessage(T('Nem fért az SD kártyára: ') + failed.join(', '), true);
+    saveSd();
+    renderSd();
+    startAutostart('load "' + base + '"\n', null, false, tvcRedirectFor(SLOT_NANOSD), () => api.sdChdir(''));
+  }
+
+  // data files onto the SD card's root
+  function putFilesOnSd(names) {
+    if (!ensureSd()) { setMessage(T('Az SD kártya nem tehető be'), true); return; }
+    const failed = names.filter((f) => !sdPutBytes(f, M.FS.readFile('/files/' + f)));
+    saveSd();
+    renderSd();
+    if (failed.length) setMessage(T('Nem fért az SD kártyára: ') + failed.join(', '), true);
+    else setMessage(T('Az SD kártyára került: ') + names.join(', '));
+  }
+
+  function clearSd() {
+    if (!sdIn) return;
+    if (!confirm(T('Törlöd az SD kártya teljes tartalmát?'))) return;
+    api.sdInsert(0);
+    sdIn = false;
+    sdSaved = [];
+    db.put('sdfiles', sdSaved);
+    sdCwd = '';
+    applySd();
+    saveSd();
+    setMessage(T('Az SD kártya üres'));
+  }
+
+  function setupSdUI() {
+    if (!$('sd-group')) return;
+    $('sd-on').onchange = () => {
+      sdOn = $('sd-on').checked;
+      try { localStorage.setItem('ep128web.sdOn', sdOn ? '1' : '0'); } catch (e) { }
+      if (!sdOn && sdIn) saveSd();
+      applySd();
+      setMessage(sdOn ? T('SD kártya behelyezve') : T('SD kártya kivéve (a tartalma megmarad)'));
+    };
+    $('sd-size').onchange = () => {
+      const size = Number($('sd-size').value);
+      if (sdIn) {
+        saveSd();
+        if (!confirm(F('Az SD kártya újraformázódik {0} MB-ra, a fájlok visszakerülnek rá. Mehet?', size))) {
+          $('sd-size').value = String(sdSize);
+          return;
+        }
+        api.sdInsert(0);
+        sdIn = false;
+      }
+      sdSize = size;
+      try { localStorage.setItem('ep128web.sdSize', String(sdSize)); } catch (e) { }
+      applySd();
+    };
+    $('sd-add').onclick = () => $('sd-file').click();
+    $('sd-clear').onclick = clearSd;
+    $('sd-add-dir').onclick = () => $('sd-folder').click();
+    $('sd-file').onchange = (e) => { addSdFiles(e.target.files, false); e.target.value = ''; };
+    $('sd-folder').onchange = (e) => { addSdFiles(e.target.files, true); e.target.value = ''; };
+    $('sd-mkdir').onclick = () => {
+      if (!sdIn) return;
+      const name = prompt(T('Az új mappa neve:'));
+      if (!name) return;
+      if (api.sdMkdir(usbJoin(sdCwd, name.replace(/[\\/]/g, '_'))) !== 0) setMessage(T('Nem sikerült a mappát létrehozni'), true);
+      saveSd();
+      renderSd();
+    };
+    const box = $('sd-group');
+    box.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); $('sd-browser').classList.add('drag'); });
+    box.addEventListener('dragleave', () => $('sd-browser').classList.remove('drag'));
+    box.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      $('sd-browser').classList.remove('drag');
+      if (e.dataTransfer && e.dataTransfer.files.length) addSdFiles(e.dataTransfer.files, false);
+    });
+    // what TVC programs write to the SD card (and the card's settings) is saved too
+    setInterval(() => {
+      if (!ready || !api || !api.sdInfo) return;
+      saveNanoParams();
+      if (sdIn && api.sdInfo(2) !== sdSavedWrites) {
+        saveSd();
+        if (!$('sd-group').hidden) renderSd();
+      }
+    }, 5000);
+  }
+
   function setMessage(text, isError) {
     statusMsg.textContent = text || '';
     statusMsg.style.color = isError ? '' : 'var(--muted)';
@@ -1019,6 +1330,7 @@
     else $('cart-group').after(fx);
     fx.classList.toggle('in-ports', tvc);
     renderUsb();
+    renderSd();
   }
 
   // a TVC without a system cartridge (the last one used)
@@ -1542,7 +1854,12 @@ registerProcessor('ep-output', EPOutput);
       if (v > 300 && v === a.last) a.stable++;
       else a.stable = 0;
       a.last = v;
-      if (a.bootWait ? phaseTime > a.bootWait : (a.stable >= 25 || phaseTime > 15e6)) {
+      // the NanoSD card shows its banner for 2 s at boot (a stable screen
+      // too): with it, wait for BASIC's "ok"
+      const nano = machine.type === 1 && tvcSlotOf(SLOT_NANOSD) >= 0;
+      const basicUp = nano ? (phaseTime > 1e6 && atPrompt()) || phaseTime > 30e6
+                           : (a.stable >= 25 || phaseTime > 15e6);
+      if (a.bootWait ? phaseTime > a.bootWait : basicUp) {
         a.phase = 'type';
         if (a.prepare) a.prepare();
         applyTvcRedirect(a);
@@ -2657,6 +2974,16 @@ registerProcessor('ep-output', EPOutput);
       startProgramOnCard(name);
       return;
     }
+    if (machine.type === 1 && nanoSdPreferred() && extOf(name) === 'cas') {
+      tvcForceAutorun('/files/' + name);
+      if (tapeName) {
+        api.setTape('');
+        tapeName = '';
+        $('tape-name').textContent = T('nincs kazetta');
+      }
+      startProgramOnNanoSd(name);
+      return;
+    }
     if (machine.type === 1) {
       if (tvcSlotOf(SLOT_FILEIO) < 0) {
         setMessage(T('A .cas programokhoz tegyél FILE: kártyát egy bővítőportba (Bővítőportok)'), true);
@@ -2868,6 +3195,8 @@ registerProcessor('ep-output', EPOutput);
       // TVC256k++: data files (no .cas program among them) go to the card's
       // pendrive for the programs that open them, nothing is loaded
       putFilesOnCard(lastStoredFiles);
+    } else if (machine.type === 1 && nanoSdPreferred() && !startable.some(isStartable)) {
+      putFilesOnSd(lastStoredFiles);      // the same with the NanoSD card's SD card
     } else if (startable.length === 1) {
       startProgram(startable[0]);
     } else if (startable.length > 1) {
@@ -4141,6 +4470,7 @@ registerProcessor('ep-output', EPOutput);
     };
     setupMouse();
     setupUsbUI();
+    setupSdUI();
     $('btn-snap').onclick = () => {
       if (!ready) return;
       check(api.saveSnapshot('/tmp/save.ep128s'), T('mentés'));
@@ -6891,7 +7221,7 @@ registerProcessor('ep-output', EPOutput);
   const pageStarted = async () => { while (!api || !machine) await sleepMs(50); };
   // the TVC cards by name for ep.machine(id, {slots})
   const EP_CARD_IDS = { empty: SLOT_EMPTY, vtdos: SLOT_VTDOS, upm: SLOT_UPM, file: SLOT_FILEIO,
-                        gamecard: 3, soundcard: 4, card256: SLOT_CARD256 };
+                        gamecard: 3, soundcard: 4, card256: SLOT_CARD256, nanosd: SLOT_NANOSD };
   let monCapture = null;                // ep.monitor(): the output of a command
 
   // --- deterministic keys for programs: pressed / released at once (not
@@ -8284,6 +8614,15 @@ ep.log('CTRL+ESC megnyomva');`)
       setMouse: c('ep_set_mouse', null, ['number', 'number', 'number', 'number']),
       cardMouse: c('ep_card_mouse', null, ['number']),
       cardFw: c('ep_card_fw', 'number', ['number']),
+      sdInsert: c('ep_sd_insert', 'number', ['number']),
+      sdList: c('ep_sd_list', 'string', ['string']),
+      sdPut: c('ep_sd_put', 'number', ['string', 'string']),
+      sdGet: c('ep_sd_get', 'number', ['string', 'string']),
+      sdMkdir: c('ep_sd_mkdir', 'number', ['string']),
+      sdDelete: c('ep_sd_delete', 'number', ['string']),
+      sdChdir: c('ep_sd_chdir', 'number', ['string']),
+      sdInfo: c('ep_sd_info', 'number', ['number']),
+      nanosdParam: c('ep_nanosd_param', 'number', ['number', 'number']),
       tapeCue: c('ep_tape_cue', 'number', ['number']),
       demoRecord: c('ep_demo_record', 'number', ['number', 'string']),
       demoState: c('ep_demo_state', 'number', []),
@@ -8382,6 +8721,7 @@ ep.log('CTRL+ESC megnyomva');`)
         if (key === 'pkg') installROMPackage(value);
         else if (key.startsWith('rom:')) M.FS.writeFile('/roms/' + key.slice(4), value);
         else if (key === 'usbfiles') usbSaved = value;
+        else if (key === 'sdfiles') sdSaved = value;
         else if (key.startsWith('disk:')) restoreDisk(key, value);
         else if (key.startsWith('qs:') && +key.slice(3) < QS_SLOTS) quickSaves[+key.slice(3)] = value;
         else if (key === 'resume') resumeState = value;
@@ -8422,6 +8762,7 @@ ep.log('CTRL+ESC megnyomva');`)
     if (machine.type === 1 && !machine.cart) userTvc = machine.id;
     setupUI();
     listFiles();
+    loadNanoParams();                 // the NanoSD card's settings, before it starts
     applyMachine(machine);
     if (audioCtx && audioCtx.state !== 'running') $('click-hint').hidden = false;
     else resumeAudio();
@@ -8436,7 +8777,7 @@ ep.log('CTRL+ESC megnyomva');`)
   // localStorage ep128web.* and optionally the stored disks, quick saves,
   // pendrive and card flash (not the ROMs); byte arrays as base64
   const CFG_FORMAT = 'ep128web-settings';
-  const cfgDataKey = (k) => /^(disk:|qs:)/.test(k) || k === 'usbfiles' || k === 'cardflash';
+  const cfgDataKey = (k) => /^(disk:|qs:)/.test(k) || k === 'usbfiles' || k === 'sdfiles' || k === 'cardflash';
   function b64(u8) {
     let s = '';
     for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
