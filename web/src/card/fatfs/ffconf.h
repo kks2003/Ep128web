@@ -178,7 +178,7 @@
 / Drive/Volume Configurations
 /---------------------------------------------------------------------------*/
 
-#define FF_VOLUMES		2
+#define FF_VOLUMES		3	/* Ep128web: 3 ("2:" is the TVC-NanoSD card's SD card) */
 /* Number of volumes (logical drives) to be used. (1-10) */
 
 

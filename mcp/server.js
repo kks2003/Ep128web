@@ -165,7 +165,7 @@ server.registerTool('set_machine', {
   description: 'Switches to a machine with a cold start and waits for the BASIC prompt.',
   inputSchema: {
     id: z.string().describe('machine id (list_machines)'),
-    slots: z.array(z.enum(['empty', 'file', 'vtdos', 'upm', 'gamecard', 'soundcard', 'card256'])).length(4).optional()
+    slots: z.array(z.enum(['empty', 'file', 'vtdos', 'upm', 'gamecard', 'soundcard', 'card256', 'nanosd'])).length(4).optional()
       .describe('TVC expansion ports 0-3'),
     fx: z.boolean().optional().describe('the 2dfx graphics card'),
     card256fw: z.enum(['0.24', '0.25']).optional().describe('the TVC256k++ card\'s firmware version (default: the one set on the page, 0.25)')

@@ -404,7 +404,7 @@ A munkafolyamat nem írja felül a listát, ha egyetlen oldal sem tölthető le,
 
 A „TVC bővítőportok” panelen mind a négy porthoz (0–3) kiválasztható a kártya:
 üres, VT-DOS (lemez), UPM (lemez), FILE: (`.cas` fájlok), GameCard (SN76489 +
-3–4. joystick), Multichip Soundcard (SN76489, SAA1099, OPL2) vagy TVC256k++. Egy
+3–4. joystick), Multichip Soundcard (SN76489, SAA1099, OPL2), TVC256k++ vagy NanoSD. Egy
 kártya csak egy portban lehet, és lemezkártya (VT-DOS vagy UPM) csak egy. Az UPM
 kártya ugyanaz a floppy-csatoló, mint a VT-DOS, az UPM-kompatibilis ROM-mal
 (`tvcupm_d.rom`): BASIC alól `LOAD "NÉV"`-vel tölt UPM formátumú lemezről. A választás csak a **Portok betöltése, újraindítás** gombbal lép
@@ -484,6 +484,30 @@ a beállítást a böngésző megjegyzi.
 A ROM-ok szerzői jogi okokból nincsenek a repóban. Ha a saját szervereden
 `roms/ep128emu_roms-2.0.11.bin` néven elérhető a csomag, az oldal automatikusan
 betölti.
+
+### NanoSD kártya
+
+A [TVC-NanoSD](https://github.com/dikdom/TVC-NanoSD) microSD-kártyakezelő bármelyik
+bővítőportba tehető. A kártya ROM-ja (v0.33, BSD-3, a repóban) változatlanul fut; az
+SD-kártyát kezelő Arduino Nanót az emulátor helyettesíti, a Nano firmware-ének (v0.32)
+parancsait követve. A kazettás `LOAD` és `SAVE` az SD-kártyára megy, ha az alapértelmezett
+tároló a NanoSD (bootoláskor a legnagyobb sorszámú tároló-kártya állítja magára). A kártya
+parancssora `EXT 0` (`DIR`, `CD`, `PWD`, `MKDIR`, `RMDIR`, `DEL`, `VER`, `X`: kilépés). Indításkor
+2 másodpercig ESC-re a kártya fájlválasztó menüje jön elő (onnan Enterrel indul egy program);
+a menüben beállított „Enter menu on boot” és a rendezés megmarad a böngészőben.
+
+Az **SD kártya** a Lemezek fülön kezelhető, mint a pendrive: behelyezés, méret (32–512 MB,
+FAT), fájlok fel és le (a ZIP kibontva), mappák, törlés, indítás ▶-lel. A tartalma a
+böngészőben marad. A TVC – mint a valódi kártyán az Arduino SD-könyvtára – csak a rövid,
+8.3-as neveket látja; a hosszú nevű fájlok mellett a panel ezt is mutatja. Ha a NanoSD
+bent van (és nincs TVC256k++, és az alapértelmezett tároló nem a FILE:), a képre húzott
+`.cas` programok és a velük húzott fájlok az SD-kártyára kerülnek, és a `LOAD` a kártyán
+keresztül fut (a hosszú nevű programból 8.3-as nevű másolat készül); a program nélkül
+húzott adatfájlok csak felkerülnek.
+
+Ahogy a valódi kártyán: a mentés (`SAVE`) egy már létező fájl végéhez ír (a Nano az SD
+könyvtár `FILE_WRITE` módjával nyit, és a ROM nem töröl előtte), ezért újramentés előtt
+töröld a régit (`EXT 0`, `DEL név.cas`, vagy a panelen).
 
 ### TVC256k++ kártya (kísérleti)
 
