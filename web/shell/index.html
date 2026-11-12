@@ -308,6 +308,27 @@
         <input type="file" id="usb-folder" webkitdirectory multiple hidden>
         <span class="name" id="usb-note"></span>
       </div>
+      <div class="group" id="sd-group" hidden>
+        <h3>SD kártya (NanoSD)</h3>
+        <label title="Az SD kártya a NanoSD kártya foglalatában (a NanoSD a Bővítők fülön tehető egy portba)">
+          <input type="checkbox" id="sd-on"> Behelyezve</label>
+        <label class="slot">Méret <select id="sd-size">
+          <option value="32">32 MB</option><option value="64">64 MB</option>
+          <option value="128">128 MB</option><option value="256">256 MB</option><option value="512">512 MB</option></select></label>
+        <span class="name" id="sd-space"></span>
+        <div id="sd-browser">
+          <div id="sd-path"></div>
+          <ul id="sd-list"></ul>
+          <div id="sd-drop">Húzd ide a fájlokat (a TVC a rövid, 8.3-as neveket látja; a ZIP kibontva kerül fel)</div>
+        </div>
+        <button id="sd-add">Fájlok hozzáadása…</button>
+        <button id="sd-add-dir">Mappa hozzáadása…</button>
+        <button id="sd-mkdir">Új mappa</button>
+        <button id="sd-clear" title="Az SD kártya teljes tartalmának törlése">SD kártya törlése</button>
+        <input type="file" id="sd-file" multiple hidden>
+        <input type="file" id="sd-folder" webkitdirectory multiple hidden>
+        <span class="name" id="sd-note"></span>
+      </div>
     </div>
     <div class="tab" id="tab-ext">
       <div class="group" id="tvc-cards-group">
@@ -317,7 +338,7 @@
         <label class="slot">Port 2 <select id="tvc-slot2"></select></label>
         <label class="slot">Port 3 <select id="tvc-slot3"></select></label>
         <label class="slot" title="Melyik kártya legyen az alapértelmezett tároló (LOAD/SAVE, a parancssora: VT-DOS EXT 2, TVC256k++ EXT + port). Automatikus: a legnagyobb sorszámú portban lévő, mint a valódi gépen.">Alapértelmezett tároló <select id="tvc-defdev">
-          <option value="-1">automatikus (a legnagyobb port)</option><option value="1">VT-DOS</option><option value="2">FILE:</option><option value="5">TVC256k++</option></select></label>
+          <option value="-1">automatikus (a legnagyobb port)</option><option value="1">VT-DOS</option><option value="2">FILE:</option><option value="5">TVC256k++</option><option value="7">NanoSD</option></select></label>
         <span class="name" id="tvc-defdev-note"></span>
         <label class="slot" title="A TVC256k++ kártya firmware-verziója. A 0.25 javítja a 0.24 hibáit (fájl vége, hozzáfűzés, írás a PSRAM meghajtóra, görgetés, SID reset…); a régebbi programok kipróbálásához a 0.24 is választható. Váltáskor a gép újraindul.">TVC256k++ firmware <select id="card256-fw">
           <option value="25">0.25 (legújabb)</option><option value="24">0.24</option></select></label>

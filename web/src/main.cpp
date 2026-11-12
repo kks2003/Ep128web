@@ -21,6 +21,7 @@
 #include "tvc64vm.hpp"
 #include "tvc_soundcards.hpp"
 #include "tvc256kpp.hpp"
+#include "tvc_nanosd.hpp"
 #include "tvc256kpp_fs.hpp"
 #include "card/sprite.h"
 #include "twodfx_bridge.hpp"
@@ -1033,7 +1034,7 @@ EMSCRIPTEN_KEEPALIVE void ep_set_tvc_slot(int slot, int card)
 {
   if (slot < 0 || slot > 3)
     return;
-  if (card < TVC64::TVC64VM::SLOT_EMPTY || card > TVC64::TVC64VM::SLOT_CARD256)
+  if (card < TVC64::TVC64VM::SLOT_EMPTY || card > TVC64::TVC64VM::SLOT_NANOSD || card == 6)
     card = TVC64::TVC64VM::SLOT_EMPTY;
   if (card != TVC64::TVC64VM::SLOT_EMPTY) {
     for (int i = 0; i < 4; i++) {
@@ -1190,6 +1191,93 @@ EMSCRIPTEN_KEEPALIVE int ep_usb_delete(const char *path)
 }
 
 extern uint32_t card_usb_writes;        // card/diskio-emu.c
+
+// TVC-NanoSD card (tvc_nanosd.cpp): its SD card, inserted with sizeMB
+// megabytes (empty, formatted FAT) or removed (0); returns 0 on success
+EMSCRIPTEN_KEEPALIVE int ep_sd_insert(int sizeMB)
+{
+  if (sizeMB <= 0) {
+    TVCNanoSD::sdRemove();
+    return 0;
+  }
+  if (!TVCNanoSD::sdInsert(uint32_t(sizeMB))) {
+    lastError = "cannot create the SD card";
+    return -1;
+  }
+  return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *ep_sd_list(const char *path)
+{
+  static std::string s;
+  s = TVCNanoSD::sdList(path);
+  return s.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE int ep_sd_put(const char *path, const char *src)
+{
+  std::vector<unsigned char> buf;
+  if (!readVfsFile(src, buf)) {
+    lastError = std::string("cannot open ") + src;
+    return -1;
+  }
+  if (!TVCNanoSD::sdPutFile(path, buf.empty() ? (const uint8_t *) "" : &buf[0], buf.size())) {
+    lastError = "the SD card is full, or the name is not valid";
+    return -1;
+  }
+  return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int ep_sd_get(const char *path, const char *dst)
+{
+  std::vector<uint8_t> data;
+  if (!TVCNanoSD::sdGetFile(path, data)) {
+    lastError = std::string("cannot read ") + path;
+    return -1;
+  }
+  std::FILE *f = std::fopen(dst, "wb");
+  if (!f)
+    return -1;
+  bool ok = data.empty() || std::fwrite(&data[0], 1, data.size(), f) == data.size();
+  std::fclose(f);
+  return ok ? 0 : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int ep_sd_mkdir(const char *path)
+{
+  return TVCNanoSD::sdMkdirs(path) ? 0 : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int ep_sd_delete(const char *path)
+{
+  return TVCNanoSD::sdDelete(path) ? 0 : -1;
+}
+
+// the Nano's current directory (to start a program from it)
+EMSCRIPTEN_KEEPALIVE int ep_sd_chdir(const char *path)
+{
+  return TVCNanoSD::setCurrentDir(path) ? 0 : -1;
+}
+
+// 0: size in kB, 1: free space in kB, 2: number of sector writes so far
+EMSCRIPTEN_KEEPALIVE double ep_sd_info(int which)
+{
+  if (which == 2)
+    return double(TVCNanoSD::sdWrites());
+  uint32_t total = 0, freeKB = 0;
+  if (!TVCNanoSD::sdSpace(total, freeKB))
+    return -1;
+  return which == 0 ? double(total) : double(freeKB);
+}
+
+// the Nano's two EEPROM settings (0: menu at boot, 1: sort order);
+// value < 0: only reads it
+EMSCRIPTEN_KEEPALIVE int ep_nanosd_param(int n, int value)
+{
+  if (value >= 0)
+    TVCNanoSD::setParam(n, uint8_t(value));
+  return TVCNanoSD::getParam(n);
+}
 
 // the overlay graphics of the TVC256k++ card (card/tvc-graphics.c,
 // card/tvc-io-regs.c)

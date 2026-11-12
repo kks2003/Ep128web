@@ -1,6 +1,7 @@
 /* FatFS disk I/O for the emulated TVC256k++ card, in place of the firmware's
  * lib/fatfs/source/diskio_usb.c. Physical drive 0 is the USB pendrive (an
- * image in memory, see tvc256kpp_fs.cpp), drive 1 the mounted .dsk image;
+ * image in memory, see tvc256kpp_fs.cpp), drive 1 the mounted .dsk image,
+ * drive 2 the TVC-NanoSD card's SD card (an image in memory, tvc_nanosd.cpp);
  * the DSK part is the firmware's code (MIT, rppicomidi / Vass Sandor).
  * Part of Ep128web, GPL-2.0-or-later. */
 #include "card_shim.h"
@@ -8,6 +9,7 @@
 
 #define DRIVE_USB 0
 #define DRIVE_DSK 1
+#define DRIVE_SD 2      /* the TVC-NanoSD card's SD card (tvc_nanosd.cpp) */
 #define DSK_SECTOR_SIZE 512
 
 extern uint8_t dsk_file_type;
@@ -19,6 +21,10 @@ extern lfs_t *dsk_lfs_fs;
 uint8_t *card_usb_image = NULL;
 uint32_t card_usb_sectors = 0;
 uint32_t card_usb_writes = 0;       /* counts sector writes (the page saves the files) */
+/* the TVC-NanoSD card's SD card, the same way */
+uint8_t *card_sd_image = NULL;
+uint32_t card_sd_sectors = 0;
+uint32_t card_sd_writes = 0;
 
 DSTATUS disk_status(BYTE pdrv)
 {
@@ -26,6 +32,8 @@ DSTATUS disk_status(BYTE pdrv)
         return dsk_file_type ? 0 : STA_NOINIT | STA_NODISK;
     if (pdrv == DRIVE_USB)
         return card_usb_image ? 0 : STA_NOINIT | STA_NODISK;
+    if (pdrv == DRIVE_SD)
+        return card_sd_image ? 0 : STA_NOINIT | STA_NODISK;
     return STA_NOINIT | STA_NODISK;
 }
 
@@ -35,6 +43,8 @@ DSTATUS disk_initialize(BYTE pdrv)
         return dsk_file_type ? 0 : STA_NODISK;
     if (pdrv == DRIVE_USB)
         return card_usb_image ? 0 : STA_NOINIT | STA_NODISK;
+    if (pdrv == DRIVE_SD)
+        return card_sd_image ? 0 : STA_NOINIT | STA_NODISK;
     return STA_NOINIT;
 }
 
@@ -69,6 +79,14 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
         if (sector + count > card_usb_sectors)
             return RES_PARERR;
         memcpy(buff, card_usb_image + (size_t) sector * 512, (size_t) count * 512);
+        return RES_OK;
+    }
+    if (pdrv == DRIVE_SD) {
+        if (!card_sd_image)
+            return RES_NOTRDY;
+        if (sector + count > card_sd_sectors)
+            return RES_PARERR;
+        memcpy(buff, card_sd_image + (size_t) sector * 512, (size_t) count * 512);
         return RES_OK;
     }
     return RES_PARERR;
@@ -106,6 +124,15 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
             return RES_PARERR;
         memcpy(card_usb_image + (size_t) sector * 512, buff, (size_t) count * 512);
         card_usb_writes++;
+        return RES_OK;
+    }
+    if (pdrv == DRIVE_SD) {
+        if (!card_sd_image)
+            return RES_NOTRDY;
+        if (sector + count > card_sd_sectors)
+            return RES_PARERR;
+        memcpy(card_sd_image + (size_t) sector * 512, buff, (size_t) count * 512);
+        card_sd_writes++;
         return RES_OK;
     }
     return RES_PARERR;
@@ -150,6 +177,25 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff)
             return RES_OK;
         case GET_SECTOR_COUNT:
             *(LBA_t *) buff = card_usb_sectors;
+            return RES_OK;
+        case GET_SECTOR_SIZE:
+            *(WORD *) buff = 512;
+            return RES_OK;
+        case GET_BLOCK_SIZE:
+            *(DWORD *) buff = 1;
+            return RES_OK;
+        default:
+            return RES_PARERR;
+        }
+    }
+    if (pdrv == DRIVE_SD) {
+        if (!card_sd_image)
+            return RES_NOTRDY;
+        switch (cmd) {
+        case CTRL_SYNC:
+            return RES_OK;
+        case GET_SECTOR_COUNT:
+            *(LBA_t *) buff = card_sd_sectors;
             return RES_OK;
         case GET_SECTOR_SIZE:
             *(WORD *) buff = 512;

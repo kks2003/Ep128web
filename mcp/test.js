@@ -118,6 +118,14 @@ try {
   const fwst = JSON.parse(await call('set_machine', { id: 'tvc64-12', slots: ['vtdos', 'file', 'card256', 'gamecard'], card256fw: '0.24' }));
   check(fwst.state.card256fw === '0.24', 'TVC256k++ firmware 0.24');
   await call('set_machine', { id: 'tvc64-12', slots: ['file', 'vtdos', 'gamecard', 'empty'], card256fw: '0.25' });
+  // the NanoSD card: SAVE to its SD card, LOAD it back, its command line (EXT 0)
+  await call('set_machine', { id: 'tvc64-12', slots: ['vtdos', 'file', 'nanosd', 'gamecard'] });
+  await call('type_text', { text: '10 PRINT 42\nsave "sdtest"\nnew\nload "sdtest"\nlist\n', settle_frames: 100 });
+  check(/Found: SDTEST/.test(await call('screen_text')), 'NanoSD: SAVE and LOAD on the SD card');
+  await call('type_text', { text: 'ext 0\ndir\n', settle_frames: 100 });
+  check(/SDTEST\.CAS/.test(await call('screen_text')), 'NanoSD: DIR in its command line');
+  await call('type_text', { text: 'x\n', settle_frames: 30 });
+  await call('set_machine', { id: 'tvc64-12', slots: ['file', 'vtdos', 'gamecard', 'empty'] });
   // a local path in eval_js (ep.loadSym / ep.load fetch it through the server)
   check(await call('eval_js', { code: 'return await ep.loadSym(' + JSON.stringify(symFile) + ', { prefix: "L_" });' }) === '3', 'loadSym with a local path');
 } finally {

@@ -70,6 +70,8 @@ SOURCES="
   web/src/tvc256kpp.cpp
   web/src/tvc256kpp_rom.cpp
   web/src/tvc256kpp_fs.cpp
+  web/src/tvc_nanosd.cpp
+  web/src/tvc_nanosd_rom.cpp
   web/src/card/tvc-lfs.c
   web/src/card/tvc-graphics.c
   web/src/card/tvc-routines.c
