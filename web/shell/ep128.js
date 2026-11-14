@@ -1868,13 +1868,21 @@ registerProcessor('ep-output', EPOutput);
         a.events = machine.type === 1
           ? [[-1, 0, 2000000]].concat(buildKeyEvents('\n' + a.command))
           : buildKeyEvents(a.command);
+        a.downsLeft = a.events.filter((e) => e[0] >= 0 && e[1]).length;
       }
       return 20000;
     }
     if (a.events.length) {
       const [code, down, delay] = a.events.shift();
-      if (code >= 0) api.setKey(code, down);
-      applyTvcRedirect(a);
+      // TVC: the redirect is kept until the last key goes down (the Enter
+      // that starts the command), not after: a program loaded quickly (e.g.
+      // from the TVC256k++ card) can already be running and have put its
+      // own code over $0B05 / $0B0D while the Enter is still held
+      if (a.downsLeft === undefined || a.downsLeft > 0) applyTvcRedirect(a);
+      if (code >= 0) {
+        api.setKey(code, down);
+        if (down && a.downsLeft) a.downsLeft--;
+      }
       return delay;
     }
     if (a.phase === 'logo') {
@@ -1882,7 +1890,7 @@ registerProcessor('ep-output', EPOutput);
       a.phaseT = a.t;
       return 20000;
     }
-    applyTvcRedirect(a);
+    if (a.downsLeft === undefined) applyTvcRedirect(a);
     autoTask = null;
     setMessage('');
     if (a.onTyped) a.onTyped();
