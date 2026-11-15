@@ -830,6 +830,8 @@ namespace TVCNanoSD {
     UINT n = 0;
     bool ok = (f_write(&f, data, UINT(size), &n) == FR_OK && n == size);
     ok = (f_close(&f) == FR_OK) && ok;
+    if (!ok)
+      f_unlink(path.c_str());           // no partial file (the card is full)
     return ok;
   }
 

@@ -640,6 +640,16 @@
     updateMouseButton();
   }
 
+  // pendrive / SD lists: directories, then the .cas programs, then the rest,
+  // each by name
+  const isCasName = (n) => extOf(n) === 'cas';
+  function casFirst(a, b) {
+    return (b.d - a.d) || (isCasName(b.n) - isCasName(a.n)) || a.n.localeCompare(b.n);
+  }
+  // the order files are written to a card: the .cas programs first, so that
+  // they come first in the TVC's directory listing too
+  const casFirstNames = (names) => names.slice().sort((a, b) => isCasName(b) - isCasName(a));
+
   function usbJoin(dir, name) { return dir ? dir + '/' + name : name; }
 
   // every file and directory of the pendrive, depth first
@@ -667,7 +677,7 @@
       if (e.d) api.usbMkdir(e.p);
       else if (!usbPutBytes(e.p, e.b)) failed.push(e.p);
     }
-    if (failed.length) setMessage(T('Nem fért a pendrive-ra: ') + failed.join(', '), true);
+    if (failed.length) setMessage(fullWarning(false, failed), true);
   }
 
   function usbPutBytes(path, bytes) {
@@ -735,7 +745,7 @@
     parts.forEach((p, i) => { link(p + '/', parts.slice(0, i + 1).join('/')); });
     let entries = JSON.parse(api.usbList(usbCwd) || 'null');
     if (!entries) { usbCwd = ''; entries = JSON.parse(api.usbList('') || '[]'); }
-    entries.sort((a, b) => (b.d - a.d) || a.n.localeCompare(b.n));
+    entries.sort(casFirst);
     const row = (name, cls, size, onOpen, actions) => {
       const li = document.createElement('li');
       const n = document.createElement('span');
@@ -948,7 +958,7 @@
       if (e.d) api.sdMkdir(e.p);
       else if (!sdPutBytes(e.p, e.b)) failed.push(e.p);
     }
-    if (failed.length) setMessage(T('Nem fért az SD kártyára: ') + failed.join(', '), true);
+    if (failed.length) setMessage(fullWarning(true, failed), true);
   }
 
   function sdPutBytes(path, bytes) {
@@ -1018,7 +1028,7 @@
     parts.forEach((p, i) => { link(p + '/', parts.slice(0, i + 1).join('/')); });
     let entries = JSON.parse(api.sdList(sdCwd) || 'null');
     if (!entries) { sdCwd = ''; entries = JSON.parse(api.sdList('') || '[]'); }
-    entries.sort((a, b) => (b.d - a.d) || a.n.localeCompare(b.n));
+    entries.sort(casFirst);
     const row = (name, title, cls, size, onOpen, actions) => {
       const li = document.createElement('li');
       const n = document.createElement('span');
@@ -1090,19 +1100,27 @@
   // dropped with it go to the root of the SD card, LOAD runs through the card
   function startProgramOnNanoSd(name) {
     let base = name.replace(/\.cas$/i, '');
-    const files = lastStoredFiles.includes(name) ? lastStoredFiles.slice() : [name];
+    const files = lastStoredFiles.includes(name) ? casFirstNames(lastStoredFiles) : [name];
     if (!ensureSd()) { setMessage(T('Az SD kártya nem tehető be'), true); return; }
     if (!/^[A-Za-z0-9_\-]{1,8}$/.test(base)) {
       // the Nano knows 8.3 names only: a copy with one
       base = (sanitizeName(base).replace(/[^A-Za-z0-9_\-]/g, '') || 'program').slice(0, 8);
-      files.push(base + '.cas');
+      files.unshift(base + '.cas');
       M.FS.writeFile('/files/' + base + '.cas', M.FS.readFile('/files/' + name));
       listFiles();
     }
     const failed = files.filter((f) => !sdPutBytes(f, M.FS.readFile('/files/' + f)));
-    if (failed.length) setMessage(T('Nem fért az SD kártyára: ') + failed.join(', '), true);
     saveSd();
     renderSd();
+    if (failed.includes(name) || failed.includes(base + '.cas')) {
+      setMessage(fullWarning(true, failed), true);
+      return;
+    }
+    if (failed.length) {
+      startAutostart('load "' + base + '"\n', () => setMessage(fullWarning(true, failed), true), false,
+                     tvcRedirectFor(SLOT_NANOSD), () => api.sdChdir(''));
+      return;
+    }
     startAutostart('load "' + base + '"\n', null, false, tvcRedirectFor(SLOT_NANOSD), () => api.sdChdir(''));
   }
 
@@ -1112,7 +1130,7 @@
     const failed = names.filter((f) => !sdPutBytes(f, M.FS.readFile('/files/' + f)));
     saveSd();
     renderSd();
-    if (failed.length) setMessage(T('Nem fért az SD kártyára: ') + failed.join(', '), true);
+    if (failed.length) setMessage(fullWarning(true, failed), true);
     else setMessage(T('Az SD kártyára került: ') + names.join(', '));
   }
 
@@ -2818,8 +2836,19 @@ registerProcessor('ep-output', EPOutput);
     const failed = names.filter((f) => !usbPutBytes(f, M.FS.readFile('/files/' + f)));
     saveUsb();
     renderUsb();
-    if (failed.length) setMessage(T('Nem fért a pendrive-ra: ') + failed.join(', '), true);
+    if (failed.length) setMessage(fullWarning(false, failed), true);
     else setMessage(T('A TVC256k++ pendrive-jára került: ') + names.join(', '));
+  }
+
+  // the warning when the pendrive (or the NanoSD card's SD card) is full:
+  // what did not fit, the space, what to do
+  function fullWarning(sd, failed) {
+    const info = sd ? api.sdInfo : api.usbInfo;
+    const free = info(1), total = info(0);
+    const names = failed.slice(0, 4).join(', ') + (failed.length > 4 ? F(' és még {0}', failed.length - 4) : '');
+    return F(sd ? 'Megtelt az SD kártya (szabad: {0} / {1}), nem fért rá: {2}. Törölj róla fájlokat, vagy válassz nagyobb méretet (Lemezek fül, SD kártya).'
+                : 'Megtelt a pendrive (szabad: {0} / {1}), nem fért rá: {2}. Törölj róla fájlokat, vagy válassz nagyobb méretet (Lemezek fül, USB pendrive).',
+             fmtSize(Math.max(0, free) * 1024), fmtSize(Math.max(0, total) * 1024), names);
   }
 
   // the files of the last drop (in /files), copied to the TVC256k++ card's
@@ -2831,10 +2860,10 @@ registerProcessor('ep-output', EPOutput);
   // sees the card (its drives, functions, graphics) like on the real machine
   function startProgramOnCard(name) {
     let base = name.replace(/\.cas$/i, '');
-    let files = lastStoredFiles.includes(name) ? lastStoredFiles.slice() : [name];
+    let files = lastStoredFiles.includes(name) ? casFirstNames(lastStoredFiles) : [name];
     if (!isTypable(base, 1)) {
       base = sanitizeName(base).replace(/\./g, '-') || 'program';
-      files.push(base + '.cas');
+      files.unshift(base + '.cas');
       M.FS.writeFile('/files/' + base + '.cas', M.FS.readFile('/files/' + name));
       listFiles();
     }
@@ -2847,10 +2876,17 @@ registerProcessor('ep-output', EPOutput);
     }
     if (usbPlugged) {
       const failed = files.filter((f) => !usbPutBytes(f, M.FS.readFile('/files/' + f)));
-      if (failed.length) setMessage(T('Nem fért a pendrive-ra: ') + failed.join(', '), true);
       saveUsb();
       renderUsb();
-      startAutostart('load "' + base + '"\n', null, false, tvcRedirectFor(SLOT_CARD256), () => api.cardSelectDrive(0));
+      if (failed.includes(name) || failed.includes(base + '.cas')) {
+        // without the program itself LOAD would find an old copy, or nothing
+        setMessage(fullWarning(false, failed), true);
+        return;
+      }
+      // the warning stays after the start (the autostart's messages would hide it)
+      startAutostart('load "' + base + '"\n', failed.length ? () => setMessage(fullWarning(false, failed), true) : null,
+                     false, tvcRedirectFor(SLOT_CARD256), () => api.cardSelectDrive(0));
+      if (failed.length) setMessage(fullWarning(false, failed), true);
       return;
     }
     const prepare = () => {
