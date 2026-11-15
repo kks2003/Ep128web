@@ -650,6 +650,14 @@
   // they come first in the TVC's directory listing too
   const casFirstNames = (names) => names.slice().sort((a, b) => isCasName(b) - isCasName(a));
 
+  // the number of files on a card, in every directory (list: api.usbList /
+  // api.sdList; only the directory entries are read)
+  function countFiles(list, dir) {
+    let n = 0;
+    for (const e of JSON.parse(list(dir) || 'null') || []) n += e.d ? countFiles(list, usbJoin(dir, e.n)) : 1;
+    return n;
+  }
+
   function usbJoin(dir, name) { return dir ? dir + '/' + name : name; }
 
   // every file and directory of the pendrive, depth first
@@ -732,7 +740,8 @@
       return;
     }
     const total = api.usbInfo(0), free = api.usbInfo(1);
-    $('usb-space').textContent = T('szabad: ') + fmtSize(free * 1024) + ' / ' + fmtSize(total * 1024);
+    $('usb-space').textContent = T('szabad: ') + fmtSize(free * 1024) + ' / ' + fmtSize(total * 1024) +
+      ' · ' + F('{0} fájl', countFiles(api.usbList, ''));
     // path: clickable parts
     const parts = usbCwd ? usbCwd.split('/') : [];
     const link = (text, to) => {
@@ -1016,7 +1025,8 @@
       return;
     }
     const total = api.sdInfo(0), free = api.sdInfo(1);
-    $('sd-space').textContent = T('szabad: ') + fmtSize(free * 1024) + ' / ' + fmtSize(total * 1024);
+    $('sd-space').textContent = T('szabad: ') + fmtSize(free * 1024) + ' / ' + fmtSize(total * 1024) +
+      ' · ' + F('{0} fájl', countFiles(api.sdList, ''));
     const parts = sdCwd ? sdCwd.split('/') : [];
     const link = (text, to) => {
       const a = document.createElement('a');
