@@ -1376,14 +1376,23 @@ static uint32_t snapshot_crc32(const uint8_t *b, size_t n) {
   return ~crc;
 }
 size_t twodfx_emu_snapshot_size(void) {
-  twodfx_emu d;
+  /* Ep128web: the device state is ~9 MB, too large for the stack
+     (WebAssembly's stack is 64 KB): counted once, on the heap */
+  static size_t size = 0;
+  twodfx_emu *d;
   snapshot_io s;
-  memset(&d, 0, sizeof d);
+  if (size)
+    return size;
+  d = (twodfx_emu *)calloc(1, sizeof *d);
+  if (!d)
+    return 0;
   memset(&s, 0, sizeof s);
   s.capacity = SIZE_MAX; /* counting only; does not touch 8 MiB RAM */
-  snap_body(&s, &d);
-  return s.bad || s.offset > SIZE_MAX-TWODFX_SNAPSHOT_HEADER_BYTES ?
+  snap_body(&s, d);
+  free(d);
+  size = s.bad || s.offset > SIZE_MAX-TWODFX_SNAPSHOT_HEADER_BYTES ?
     0 : s.offset + TWODFX_SNAPSHOT_HEADER_BYTES;
+  return size;
 }
 int twodfx_emu_save_snapshot(const twodfx_emu *d, void *output, size_t capacity) {
   static const uint8_t magic[8] = { '2','D','F','X','S','N','A','P' };
@@ -1544,7 +1553,7 @@ int twodfx_emu_load_snapshot(twodfx_emu *d, const void *input, size_t length) {
   const uint8_t *p = (const uint8_t *)input;
   size_t n = twodfx_emu_snapshot_size();
   snapshot_io s;
-  twodfx_emu *replacement, previous;
+  twodfx_emu *replacement, *previous;
   if (!d || !p || length != n || n < TWODFX_SNAPSHOT_HEADER_BYTES ||
       memcmp(p, magic, 8) || p[8] != TWODFX_SNAPSHOT_FORMAT_VERSION ||
       p[9] || p[10] || p[11] ||
@@ -1563,9 +1572,17 @@ int twodfx_emu_load_snapshot(twodfx_emu *d, const void *input, size_t length) {
     twodfx_emu_destroy(replacement);
     return 0;
   }
-  previous = *d;
-  *d = *replacement;
-  *replacement = previous;
+  /* Ep128web: the device state is ~9 MB, too large for a copy on the
+     stack (WebAssembly's stack is 64 KB): swap through the heap */
+  previous = (twodfx_emu *)malloc(sizeof *d);
+  if (!previous) {
+    twodfx_emu_destroy(replacement);
+    return 0;
+  }
+  memcpy(previous, d, sizeof *d);
+  memcpy(d, replacement, sizeof *d);
+  memcpy(replacement, previous, sizeof *d);
+  free(previous);
   twodfx_emu_destroy(replacement);
   return 1;
 }
