@@ -1301,5 +1301,12 @@ window.EP_I18N_STRINGS = [
 [" és még {0}", " and {0} more", " und {0} weitere", " і ще {0}"],
 ["Megtelt a pendrive (szabad: {0} / {1}), nem fért rá: {2}. Törölj róla fájlokat, vagy válassz nagyobb méretet (Lemezek fül, USB pendrive).", "The pendrive is full (free: {0} / {1}), did not fit: {2}. Delete files from it, or choose a bigger size (Disks tab, USB pendrive).", "Der USB-Stick ist voll (frei: {0} / {1}), passte nicht: {2}. Lösche Dateien darauf oder wähle eine größere Kapazität (Reiter Disketten, USB-Stick).", "Флешка заповнена (вільно: {0} / {1}), не вмістилося: {2}. Видаліть із неї файли або виберіть більший розмір (вкладка Диски, USB-флешка)."],
 ["Megtelt az SD kártya (szabad: {0} / {1}), nem fért rá: {2}. Törölj róla fájlokat, vagy válassz nagyobb méretet (Lemezek fül, SD kártya).", "The SD card is full (free: {0} / {1}), did not fit: {2}. Delete files from it, or choose a bigger size (Disks tab, SD card).", "Die SD-Karte ist voll (frei: {0} / {1}), passte nicht: {2}. Lösche Dateien darauf oder wähle eine größere Kapazität (Reiter Disketten, SD-Karte).", "SD-картка заповнена (вільно: {0} / {1}), не вмістилося: {2}. Видаліть із неї файли або виберіть більший розмір (вкладка Диски, SD-картка)."],
-["{0} fájl", "{0} files", "{0} Dateien", "файлів: {0}"]
+["{0} fájl", "{0} files", "{0} Dateien", "файлів: {0}"],
+["Megtelt a pendrive", "The pendrive is full", "Der USB-Stick ist voll", "Флешка заповнена"],
+["Megtelt az SD kártya", "The SD card is full", "Die SD-Karte ist voll", "SD-картка заповнена"],
+["Nem sikerült felrakni", "Could not copy", "Konnte nicht kopiert werden", "Не вдалося скопіювати"],
+["Pendrive megnyitása", "Open the pendrive", "USB-Stick öffnen", "Відкрити флешку"],
+["SD kártya megnyitása", "Open the SD card", "SD-Karte öffnen", "Відкрити SD-картку"],
+["Figyelem", "Attention", "Achtung", "Увага"],
+["Nem sikerült felrakni: {0} (a név nem megengedett, vagy túl nagy a fájl; szabad: {1}).", "Could not copy: {0} (the name is not allowed, or the file is too big; free: {1}).", "Konnte nicht kopiert werden: {0} (der Name ist nicht erlaubt oder die Datei ist zu groß; frei: {1}).", "Не вдалося скопіювати: {0} (ім'я недопустиме або файл завеликий; вільно: {1})."]
 ];

@@ -644,6 +644,17 @@ body.side #dbg-wrap { max-width: none; }
 #debugger .dbg-head { display: flex; align-items: center; gap: 8px; }
 #debugger .dbg-head #dbg-close { margin-left: auto; }
 
+/* --- a warning that must not be missed (e.g. the pendrive is full) --- */
+#alert-dlg {
+  width: min(520px, 92vw); padding: 12px 16px;
+  background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+}
+#alert-dlg::backdrop { background: rgba(0, 0, 0, 0.5); }
+#alert-dlg .dm-head { display: flex; align-items: center; gap: 8px; }
+#alert-dlg .dm-head b { flex: 1; font-size: 15px; }
+#alert-dlg p { line-height: 1.45; overflow-wrap: anywhere; }
+#alert-dlg .alert-btns { display: flex; justify-content: flex-end; gap: 8px; }
+
 /* --- the help window --- */
 #help {
   width: min(780px, 94vw); max-height: 88vh; overflow: auto; padding: 12px 16px;
