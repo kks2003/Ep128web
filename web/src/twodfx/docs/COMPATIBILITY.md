@@ -1,27 +1,13 @@
-# Supported behavior and validation boundaries
+# Supported behaviour
 
-The library implements the publicly documented 2dfx v1.1.0 command semantics, preserving the full original firmware-resident egg source and SHOW_FW content. It is an emulation of externally visible behaviour, not a simulation of RP2354 instruction execution, DMA, PIO or wall-clock renderer speed.
+This package implements the final 2dfx 1.1.4 command and rendering behaviour for Enterprise and TVC. The NICK conversion, reset RET slots, triangle strokes, pattern flags, small logo, pointer, mesh counts and angle packing are included. Projection defaults are FX=579 on Enterprise and FX=508 on TVC, FY=300, near=96 and far=2490.
 
-| Subsystem | Scope / qualification |
-|---|---|
-| F8h/F9h parser, resource RAM and uploads | Supported; normal guest command streams, RAW/NICK/TVC conversion and ZX1 |
-| Sprites, descriptors, BG/FG 2DPT, transparency and compositing | Implemented against shared renderer, frame-latched publication and indexed output |
-| 2D graphics, bitmap/text/pattern/tilemap, clipping | Implemented; command-level validation and hardware edge-pixel capture tests may improve confidence |
-| Camera, indexed meshes and 3D operations | Public 10-bit angles/mesh interface and renderer available; no MCU-specific fast paths |
-| Raster interrupts and collision | Exposed as guest-visible logical state; VM must map IRQ/HSYNC correctly |
-| SHOW_FW and built-in logo | Original firmware screen builder and artwork present; separate SHOW_FW pixel-diff certification not asserted |
-| 23 firmware egg IDs | Original v1.1.0 C program and public resources present for each supported ID; CF and D0 are TVC-specific |
-| Elite C3D spacecraft | Five original source models: Cobra Mk III, Asp Mk II, Sidewinder, Viper, Krait; D4 Asp reused |
-| Device snapshots | v13 CRC/invariant validation; **not all egg-private static animation state is captured** |
-| Multiple cards simultaneously | Engine state is instance-local, but original egg source contains process-global statics; concurrent independently active egg programs require refactoring |
-| RP2354 render-overrun and real-time diagnostic timing | Deliberately not modeled; diagnostics use portable substitutions |
+Rendering uses integer rules checked against the final 2dfx reference. The included test suite contains 1,920 reference-frame vectors spanning both profiles, all drawing families, offsets, clipping and mesh modes. It also checks colour conversion, strict transactions, frame cadence, cursor caching, state restoration and the current demos. This is source-based behavioural validation; it does not certify every host emulator's integration or every possible command stream.
 
-## Hardware comparison
+## Timing boundary
 
-On **22 October 2026**, Károly Vaczkó, creator of 2dfx, reported that all applicable Easter eggs in the browser-based Enterprise and TVC emulator appeared **identical to the physical 2dfx hardware** under manual observation. This is empirical visual feedback, **not** an automated framebuffer pixel diff, exhaustive edge-case sweep, bus-cycle timing verification or multi-device validation.
+This is a behavioural device, not a cycle-timing model of 2dfx hardware. Port writes execute synchronously. READY completes immediately. Resource jobs enter a 16-job FIFO. Each HSYNC callback drains the FIFO in order, independently of rendering, engine mode and frame cadence. VSYNC also drains it as a fallback and skips scene publication at that opportunity. Job duration is not simulated; an ordinary host integration must continue calling HSYNC throughout resource loading. SYS_RESET completes synchronously while preserving engine mode. Drawing duration, electrical bus effects and finite input-byte queue overload are not simulated. Resource FIFO overflow is simulated: the new request is rejected and sticky active-low STATUS5 is asserted. The optional overrun marker displays this condition. Consequently, benchmark/overrun diagnostics cannot measure 2dfx hardware speed in this model.
 
-Native smoke testing checks startup/frame progression of supported egg commands, SHOW_FW and a selection of public API opcode mappings. Platform integrators should also validate their own VM's video overlay timing, profile-specific palettes, snapshot/lifecycle wiring and interactions with other expansion cards, including TVC256+++.
+Demo animation advances at accepted 25/50 fps scene opportunities. Random demonstrations use deterministic per-device entropy, so their particular random trajectories need not match a physical power-on run. Their assets, scene logic and command behaviour are preserved. Logical demo time is based on emulated frames, not the computer's wall clock.
 
-## Third-party content
-
-The embedded Elite/Wriggler-derived showcase data is included as authentic demonstration content; **its rights are not conveyed under the MIT license**. See `ASSET_LICENSES.md`.
+Host developers should verify palette interpretation, overlay coordinates, IRQ combination, reset semantics and snapshot chunk wiring in their own integrations. No external emulator integration is included or claimed as tested by this package.

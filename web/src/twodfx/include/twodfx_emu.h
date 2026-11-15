@@ -3,10 +3,7 @@
  */
 #ifndef TWODFX_EMU_H
 #define TWODFX_EMU_H
-/* Independently implemented portable 2dfx host API (C99).
- * Copyright (c) 2026 Károly Vaczkó; MIT License.
- * The public v1.1.0 egg C source is supplied; private MCU fast paths are not.
- */
+
 #include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus
@@ -14,6 +11,7 @@ extern "C" {
 #endif
 
 #define TWODFX_EMU_ABI_VERSION 1u
+#define TWODFX_EMU_VERSION "1.1.4"
 #define TWODFX_EMU_RESOURCE_BYTES 8388608u
 #define TWODFX_EMU_SPRITE_COUNT 64u
 #define TWODFX_EMU_2DPT_SLOTS 256u
@@ -23,11 +21,13 @@ extern "C" {
 #define TWODFX_EMU_TVC_VIDEO_H 256u
 /* Public built-in logo artwork, 206x79, four 2-bit pixels per byte,
  * first pixel in bits 1:0, 0=transparent, 1=main, 2=accent, 3=invalid.
- * The public v1.1.0 firmware artwork is EMBEDDED and loaded on create(). */
+ * The public v1.1.4 firmware artwork is EMBEDDED and loaded on create(). */
 #define TWODFX_EMU_LOGO_W 206u
 #define TWODFX_EMU_LOGO_H 79u
 #define TWODFX_EMU_LOGO_STRIDE 52u
 #define TWODFX_EMU_LOGO_BYTES (TWODFX_EMU_LOGO_H * TWODFX_EMU_LOGO_STRIDE)
+
+#define TWODFX_EMU_RESOURCE_QUEUE_CAPACITY 16u
 
 typedef struct twodfx_emu twodfx_emu;
 typedef enum {
@@ -121,8 +121,9 @@ int twodfx_emu_get_projection(const twodfx_emu *d,int active,
 /* Resource format conversion: 0=RAW, 1=NICK, 2=TVC; 3+ passes through. */
 uint8_t twodfx_emu_convert_byte(uint8_t value, unsigned format);
 
-/* Completed resource jobs remain SUCCESS/ERROR until another accepted job.
-   UNZX1 runs on next vsync without modelling host CPU/MCU render duration. */
+/* BUSY while the FIFO is nonempty; otherwise the final job's result.
+ * Output size is zero on enqueue or decoder failure, otherwise the most
+ * recently completed job's output length. These are host inspection APIs. */
 twodfx_resource_job_status twodfx_emu_resource_job_status(const twodfx_emu *d);
 uint32_t twodfx_emu_resource_job_output_bytes(const twodfx_emu *d);
 
@@ -148,6 +149,10 @@ uint8_t twodfx_emu_read_f8(const twodfx_emu *d);
 /*
  * Host video/clock adapter: call VSYNC once per 50Hz video frame and HSYNC
  * once per host scanline, with the hardware-profile's raw scanline index.
+ * HSYNC drains all accepted resource jobs, even with the engine OFF; VSYNC
+ * is also a fallback service point. Neither callback estimates job duration.
+ * Call HSYNC even if all raster comparators are disabled. A host that sends
+ * many commands without advancing device time can fill the 16-job FIFO.
  * 25fps mode only halves scene-update acceptance, not these 50Hz callbacks.
  * IRQ is level-triggered by pending raster latches; wire to host /INT logic.
  */
@@ -172,7 +177,7 @@ size_t twodfx_emu_overlay_line(const twodfx_emu *d,
                                uint8_t *colours, uint8_t *coverage,
                                size_t width);
 
-/* Device snapshot format v13. See docs/SNAPSHOT_FORMAT.md for the canonical
+/* Device snapshot format v15. See docs/SNAPSHOT_FORMAT.md for the canonical
  * complete device-chunk contract. Atomic CRC/invariant checks reject invalid
  * blobs without changing the running device; older versions are rejected.
  */

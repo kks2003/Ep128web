@@ -1,30 +1,43 @@
 /* SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Károly Vaczkó
  */
-/* Portable 2dfx device core; MCU-private rendering code is excluded. */
+
 #define twodfx_resource_job_status twodfx_emu_job_status_type
 #include "twodfx_emu.h"
 #undef twodfx_resource_job_status
 #include "twodfx_raster.h"
 #include "twodfx_3d.h"
 #include "2dfx_builtin_logo.h"
-#include "../firmware_eggs/firmware_page.h"
+#include "2dfx_builtin_logo_small.h"
+#include <stdbool.h>
+#include "../demos/firmware_page.h"
 #include <stdlib.h>
 #include <string.h>
 
+#include "twodfx_demo_states.inc"
 #define TWODFX_FRAME_PIXELS (TWODFX_EMU_VIDEO_W_MAX * TWODFX_EMU_VIDEO_H_MAX)
 
 enum { SESSION_NONE, SESSION_SPRITE, SESSION_2DPT, SESSION_CTRL,
        SESSION_UPLOAD, SESSION_UNZX };
 
+typedef struct {
+  uint32_t source, destination;
+  uint8_t format; /* 0=RAW, 1=NICK, 2=TVC, 3=full resource clear */
+} portable_resource_job;
+typedef struct {uint16_t x,y;uint8_t mode,colors,initialized,valid,hx,hy;} portable_pointer;
 struct twodfx_emu {
+  portable_pointer pointer_shadow,pointer_active;
+  uint8_t pointer_user_shadow[144],pointer_user_active[144];
+  uint8_t pointer_pending,pointer_hx,pointer_hy,logo_small;
+  uint32_t pointer_address,rng_state;
+
   twodfx_machine machine;
   uint8_t *ram;
   uint8_t *frame_colour, *frame_coverage;
   uint8_t render_enabled;
   uint8_t collision_reported, collision_pending, collision_ready;
   uint8_t started, awake, terminal;
-  uint8_t engine, transparent, fps, overrun_visual;
+  uint8_t engine, transparent, fps, overrun_visual,fps_phase;
   uint8_t session, opcode, param_n, param_needed, foreground, spb_id;
   uint8_t params[12];
   uint8_t spb_offset;
@@ -43,33 +56,16 @@ struct twodfx_emu {
   /* Portable egg lifecycle.  Only implemented IDs can be selected. */
   uint8_t egg_id, egg_pending;
   uint8_t egg_fifo[64], egg_head, egg_tail, egg_overflow;
-  /* 2dfx : portable public showcase/ruler animation state. */
-  uint32_t egg_frame;
-  uint8_t egg_stage; /* 2dfx: resumable resource-bank load phase (C3/C4) */
-  /* Portable D4/D5 control state; included in snapshot v13.  This is
-     logical scene state, never emulated MCU scheduling or render time. */
-  uint8_t tunnel_mode, tunnel_profile, tunnel_ship, tunnel_zoom, tunnel_auto;
-  uint16_t tunnel_phase;
-  uint32_t tunnel_travel;
-  uint16_t d1_position, d1_pause;
-  uint8_t d1_mode, d1_hold;
-  int16_t pong_left,pong_right,pong_x,pong_y,pong_dx,pong_dy;
-  uint16_t pong_serve;
-  uint8_t pong_score_l,pong_score_r,pong_prev,pong_input,pong_flash;
-  /* Boulder camera and target saved independently of platform frame time. */
-  uint16_t ca_camera_x,ca_camera_y,ca_target_x,ca_target_y,ca_pause;
-  uint8_t ca_route,ca_phase;
-  /* D0 visible diagnostic: deterministic scene-tick state, not MCU timing. */
-  uint16_t d0_mode_ticks, d0_boundary;
-  int16_t d0_boundary_step;
-  uint8_t d0_mode, d0_flash_phase, d0_set_key_next_tick;
+  uint8_t demo_states[TWODFX_DEMO_STATE_BYTES];
   uint8_t logo_art_loaded;
   uint16_t logo_x, logo_y;
   uint8_t logo_main, logo_accent;
   uint8_t logo_art[TWODFX_EMU_LOGO_BYTES];
   twodfx_emu_job_status_type resource_job;
-  uint8_t job_format;
-  uint32_t job_source, job_destination, job_output_bytes;
+  portable_resource_job jobs[TWODFX_EMU_RESOURCE_QUEUE_CAPACITY];
+  uint8_t job_head, job_tail;
+  uint8_t overrun_pending, overrun_phase;
+  uint32_t job_output_bytes, job_overflow_count;
   twodfx_font_descriptor fonts[64];
   twodfx_bitmap_descriptor bitmaps[256];
   twodfx_address_descriptor patterns[64], tilesets[64];
@@ -83,6 +79,7 @@ struct twodfx_emu {
   twodfx_3d_scene scene3d;
 };
 
+#include "twodfx_pointer.inc"
 static uint32_t addr23(const uint8_t *p) {
   return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | (((uint32_t)p[2] & 127u) << 16);
 }
@@ -91,14 +88,13 @@ static uint8_t source_to_internal(uint8_t in, uint8_t mode) {
   uint8_t left = 0, right = 0;
   unsigned i;
   if (mode == 0) return in;
-  /* Original graphics wire order: IIGGRRBB, two interlaced pixels.
-     NICK: IGRB bit significance; TVC: BGRI internal bit significance.
-     Left pixel is the low packed nibble. */
+  /* Both interleaved formats map source 1,5,3,7 to left index bits
+     3,2,1,0, and source 0,4,2,6 to the right index. Low nibble is left. */
   for (i = 0; i < 4; ++i) {
     left |= (uint8_t)(((in >> (7u - 2u*i)) & 1u) << (3u - i));
     right |= (uint8_t)(((in >> (6u - 2u*i)) & 1u) << (3u - i));
   }
-  if (mode == 2) {
+  if (mode != 0) {
     left = (uint8_t)(((left & 1u) << 3) | (left & 6u) | ((left >> 3) & 1u));
     right = (uint8_t)(((right & 1u) << 3) | (right & 6u) | ((right >> 3) & 1u));
   }
@@ -108,9 +104,6 @@ uint8_t twodfx_emu_convert_byte(uint8_t in, unsigned format) {
   return format <= 2u ? source_to_internal(in, (uint8_t)format) : in;
 }
 
-/* ZX1 forward bit stream. Binary protocol is documented by Einar Saukas.
-   This decoder is newly written for bounded 2dfx resource-RAM operations;
-   no MCU or third-party implementation source is embedded. */
 typedef struct {
   const uint8_t *ram;
   uint32_t pos, used;
@@ -140,17 +133,15 @@ static uint32_t zx1_gamma(zx1_input *r) {
     if (r->bad) return 0;
   }
 }
-/* Fully transactional: invalid streams cannot partially overwrite RRAM.
-   Writes stay staged until EOF. Overlap/wrap between source and destination
-   is deterministic; matches read from already converted output bytes. */
+
 static int zx1_decompress(twodfx_emu *d, uint32_t src, uint32_t dst,
                           uint8_t format, uint32_t *written) {
   zx1_input in;
-  uint8_t *result = (uint8_t *)malloc(TWODFX_EMU_RESOURCE_BYTES);
+
   uint32_t size = 0, last_offset = 1;
   int phase = 0; /* 0 literal; 1 reuse prior offset; 2 new offset */
   int done = 0, ok = 0;
-  if (!result) return 0;
+
   memset(&in, 0, sizeof(in));
   in.ram = d->ram;
   in.pos = src & (TWODFX_EMU_RESOURCE_BYTES - 1u);
@@ -160,7 +151,7 @@ static int zx1_decompress(twodfx_emu *d, uint32_t src, uint32_t dst,
       len = zx1_gamma(&in);
       if (len == 0 || len > TWODFX_EMU_RESOURCE_BYTES-size || in.bad) break;
       for (i = 0; i < len && !in.bad; ++i)
-        result[size++] = source_to_internal(zx1_byte(&in), format);
+        { uint8_t value=zx1_byte(&in);d->ram[(dst+size++)&0x7fffff]=source_to_internal(value,format); }
       if (in.bad) break;
       phase = zx1_bit(&in) ? 2 : 1;
     } else {
@@ -182,33 +173,59 @@ static int zx1_decompress(twodfx_emu *d, uint32_t src, uint32_t dst,
       if (in.bad || len == 0 || off == 0 || off > size ||
           len > TWODFX_EMU_RESOURCE_BYTES-size) break;
       for (i = 0; i < len; ++i) {
-        result[size] = result[size-off];
+        d->ram[(dst+size)&0x7fffff] = d->ram[(dst+size-off)&0x7fffff];
         ++size;
       }
       phase = zx1_bit(&in) ? 2 : 0;
     }
   }
   if (done && !in.bad) {
-    uint32_t i, a = dst & (TWODFX_EMU_RESOURCE_BYTES-1u);
-    for (i = 0; i < size; ++i) {
-      d->ram[a] = result[i];
-      a = (a + 1u) & (TWODFX_EMU_RESOURCE_BYTES - 1u);
-    }
     *written = size;
     ok = 1;
   }
-  free(result);
+
   return ok;
 }
-static void service_resource_job(twodfx_emu *d) {
-  uint32_t n = 0;
-  if (d->resource_job != TWODFX_RESOURCE_JOB_BUSY) return;
-  if (zx1_decompress(d, d->job_source, d->job_destination, d->job_format, &n)) {
-    d->job_output_bytes = n;
-    d->resource_job = TWODFX_RESOURCE_JOB_SUCCESS;
-  } else {
-    d->job_output_bytes = 0;
-    d->resource_job = TWODFX_RESOURCE_JOB_ERROR;
+static void clear_resource_jobs(twodfx_emu *d) {
+  memset(d->jobs, 0, sizeof d->jobs);
+  d->job_head = d->job_tail = 0;
+  d->job_output_bytes = d->job_overflow_count = 0;
+  d->resource_job = TWODFX_RESOURCE_JOB_NONE;
+}
+static int queue_resource_job(twodfx_emu *d, uint32_t src, uint32_t dst, uint8_t format) {
+  portable_resource_job *job;
+  if (d->terminal) return 0;
+  if ((uint8_t)(d->job_head - d->job_tail) >= TWODFX_EMU_RESOURCE_QUEUE_CAPACITY) {
+    ++d->job_overflow_count;
+    d->overrun_pending = 1;
+    return 0;
+  }
+  job = &d->jobs[d->job_head & (TWODFX_EMU_RESOURCE_QUEUE_CAPACITY - 1u)];
+  job->source = src & (TWODFX_EMU_RESOURCE_BYTES - 1u);
+  job->destination = dst & (TWODFX_EMU_RESOURCE_BYTES - 1u);
+  job->format = format;
+  ++d->job_head;
+  d->resource_job = TWODFX_RESOURCE_JOB_BUSY;
+  d->job_output_bytes = 0;
+  return 1;
+}
+static void service_resource_jobs(twodfx_emu *d) {
+  /* Serialized host calls cannot interrupt a job. Keep the running entry
+     counted until completion and drain the whole FIFO at this opportunity.
+     HSYNC services resources independently of scene publication and FPS. */
+  while (d->job_tail != d->job_head) {
+    const portable_resource_job job = d->jobs[d->job_tail & (TWODFX_EMU_RESOURCE_QUEUE_CAPACITY - 1u)];
+    uint32_t n = 0;
+    int ok;
+    if (job.format == 3) {
+      memset(d->ram, 0, TWODFX_EMU_RESOURCE_BYTES);
+      n = TWODFX_EMU_RESOURCE_BYTES;
+      ok = 1;
+    } else ok = zx1_decompress(d, job.source, job.destination, job.format, &n);
+    d->job_output_bytes = ok ? n : 0;
+    ++d->job_tail;
+    d->resource_job = d->job_tail != d->job_head ? TWODFX_RESOURCE_JOB_BUSY :
+                     ok ? TWODFX_RESOURCE_JOB_SUCCESS : TWODFX_RESOURCE_JOB_ERROR;
   }
 }
 static void clear_sessions(twodfx_emu *d) {
@@ -222,34 +239,22 @@ static void blank_entries(twodfx_emu *d) {
   size_t l;
   memset(d->shadow_2dpt, 0, sizeof d->shadow_2dpt);
   memset(d->active_2dpt, 0, sizeof d->active_2dpt);
-  /* Power-on slot 0 is RET; remaining zero slots are NOP-like. */
+  
   for (l = 0; l < 2; l++) {
-    d->shadow_2dpt[l][0].opcode = 0x7f;
-    d->active_2dpt[l][0].opcode = 0x7f;
+    for(unsigned i=0;i<256;i++)d->shadow_2dpt[l][i].opcode = 0x7f;
+    for(unsigned i=0;i<256;i++)d->active_2dpt[l][i].opcode = 0x7f;
   }
 }
 static void egg_stop(twodfx_emu *d) {
   d->egg_id=0xffu;
   d->egg_pending=0;
   d->egg_head=d->egg_tail=d->egg_overflow=0;
-  d->egg_stage=0u;
-  d->tunnel_mode=d->tunnel_profile=d->tunnel_ship=d->tunnel_zoom=0u;
-  d->tunnel_auto=0u;d->tunnel_phase=0u;d->tunnel_travel=0u;
-  d->egg_frame=d->d1_position=d->d1_pause=d->d1_mode=d->d1_hold=0;
-  d->pong_left=d->pong_right=d->pong_x=d->pong_y=0;
-  d->pong_dx=d->pong_dy=0;d->pong_serve=0u;
-  d->pong_score_l=d->pong_score_r=d->pong_prev=d->pong_input=d->pong_flash=0u;
-  d->ca_camera_x=d->ca_camera_y=d->ca_target_x=d->ca_target_y=0u;
-  d->ca_pause=d->ca_route=d->ca_phase=0u;
-  d->d0_mode_ticks=d->d0_boundary=0;
-  d->d0_boundary_step=0;
-  d->d0_mode=d->d0_flash_phase=d->d0_set_key_next_tick=0;
+
 }
 static int egg_supported(const twodfx_emu *d, unsigned id) {
-  /* CF bit patterns and D0 tearing diagnostic are both TVC-only. */
-  if(id==0u || id==1u || id==11u || id==12u || id==31u || id==2u || id==3u || id==4u || id==5u || id==6u || id==7u || id==8u || id==9u || id==10u ||
-     id==13u || id==14u || id==17u || id==18u || id==19u || id==20u || id==21u) return 1;
-  return (id==15u || id==16u) && d->machine==TWODFX_EMU_TVC;
+  if (id > 21u) return 0;
+  /* CF bit patterns and D0 tearing diagnostic are TVC-only. */
+  return (id != 15u && id != 16u) || d->machine == TWODFX_EMU_TVC;
 }
 static void egg_select(twodfx_emu *d,unsigned id) {
   egg_stop(d);
@@ -265,6 +270,7 @@ static void egg_enqueue(twodfx_emu *d,uint8_t value) {
 }
 static void clear_application(twodfx_emu *d) {
   egg_stop(d);
+  pointer_reset(d,1);d->logo_small=0;d->rng_state=0x9e3779b9u;
   memset(d->ram, 0, TWODFX_EMU_RESOURCE_BYTES);
   memset(d->frame_colour, 0, TWODFX_FRAME_PIXELS);
   memset(d->frame_coverage, 0, TWODFX_FRAME_PIXELS);
@@ -282,9 +288,10 @@ static void clear_application(twodfx_emu *d) {
   memset(d->active_tilesets, 0, sizeof d->active_tilesets);
   memset(d->active_tilemaps, 0, sizeof d->active_tilemaps);
   twodfx_3d_reset(&d->scene3d);
-  d->resource_job = TWODFX_RESOURCE_JOB_NONE;
-  d->job_format = 0;
-  d->job_source = d->job_destination = d->job_output_bytes = 0;
+  d->scene3d.projection_shadow.fx=d->machine==TWODFX_EMU_TVC?508:579;
+  d->scene3d.projection_active=d->scene3d.projection_shadow;
+  clear_resource_jobs(d);
+  d->overrun_pending = d->overrun_phase = 0;
   memset(d->ctrl_size, 0, sizeof d->ctrl_size);
   memset(d->raster_lines, 0, sizeof d->raster_lines);
   d->raster_pending = 0;
@@ -294,7 +301,7 @@ static void clear_application(twodfx_emu *d) {
   d->logo_main = 15;
   d->logo_accent = 3;
   /* Preserve host-provided immutable logo artwork through application reset. */
-  d->fps = 50;
+  d->fps = 50;d->fps_phase=0;
   d->egg_input = 0;
   /* Normal renderer enabled after reset; explicit opt-out remains available. */
   d->render_enabled = 1;
@@ -315,6 +322,7 @@ twodfx_emu *twodfx_emu_create(twodfx_machine m) {
     free(d->frame_colour); free(d->frame_coverage); free(d->ram); free(d); return NULL;
   }
   d->machine = m;
+  if(!demo_states_reset(d->demo_states)){twodfx_emu_destroy(d);return NULL;}
   twodfx_emu_power_cycle(d);
   if (!twodfx_emu_set_logo_art(d, two_dfx_builtin_logo_2bpp,
                                TWO_DFX_BUILTIN_LOGO_PACKED_BYTES)) {
@@ -348,13 +356,14 @@ void twodfx_emu_destroy(twodfx_emu *d) {
 }
 void twodfx_emu_power_cycle(twodfx_emu *d) {
   if (!d) return;
+  demo_states_reset(d->demo_states);
   d->started = d->awake = d->terminal = 0;
   d->engine = 0;
   d->video_frames = 0;
   clear_application(d);
 }
 static unsigned twod_args(uint8_t c) {
-  /* Argument count includes slot ID. See v1.1.0 2DPT wire contract. */
+  /* Argument count includes slot ID. See v1.1.4 2DPT wire contract. */
   switch (c) {
     case 0x60: case 0x7f: return 1;  /* NOP / RET */
     case 0x61: case 0x6f: return 2;  /* SET_COLOR / SKIP_NEXT */
@@ -380,6 +389,9 @@ static unsigned ctrl_args(uint8_t c) {
     case 0x5d: case 0x5e: case 0x90: return 4;
     case 0x87: return 8;
     case 0x88: return 10;
+    case 0x92: case 0x94: return 2;
+    case 0x93: return 3;
+    case 0x95: return 5;
     default: return 0;
   }
 }
@@ -408,9 +420,9 @@ void twodfx_emu_write_f8(twodfx_emu *d, uint8_t c) {
   clear_sessions(d);
   if (c < 0x40) { d->session = SESSION_SPRITE; d->spb_id = c; return; }
   if (c < 0x50) { d->transparent = (uint8_t)(c & 15u); return; }
-  if (c == 0x53) return; /* overrun permanently clear: timing unsupported */
+  if (c == 0x53) { d->overrun_pending = 0; return; }
   if (c == 0x58) { d->raster_pending = 0; return; }
-  if ((c >= 0x50 && c <= 0x5f) || (c >= 0x86 && c <= 0x88) || c == 0x90) {
+  if ((c >= 0x50 && c <= 0x5f) || (c >= 0x86 && c <= 0x88) || c == 0x90 || (c>=0x92 && c<=0x95)) {
     begin_ctrl(d, c); return;
   }
   if (c >= 0x60 && c <= 0x7f) {
@@ -426,7 +438,7 @@ void twodfx_emu_write_f8(twodfx_emu *d, uint8_t c) {
   }
   if (c >= 0x80 && c <= 0x82) { d->session = SESSION_UPLOAD; d->upload_convert = (uint8_t)(c - 0x80); return; }
   if (c >= 0x83 && c <= 0x85) { d->session = SESSION_UNZX; d->opcode = c; d->param_needed = 6; return; }
-  if (c == 0x8e) { egg_stop(d); d->terminal = 1; return; } /* render later */
+  if (c == 0x8e) { egg_stop(d); clear_resource_jobs(d); d->terminal = 1; return; } /* render later */
   if (c == 0x91) { d->logo_visible = 0; return; }
   if(c>=0xc0u && c<=0xdfu) {egg_select(d,c&31u);return;}
 }
@@ -438,7 +450,7 @@ static void ctrl_commit(twodfx_emu *d) {
     d->engine = d->params[0] == 0 ? TWODFX_EMU_ENGINE_OFF :
                 (d->params[0] == 255 ? TWODFX_EMU_ENGINE_FORCED : TWODFX_EMU_ENGINE_NORMAL);
     if (d->params[0]) d->awake = 1; /* Wake completes on the control write. */
-  } else if (c == 0x51) d->fps = d->params[0] ? 25 : 50;
+  } else if (c == 0x51) {d->fps = d->params[0]==1 ? 25 : 50;d->fps_phase=0;}
   else if (c == 0x52) d->overrun_visual = d->params[0] != 0;
   else if (c >= 0x54 && c <= 0x57) {
     unsigned i = c - 0x54;
@@ -450,10 +462,14 @@ static void ctrl_commit(twodfx_emu *d) {
     d->logo_y = (uint16_t)((((uint16_t)d->params[0] & 1u) << 8) | d->params[2]);
     d->logo_main = d->machine == TWODFX_EMU_TVC ? 15u : (uint8_t)(d->params[3] >> 4);
     d->logo_accent = d->machine == TWODFX_EMU_TVC ? 3u : (uint8_t)(d->params[3] & 15u);
-    d->logo_visible = 1;
+    d->logo_visible = 1;d->logo_small=(d->params[0]>>7)&1;
   }
+  else if(c==0x92)pointer_mode(d,d->params[0],d->params[1]);
+  else if(c==0x93)pointer_pos(d,((d->params[0]>>1)&3)*256+d->params[1],(d->params[0]&1)*256+d->params[2]);
+  else if(c==0x94)pointer_pos(d,d->pointer_shadow.x+(int8_t)d->params[0],d->pointer_shadow.y+(int8_t)d->params[1]);
+  else if(c==0x95)pointer_define(d,addr23(d->params),d->params[3],d->params[4]);
   else if (c == 0x5b) {
-    /* Public firmware v1.1.0 DEFINE_FONT command encoding. */
+    /* Public firmware v1.1.4 DEFINE_FONT command encoding. */
     twodfx_font_descriptor *f = &d->fonts[d->params[0] & 63u];
     f->resource_address = addr23(d->params+1);
     f->width_units = (uint8_t)(((d->params[4] >> 4) & 15u) + 1u);
@@ -480,7 +496,7 @@ static void ctrl_commit(twodfx_emu *d) {
   }
   else if (c == 0x86) {
     unsigned nv=(unsigned)d->params[4]+1u;
-    unsigned nt=(unsigned)d->params[5] | ((unsigned)d->params[6]<<8);
+    unsigned nt=1u+(((unsigned)d->params[5]&1u)<<8)+(unsigned)d->params[6];
     twodfx_3d_define(&d->scene3d,d->params[0],addr23(d->params+1),nv,nt);
   } else if (c == 0x87) {
     twodfx_3d_scene_set_projection(&d->scene3d,
@@ -512,14 +528,8 @@ void twodfx_emu_write_f9(twodfx_emu *d, uint8_t value) {
   if (d->session == SESSION_UNZX) {
     if (d->param_n < 6) d->params[d->param_n++] = value;
     if (d->param_n == 6) {
-      /* One outstanding resource job; reject the next one, not queue it. */
-      if (d->resource_job != TWODFX_RESOURCE_JOB_BUSY) {
-        d->job_source = addr23(d->params);
-        d->job_destination = addr23(d->params+3);
-        d->job_format = (uint8_t)(d->opcode - 0x83);
-        d->resource_job = TWODFX_RESOURCE_JOB_BUSY;
-        d->job_output_bytes = 0;
-      }
+      (void)queue_resource_job(d, addr23(d->params), addr23(d->params+3),
+                               (uint8_t)(d->opcode - 0x83));
       clear_sessions(d);
     }
     return;
@@ -575,23 +585,20 @@ uint8_t twodfx_emu_read_f8(const twodfx_emu *d) {
   if (!d) return 0xff;
   if (d->awake) status &= (uint8_t)~(1u << 6);
   status &= (uint8_t)~((uint8_t)(d->raster_pending & 15u) << 1);
-  /* Wire STATUS7 is active low: a completed-frame collision clears bit 7.
-     Do not synthesize render-overrun timing (STATUS5 is always inactive). */
+  /* Sticky queue overflow shares active-low STATUS5 with render overrun.
+     Execution-duration overruns are not synthesized by this device model. */
+  if (d->overrun_pending) status &= (uint8_t)~0x20u;
   if (d->collision_reported) status &= (uint8_t)~0x80u;
   return status;
 }
 void twodfx_emu_hsync(twodfx_emu *d, uint16_t y) {
   unsigned i;
   if (!d || !d->awake || d->terminal) return;
+  service_resource_jobs(d);
   for (i = 0; i < 4; i++) if (d->raster_lines[i] && d->raster_lines[i] == y)
     d->raster_pending |= (uint8_t)(1u << i);
 }
-/* 2dfx v1.1.0 wire-level 2D model. Implemented independently from the
- * public command/2DPB contract; deliberately no MCU framebuffer fast paths.
- * This renderer remains gated while sprites, text and 3D are unfinished.
- * Each entry stores the wire payload AFTER the slot index, so p[0] is 2DPB
- * BYTE1, p[1] BYTE2 etc. Unknown operations remain inert, not guessed.
- */
+
 static unsigned hi_x(uint8_t high, uint8_t low) {
   return ((unsigned)((high >> 4) & 3u) << 8) | low;
 }
@@ -641,45 +648,13 @@ static void resource_bitmap(twodfx_emu *d, twodfx_raster *r,
     }
   }
 }
-static void line_stroke(twodfx_raster *r,int x0,int y0,int x1,int y1,
-                        unsigned stroke,uint8_t colour) {
-  int dx,dy,sx,sy,err;
-  unsigned iterations=0;
-  if (stroke <= 1u) { twodfx_raster_line(r,x0,y0,x1,y1,colour);return; }
-  /* Generic, portable thick brush: x radii compensate for 2:1 pixel aspect.
-     Stroke edge rules may differ from MCU implementation at diagonals. */
-  dx=abs(x1-x0);dy=abs(y1-y0);
-  sx=x0<x1?1:-1;sy=y0<y1?1:-1;err=dx-dy;
-  for (;;) {
-    int e;
-    twodfx_raster_fill_rect(r,x0-(int)(stroke-1u),y0,
-                            x0+(int)stroke,y0+(int)stroke-1,colour);
-    if (x0==x1 && y0==y1) break;
-    if (++iterations>4096u) break;
-    e=err*2;
-    if(e>-dy){err-=dy;x0+=sx;}
-    if(e<dx){err+=dx;y0+=sy;}
-  }
-}
-static void rectangle_stroke(twodfx_raster *r,int x,int y,unsigned w,unsigned h,
-                             unsigned stroke,uint8_t fg,uint8_t bg,uint8_t key) {
-  int right, bottom, vertical;
-  if (!w || !h) return;
-  right=x+(int)w-1;bottom=y+(int)h-1;
-  if (bg != key) twodfx_raster_fill_rect(r,x,y,right,bottom,bg);
-  if (stroke>h) stroke=h;
-  twodfx_raster_fill_rect(r,x,y,right,y+(int)stroke-1,fg);
-  twodfx_raster_fill_rect(r,x,bottom-(int)stroke+1,right,bottom,fg);
-  vertical=(int)stroke*2;
-  if(vertical>(int)w)vertical=(int)w;
-  twodfx_raster_fill_rect(r,x,y,x+vertical-1,bottom,fg);
-  twodfx_raster_fill_rect(r,right-vertical+1,y,right,bottom,fg);
-}
+#include "twodfx_geometry.inc"
 #include "twodfx_2d_extra.inc"
 static void replay_2d(twodfx_emu *d,twodfx_raster *r,unsigned layer) {
   unsigned slot;
   uint8_t fg=15u,bg=d->transparent;
-  /* v1.1.0 2D coordinates are raw scanout coordinates; the raster is
+  r->key=d->transparent;
+  /* v1.1.4 2D coordinates are raw scanout coordinates; the raster is
      indexed only over the stored window.  TVC stores x=0..703 while EP
      stores raw x=88..831.  Both store rows starting at profile first Y. */
   const int raw_origin_x = d->machine == TWODFX_EMU_ENTERPRISE ? 88 : 0;
@@ -740,14 +715,14 @@ static void replay_2d(twodfx_emu *d,twodfx_raster *r,unsigned layer) {
         stroke=((unsigned)p[0]>>6)+1u;
         px=(int)x+ox;py=(int)y+oy;
         if(e->opcode==0x63 || e->opcode==0x64)
-          line_stroke(r,px,py,(int)w+ox,(int)h+oy,stroke,
+          gfx2d_draw_line_raw(r,px,py,(int)w+ox,(int)h+oy,stroke,
                       e->opcode==0x63?fg:bg);
         else if(e->opcode==0x67 && w && h)
           twodfx_raster_fill_rect(r,px,py,px+(int)w-1,py+(int)h-1,fg);
         else if(e->opcode==0x66)
-          rectangle_stroke(r,px,py,w,h,stroke,fg,bg,d->transparent);
+          gfx2d_draw_rect_raw(r,px,py,w,h,stroke,fg,bg);
         else if (e->opcode==0x6a || e->opcode==0x6b)
-          raster_ext_ellipse(r,px,py,w,h,stroke,fg,bg,d->transparent,e->opcode==0x6b);
+          raster_ext_ellipse(r,px,py,w,h,stroke,fg,bg,e->opcode==0x6b,ox+raw_origin_x,oy+raw_origin_y,raw_origin_x,raw_origin_y);
         break;
       case 0x68: case 0x69: case 0x6c: case 0x6d:
       case 0x70: case 0x72: case 0x73:
@@ -769,25 +744,31 @@ static void replay_2d(twodfx_emu *d,twodfx_raster *r,unsigned layer) {
         w=hi_w(p[0],p[3]);h=hi_h(p[0],p[4]);
         stroke=((unsigned)p[0]>>6)+1u;
         if(e->opcode==0x68 || e->opcode==0x69)
-          raster_ext_round(r,px,py,w,h,p[5],p[6],stroke,fg,bg,d->transparent,e->opcode==0x69);
+          raster_ext_round(r,px,py,w,h,p[5],p[6],stroke,fg,bg,e->opcode==0x69);
         else if(e->opcode==0x6c || e->opcode==0x6d)
-          raster_ext_arc_pie(r,px,py,w,h,p[5],p[6],stroke,fg,e->opcode==0x6d);
+          raster_ext_arc_pie(r,px,py,w,h,p[5],p[6],stroke,fg,e->opcode==0x6d,ox+raw_origin_x,oy+raw_origin_y,raw_origin_x,raw_origin_y);
         else if(e->opcode==0x72)
-          raster_ext_pattern_fill(d,r,px+raw_origin_x,py+raw_origin_y,w,h,p[5],p[6],
+          raster_ext_pattern_fill(d,r,px+raw_origin_x,py+raw_origin_y,w,h,(p[5]&63)|(p[0]&192),p[6],
                            raw_origin_x,raw_origin_y);
         break;
       case 0x74:
         if(e->nbytes==5u){
           px=(int)hi_x(p[0],p[1])+ox;py=(int)hi_y(p[0],p[2])+oy;
-          raster_ext_pattern_bucket(d,r,px,py,p[3],p[4],raw_origin_x,raw_origin_y);
+          raster_ext_pattern_bucket(d,r,px,py,(p[3]&63)|(p[0]&192),p[4],raw_origin_x,raw_origin_y);
         }
         break;
       case 0x75: case 0x76:
         if(e->nbytes==8u){
-          int x0=(int)hi_x(p[0],p[2])+ox, y0=(int)hi_y(p[0],p[3])+oy;
-          int x1=(int)hi_w(p[0],p[4])+ox, y1=(int)hi_h(p[0],p[5])+oy;
-          int x2=(int)hi_x(p[1],p[6])+ox, y2=(int)hi_y(p[1],p[7])+oy;
-          if(e->opcode==0x75)twodfx_raster_triangle(r,x0,y0,x1,y1,x2,y2,fg);
+          int x0=(int)hi_x(p[0],p[1])+ox, y0=(int)hi_y(p[0],p[2])+oy;
+          int x1=(int)hi_w(p[0],p[3])+ox, y1=(int)hi_h(p[0],p[4])+oy;
+          int x2=(int)hi_x(p[5],p[6])+ox, y2=(int)hi_y(p[5],p[7])+oy;
+          if(e->opcode==0x75){
+            if(bg!=d->transparent)twodfx_raster_fill_triangle_sample(r,x0,y0,x1,y1,x2,y2,bg,0);
+            stroke=(p[0]>>6)+1;
+            gfx2d_triangle_line_raw(r,x0,y0,x1,y1,stroke,fg);
+            gfx2d_triangle_line_raw(r,x1,y1,x2,y2,stroke,fg);
+            gfx2d_triangle_line_raw(r,x2,y2,x0,y0,stroke,fg);
+          }
           else twodfx_raster_fill_triangle(r,x0,y0,x1,y1,x2,y2,fg);
         }
         break;
@@ -933,21 +914,19 @@ static void sprite_layer(twodfx_emu *d,twodfx_raster *r) {
     sprite_paint(d,r,&v);
   }
 }
-/* Optional 2bpp overlay art is drawn as the very last renderer step,
- * independently of background, sprite and foreground clipping. The format
- * and coordinate interpretation are public; artwork is supplied separately.
- * The reference MCU's packed-word raster path is intentionally not reused. */
+
 static void draw_builtin_logo(twodfx_emu *d,twodfx_raster *r) {
   int ox=d->machine==TWODFX_EMU_ENTERPRISE?88:0;
   int oy=d->machine==TWODFX_EMU_ENTERPRISE?16:41;
-  unsigned ly,lx;
+  unsigned ly,lx,w=d->logo_small?103:206,h=d->logo_small?40:79,stride=d->logo_small?26:52;
+  const uint8_t*art=d->logo_small?two_dfx_builtin_logo_small_2bpp:d->logo_art;
   if(!d->logo_visible || !d->logo_art_loaded)return;
   twodfx_raster_clip(r,0,0,(int)r->width-1,(int)r->height-1);
-  for(ly=0;ly<TWODFX_EMU_LOGO_H;ly++) {
+  for(ly=0;ly<h;ly++) {
     int y=(int)d->logo_y+(int)ly-oy;
     if(y<0 || y>=(int)r->height)continue;
-    for(lx=0;lx<TWODFX_EMU_LOGO_W;lx++) {
-      uint8_t v=d->logo_art[ly*TWODFX_EMU_LOGO_STRIDE+(lx>>2)];
+    for(lx=0;lx<w;lx++) {
+      uint8_t v=art[ly*stride+(lx>>2)];
       unsigned colour=(unsigned)((v>>((lx&3u)*2u))&3u);
       int x=(int)d->logo_x+(int)lx-ox;
       if(colour && x>=0 && x<(int)r->width)
@@ -972,6 +951,15 @@ static void render_frame(twodfx_emu *d) {
   sprite_layer(d,&r);
   replay_2d(d,&r,1u);
   draw_builtin_logo(d,&r);
+  pointer_draw(d,&r);
+  if (d->overrun_visual && d->overrun_pending) {
+    int x=(int)width/2-20, y=((int)height-170)/2;
+    uint8_t colour=d->overrun_phase;
+    d->overrun_phase=(uint8_t)((colour+1u)&15u);
+    twodfx_raster_clip(&r,0,0,(int)width-1,(int)height-1);
+    twodfx_raster_fill_rect(&r,x,y,x+39,y+129,colour);
+    raster_ext_ellipse(&r,x,y+150,40,20,1,colour,colour,1,0,0,0,0);
+  }
 }
 #include "twodfx_public_api_adapter.inc"
 #include "twodfx_source_eggs.inc"
@@ -986,11 +974,10 @@ void twodfx_emu_vsync(twodfx_emu *d) {
   d->video_frames++;
   if (!d->awake) return;
   if (d->terminal == 1u) {
-    unsigned width=twodfx_emu_framebuffer_width(d);
-    unsigned height=twodfx_emu_framebuffer_height(d);
-    (void)width; (void)height;
+    d->overrun_pending=d->overrun_phase=d->overrun_visual=0;
+    pointer_reset(d,1);d->logo_visible=0;d->transparent=0;d->render_enabled=1;
     egg_api_bind(d);
-    twodfx_firmware_page_build_shadow_scene("1.1.0");
+    twodfx_firmware_page_build_shadow_scene("1.1.4");
     egg_api_bind(NULL);
     memcpy(d->active_spt,d->shadow_spt,sizeof d->active_spt);
     memcpy(d->active_2dpt,d->shadow_2dpt,sizeof d->active_2dpt);
@@ -1017,15 +1004,17 @@ void twodfx_emu_vsync(twodfx_emu *d) {
     d->collision_ready = 0;
   }
   if (d->resource_job == TWODFX_RESOURCE_JOB_BUSY) {
-    service_resource_job(d);
+    service_resource_jobs(d);
     return; /* no scene publication while resource job runs */
   }
-  if (d->fps == 50 || ((d->video_frames & 1u) == 0)) {
+  if(d->engine==TWODFX_EMU_ENGINE_OFF && !d->egg_pending)return;
+  if (d->fps == 50 || ((d->fps_phase^=1u)!=0)) {
     /* Start at the accepted scene boundary, not inside the F8h write. */
     /* The reference scheduler runs the start callback instead of tick on
        activation; the first periodic tick is at the NEXT accepted scene. */
     if (d->egg_pending) source_egg_start(d,d->egg_id);
     else if (d->egg_id != 0xffu) source_egg_tick(d,d->egg_id);
+    if (d->resource_job == TWODFX_RESOURCE_JOB_BUSY) return;
     memcpy(d->active_spt, d->shadow_spt, sizeof d->active_spt);
     memcpy(d->active_2dpt, d->shadow_2dpt, sizeof d->active_2dpt);
     memcpy(d->active_fonts, d->fonts, sizeof d->active_fonts);
@@ -1034,6 +1023,7 @@ void twodfx_emu_vsync(twodfx_emu *d) {
     memcpy(d->active_tilesets, d->tilesets, sizeof d->active_tilesets);
     memcpy(d->active_tilemaps, d->tilemaps, sizeof d->active_tilemaps);
     twodfx_3d_latch(&d->scene3d);
+    pointer_latch(d);
     render_frame(d);
     d->collision_pending = detect_collision(d);
     d->collision_ready = 1;
@@ -1063,9 +1053,9 @@ size_t twodfx_emu_overlay_line(const twodfx_emu *d, unsigned x, unsigned y,
     size_t offset=(size_t)y*fbwidth+x+i;
     uint8_t c=d->frame_colour[offset];
     /* Physical FORCED /EXTC ignores transparent-key comparator. NORMAL
-       selects only drawn non-key pixels. No render-overrun is simulated. */
+       selects only drawn non-key pixels. Execution-duration overruns are not simulated. */
     uint8_t active=(uint8_t)(d->engine==TWODFX_EMU_ENGINE_FORCED ||
-                            (d->frame_coverage[offset] && c!=d->transparent));
+                            (c!=d->transparent));
     colours[i]=c;
     coverage[i]=active;
     count+=active;
@@ -1140,16 +1130,15 @@ int twodfx_emu_get_tilemap(const twodfx_emu *d, unsigned i, twodfx_tilemap_descr
   *out = d->tilemaps[i]; return 1;
 }
 
-
 /*
- * Stable, endianness-independent snapshot format v3.
+ * Stable, endianness-independent snapshot format v15.
  * Deliberately independent of C struct padding and host CPU alignment.
  * The complete device state, including a partially received command or
  * resource job, is recorded. The current version includes renderer/framebuffer
- * state, and deliberately rejects old v1 blobs rather than reinterpret them.
+ * state; older formats are rejected rather than reinterpreted.
  */
 #define TWODFX_SNAPSHOT_HEADER_BYTES 20u
-#define TWODFX_SNAPSHOT_FORMAT_VERSION 13u
+#define TWODFX_SNAPSHOT_FORMAT_VERSION 15u
 
 typedef struct {
   const uint8_t *reader;
@@ -1209,6 +1198,15 @@ static void snap_body(snapshot_io *s, twodfx_emu *d) {
   uint8_t machine = (uint8_t)d->machine;
   uint8_t job = (uint8_t)d->resource_job;
   unsigned i;
+  snap_u8(s,&d->logo_small);snap_u32(s,&d->rng_state);
+  for(unsigned k=0;k<2;k++){
+    portable_pointer*p=k?&d->pointer_active:&d->pointer_shadow;
+    snap_u16(s,&p->x);snap_u16(s,&p->y);snap_u8(s,&p->mode);snap_u8(s,&p->colors);
+    snap_u8(s,&p->initialized);snap_u8(s,&p->valid);snap_u8(s,&p->hx);snap_u8(s,&p->hy);
+  }
+  snap_bytes(s,d->pointer_user_shadow,144);snap_bytes(s,d->pointer_user_active,144);
+  snap_u8(s,&d->pointer_pending);snap_u8(s,&d->pointer_hx);snap_u8(s,&d->pointer_hy);
+  snap_u32(s,&d->pointer_address);
   snap_u8(s, &machine);
   if (s->reader && !s->bad) d->machine = (twodfx_machine)machine;
   snap_u8(s, &d->started);
@@ -1216,7 +1214,7 @@ static void snap_body(snapshot_io *s, twodfx_emu *d) {
   snap_u8(s, &d->terminal);
   snap_u8(s, &d->engine);
   snap_u8(s, &d->transparent);
-  snap_u8(s, &d->fps);
+  snap_u8(s, &d->fps);snap_u8(s,&d->fps_phase);
   snap_u8(s, &d->overrun_visual);
   snap_u8(s, &d->session);
   snap_u8(s, &d->opcode);
@@ -1248,32 +1246,7 @@ static void snap_body(snapshot_io *s, twodfx_emu *d) {
   snap_u8(s,&d->egg_tail);
   snap_u8(s,&d->egg_overflow);
   snap_bytes(s,d->egg_fifo,sizeof d->egg_fifo);
-  /* Serialized TVC diagnostic state. */
-  snap_u16(s,&d->d0_mode_ticks);
-  snap_u16(s,&d->d0_boundary);
-  snap_i16(s,&d->d0_boundary_step);
-  snap_u8(s,&d->d0_mode);
-  snap_u8(s,&d->d0_flash_phase);
-  snap_u8(s,&d->d0_set_key_next_tick);
-  /* Serialized emulator animation and input state. */
-  snap_u32(s,&d->egg_frame);
-  snap_u16(s,&d->d1_position);
-  snap_u16(s,&d->d1_pause);
-  snap_u8(s,&d->d1_mode);
-  snap_u8(s,&d->d1_hold);
-  snap_i16(s,&d->pong_left);snap_i16(s,&d->pong_right);
-  snap_i16(s,&d->pong_x);snap_i16(s,&d->pong_y);
-  snap_i16(s,&d->pong_dx);snap_i16(s,&d->pong_dy);
-  snap_u16(s,&d->pong_serve);
-  snap_u8(s,&d->pong_score_l);snap_u8(s,&d->pong_score_r);
-  snap_u8(s,&d->pong_prev);snap_u8(s,&d->pong_input);
-  snap_u8(s,&d->pong_flash);
-  snap_u8(s,&d->egg_stage); /* Resource installation progression. */
-  /* Camera and interactive animation state. */
-  snap_u16(s,&d->ca_camera_x);snap_u16(s,&d->ca_camera_y);
-  snap_u16(s,&d->ca_target_x);snap_u16(s,&d->ca_target_y);
-  snap_u16(s,&d->ca_pause);snap_u8(s,&d->ca_route);
-  snap_u8(s,&d->ca_phase);
+  snap_bytes(s,d->demo_states,TWODFX_DEMO_STATE_BYTES);
   /* Public logo artwork and optional host override. */
   snap_u8(s, &d->logo_art_loaded);
   snap_u16(s, &d->logo_x);
@@ -1283,10 +1256,17 @@ static void snap_body(snapshot_io *s, twodfx_emu *d) {
   snap_bytes(s,d->logo_art,sizeof d->logo_art);
   snap_u8(s, &job);
   if (s->reader && !s->bad) d->resource_job = (twodfx_emu_job_status_type)job;
-  snap_u8(s, &d->job_format);
-  snap_u32(s, &d->job_source);
-  snap_u32(s, &d->job_destination);
+  snap_u8(s, &d->job_head);
+  snap_u8(s, &d->job_tail);
+  snap_u8(s, &d->overrun_pending);
+  snap_u8(s, &d->overrun_phase);
   snap_u32(s, &d->job_output_bytes);
+  snap_u32(s, &d->job_overflow_count);
+  for (i = 0; i < TWODFX_EMU_RESOURCE_QUEUE_CAPACITY; ++i) {
+    snap_u32(s, &d->jobs[i].source);
+    snap_u32(s, &d->jobs[i].destination);
+    snap_u8(s, &d->jobs[i].format);
+  }
   for (i = 0; i < 64; ++i) {
     snap_u32(s, &d->fonts[i].resource_address);
     snap_u8(s, &d->fonts[i].width_units);
@@ -1373,11 +1353,7 @@ static void snap_body(snapshot_io *s, twodfx_emu *d) {
       snap_u16(s,&pr[k]->near_z);snap_u16(s,&pr[k]->far_z);
     }
   }
-  /* Deterministic tunnel state in snapshot format v13. */
-  snap_u8(s,&d->tunnel_mode);snap_u8(s,&d->tunnel_profile);
-  snap_u8(s,&d->tunnel_ship);snap_u8(s,&d->tunnel_zoom);
-  snap_u8(s,&d->tunnel_auto);snap_u16(s,&d->tunnel_phase);
-  snap_u32(s,&d->tunnel_travel);
+
 }
 static void snapshot_put_u32(uint8_t *b, uint32_t v) {
   unsigned i;
@@ -1430,6 +1406,11 @@ int twodfx_emu_save_snapshot(const twodfx_emu *d, void *output, size_t capacity)
   return 1;
 }
 static int snapshot_valid(const twodfx_emu *d) {
+  if(d->logo_small>1||d->pointer_pending>1||d->pointer_hx>=24||d->pointer_hy>=12||d->pointer_address>0x7fffff)return 0;
+  for(unsigned k=0;k<2;k++){
+    const portable_pointer*p=k?&d->pointer_active:&d->pointer_shadow;
+    if(p->mode>15||p->initialized>1||p->valid>1||p->hx>=24||p->hy>=12||p->x>1023||p->y>511)return 0;
+  }
   unsigned l, i;
   if (d->machine > TWODFX_EMU_TVC || d->started > 1 || d->awake > 1 ||
       d->terminal > 2 || d->engine > TWODFX_EMU_ENGINE_FORCED ||
@@ -1443,9 +1424,10 @@ static int snapshot_valid(const twodfx_emu *d) {
       d->logo_x > 1023u || d->logo_y > 511u ||
       d->logo_main > 15u || d->logo_accent > 15u ||
       d->resource_job > TWODFX_RESOURCE_JOB_ERROR ||
-      d->job_format > 2 || d->raster_pending > 15 ||
-      d->job_source >= TWODFX_EMU_RESOURCE_BYTES ||
-      d->job_destination >= TWODFX_EMU_RESOURCE_BYTES ||
+      d->raster_pending > 15 || d->overrun_pending > 1 || d->overrun_phase > 15 ||
+      (uint8_t)(d->job_head - d->job_tail) > TWODFX_EMU_RESOURCE_QUEUE_CAPACITY ||
+      ((d->resource_job == TWODFX_RESOURCE_JOB_BUSY) != (d->job_head != d->job_tail)) ||
+      (d->terminal && d->job_head != d->job_tail) ||
       d->job_output_bytes > TWODFX_EMU_RESOURCE_BYTES ||
       d->render_enabled > 1u ||
       d->collision_reported > 1u || d->collision_pending > 1u ||
@@ -1455,16 +1437,9 @@ static int snapshot_valid(const twodfx_emu *d) {
       d->egg_overflow > 1u ||
       (d->egg_id==0xffu && (d->egg_pending || d->egg_head || d->egg_tail || d->egg_overflow)))
     return 0;
-  if (d->egg_id == 16u && !d->egg_pending) {
-    if (d->d0_mode > 1u || d->d0_mode_ticks >= 1250u ||
-        d->d0_flash_phase > 1u || d->d0_set_key_next_tick > 1u ||
-        d->d0_boundary < 80u || d->d0_boundary > 688u ||
-        (d->d0_boundary_step != 16 && d->d0_boundary_step != -16)) return 0;
-  } else if (d->d0_mode_ticks || d->d0_boundary || d->d0_boundary_step ||
-             d->d0_mode || d->d0_flash_phase || d->d0_set_key_next_tick)
-    return 0;
-  /* Original firmware eggs have process-global state outside this device
-     structure. Mid-animation snapshot restoration requires egg state hooks. */
+  for (i = 0; i < TWODFX_EMU_RESOURCE_QUEUE_CAPACITY; ++i)
+    if (d->jobs[i].format > 3 || d->jobs[i].source >= TWODFX_EMU_RESOURCE_BYTES ||
+        d->jobs[i].destination >= TWODFX_EMU_RESOURCE_BYTES) return 0;
   /* A CRC-valid image is not necessarily a safe parser state.  In
      particular CTRL has only ten bytes of backing ctrl_raw storage. */
   switch (d->session) {
@@ -1474,12 +1449,12 @@ static int snapshot_valid(const twodfx_emu *d) {
       break;
     case SESSION_CTRL:
       if (ctrl_args(d->opcode) == 0 ||
-          d->param_needed != ctrl_args(d->opcode) ||
+          d->param_needed != ctrl_args(d->opcode) || d->param_n>=d->param_needed ||
           d->param_needed > sizeof d->ctrl_raw[0]) return 0;
       break;
     case SESSION_2DPT:
       if (twod_args(d->opcode) == 0 ||
-          d->param_needed != twod_args(d->opcode)) return 0;
+          d->param_needed != twod_args(d->opcode) || d->param_n>=d->param_needed) return 0;
       break;
     case SESSION_UNZX:
       if (d->opcode < 0x83 || d->opcode > 0x85 ||
@@ -1533,13 +1508,6 @@ static int snapshot_valid(const twodfx_emu *d) {
        d->active_tilemaps[i].resource_address>=TWODFX_EMU_RESOURCE_BYTES ||
        d->active_tilemaps[i].width_cells>256 || d->active_tilemaps[i].height_cells>256 ||
        d->active_tilemaps[i].tileset>=64)return 0;
-  if(d->tunnel_mode>5u || d->tunnel_profile>2u ||
-     d->tunnel_ship>1u || d->tunnel_zoom>1u ||
-     d->tunnel_auto>1u || d->tunnel_phase>=400u ||
-     ((d->egg_id!=20u && d->egg_id!=21u) &&
-      (d->tunnel_mode || d->tunnel_profile || d->tunnel_ship ||
-       d->tunnel_zoom || d->tunnel_auto || d->tunnel_phase ||
-       d->tunnel_travel)))return 0;
   /* CRC-valid mesh state must not permit an OOB geometry read. */
   for(i=0;i<256u;i++) {
     const twodfx_3d_mesh *m=&d->scene3d.mesh_shadow[i];

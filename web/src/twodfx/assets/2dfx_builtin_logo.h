@@ -1,6 +1,3 @@
-/* SPDX-License-Identifier: MIT
- * Copyright (c) 2026 Károly Vaczkó
- */
 #ifndef TWO_DFX_BUILTIN_LOGO_HEADER_GUARD
 #define TWO_DFX_BUILTIN_LOGO_HEADER_GUARD
 

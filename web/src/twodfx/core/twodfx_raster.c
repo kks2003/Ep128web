@@ -3,6 +3,7 @@
  */
 #include "twodfx_raster.h"
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -41,51 +42,21 @@ void twodfx_raster_plot(twodfx_raster *r, int x, int y, uint8_t colour) {
     r->cover[p]=1;
   }
 }
-static unsigned outcode(const twodfx_raster *r,int x,int y) {
-  return (x<r->x0?1u:0u)|(x>r->x1?2u:0u)|
-         (y<r->y0?4u:0u)|(y>r->y1?8u:0u);
+static void portable_rect(twodfx_raster*r,int x,int y,unsigned w,unsigned h,uint8_t c){
+ if(w&&h)twodfx_raster_fill_rect(r,x,y,x+(int)w-1,y+(int)h-1,c);
 }
-void twodfx_raster_line(twodfx_raster *r,int x0,int y0,int x1,int y1,uint8_t colour) {
-  unsigned a,b,tries=0;
-  int64_t ax=x0,ay=y0,bx=x1,by=y1;
-  int dx,dy,sx,sy,err;
-  if (!r || r->x1<r->x0 || r->y1<r->y0) return;
-  /* Valid 2dfx geometry is many orders smaller. Reject extreme integers
-     so clipping arithmetic cannot overflow on hostile input. */
-  if (ax < -1000000 || ax > 1000000 || ay < -1000000 || ay > 1000000 ||
-      bx < -1000000 || bx > 1000000 || by < -1000000 || by > 1000000) return;
-  /* Cohen-Sutherland line clipping: avoids unbounded Bresenham loops. */
-  for (;;) {
-    int64_t nx,ny;
-    unsigned c;
-    a=outcode(r,(int)ax,(int)ay); b=outcode(r,(int)bx,(int)by);
-    if (!(a|b)) break;
-    if ((a&b) || ++tries>8) return;
-    c=a?a:b;
-    nx=a?ax:bx; ny=a?ay:by;
-    if (c&4u) { if (by==ay) return;
-      nx=ax+(bx-ax)*((int64_t)r->y0-ay)/(by-ay); ny=r->y0;
-    } else if (c&8u) { if (by==ay) return;
-      nx=ax+(bx-ax)*((int64_t)r->y1-ay)/(by-ay); ny=r->y1;
-    } else if (c&1u) { if (bx==ax) return;
-      ny=ay+(by-ay)*((int64_t)r->x0-ax)/(bx-ax); nx=r->x0;
-    } else { if (bx==ax) return;
-      ny=ay+(by-ay)*((int64_t)r->x1-ax)/(bx-ax); nx=r->x1;
-    }
-    if (a) { ax=nx; ay=ny; } else { bx=nx; by=ny; }
-  }
-  x0=(int)ax;y0=(int)ay;x1=(int)bx;y1=(int)by;
-  dx=abs(x1-x0); dy=abs(y1-y0);
-  sx=x0<x1?1:-1; sy=y0<y1?1:-1; err=dx-dy;
-  for (;;) {
-    int e;
-    twodfx_raster_plot(r,x0,y0,colour);
-    if (x0==x1 && y0==y1) break;
-    e=err*2;
-    if (e>-dy) { err-=dy; x0+=sx; }
-    if (e<dx) { err+=dx; y0+=sy; }
-  }
+static void portable_line(twodfx_raster*r,int x,int y,int ex,int ey,unsigned n,uint8_t c){
+ if(!n)n=1;
+ if(y==ey){portable_rect(r,(x<ex?x:ex),y,abs(ex-x)+1,n,c);return;}
+ if(x==ex){portable_rect(r,x,(y<ey?y:ey),n*2,abs(ey-y)+1,c);return;}
+ int dx=abs(ex-x),dy=abs(ey-y),error=dx-dy,sx=x<ex?1:-1,sy=y<ey?1:-1;
+ for(;;){
+  if(n==1)twodfx_raster_plot(r,x,y,c);else portable_rect(r,x,y,n*2,n,c);
+  if(x==ex&&y==ey)break;
+  int twice=2*error;if(twice>=-dy){error-=dy;x+=sx;}if(twice<=dx){error+=dx;y+=sy;}
+ }
 }
+void twodfx_raster_line(twodfx_raster*r,int x,int y,int ex,int ey,uint8_t c){if(r)portable_line(r,x,y,ex,ey,1,c);}
 void twodfx_raster_fill_rect(twodfx_raster *r,int x0,int y0,int x1,int y1,uint8_t colour) {
   int y,x,t;
   if (!r) return;
@@ -109,63 +80,51 @@ void twodfx_raster_triangle(twodfx_raster *r,int x0,int y0,int x1,int y1,
   twodfx_raster_line(r,x1,y1,x2,y2,colour);
   twodfx_raster_line(r,x2,y2,x0,y0,colour);
 }
-static int64_t edge(int64_t ax,int64_t ay,int64_t bx,int64_t by,int64_t px,int64_t py) {
-  return (px-ax)*(by-ay)-(py-ay)*(bx-ax);
-}
-void twodfx_raster_fill_triangle(twodfx_raster *r,int x0,int y0,int x1,int y1,
-                                 int x2,int y2,uint8_t colour) {
-  int x,y,minx,maxx,miny,maxy;
-  int64_t area;
-  if (!r) return;
-  if (x0 < -1000000 || x0 > 1000000 || y0 < -1000000 || y0 > 1000000 ||
-      x1 < -1000000 || x1 > 1000000 || y1 < -1000000 || y1 > 1000000 ||
-      x2 < -1000000 || x2 > 1000000 || y2 < -1000000 || y2 > 1000000) return;
-  area=edge(x0,y0,x1,y1,x2,y2);
-  if (!area) return; /* v1.1.0: zero-area filled triangle is empty */
-  minx=x0<x1?x0:x1; if (x2<minx)minx=x2;
-  maxx=x0>x1?x0:x1; if (x2>maxx)maxx=x2;
-  miny=y0<y1?y0:y1; if (y2<miny)miny=y2;
-  maxy=y0>y1?y0:y1; if (y2>maxy)maxy=y2;
-  if(minx<r->x0)minx=r->x0;
-  if(maxx>r->x1)maxx=r->x1;
-  if(miny<r->y0)miny=r->y0;
-  if(maxy>r->y1)maxy=r->y1;
-  for(y=miny;y<=maxy;y++) for(x=minx;x<=maxx;x++) {
-    int64_t e0=edge(x0,y0,x1,y1,x,y);
-    int64_t e1=edge(x1,y1,x2,y2,x,y);
-    int64_t e2=edge(x2,y2,x0,y0,x,y);
-    if (area>0 ? (e0>=0&&e1>=0&&e2>=0) : (e0<=0&&e1<=0&&e2<=0))
-      twodfx_raster_plot(r,x,y,colour);
+static int64_t ceil_ratio(int64_t n,int64_t d){return n/d+(n%d>0);}
+void twodfx_raster_fill_triangle_sample(twodfx_raster*r,int ax,int ay,int bx,int by,int cx,int cy,uint8_t color,int half){
+ int xs[3]={ax,bx,cx},ys[3]={ay,by,cy};
+ if(!r||(int64_t)(bx-ax)*(cy-ay)==(int64_t)(by-ay)*(cx-ax))return;
+ int low=ay,high=ay;for(int i=1;i<3;i++){if(ys[i]<low)low=ys[i];if(ys[i]>high)high=ys[i];}
+ if(low<r->y0)low=r->y0;
+ if(high>r->y1+1)high=r->y1+1;
+ for(int y=low;y<high;y++){
+  int cuts[3],count=0;
+  for(int i=0;i<3;i++){
+   int j=(i+1)%3,x0=xs[i],y0=ys[i],x1=xs[j],y1=ys[j];
+   if(y0>y1){int t=y0;y0=y1;y1=t;t=x0;x0=x1;x1=t;}
+   if(y<y0||y>=y1)continue;
+   int64_t den=2*(int64_t)(y1-y0);
+   int64_t num=(2*(int64_t)x0-half)*(y1-y0)+(int64_t)(x1-x0)*(2*(int64_t)(y-y0)+half);
+   cuts[count++]=(int)ceil_ratio(num,den);
   }
+  if(count==2){int l=cuts[0]<cuts[1]?cuts[0]:cuts[1],rr=cuts[0]>cuts[1]?cuts[0]:cuts[1];
+   if(rr>l)twodfx_raster_fill_rect(r,l,y,rr-1,y,color);}
+ }
 }
-size_t twodfx_raster_flood(twodfx_raster *r,int x,int y,uint8_t colour) {
-  size_t *queue,head=0,tail=0,count=0,p,total;
-  uint8_t old_c,old_cov,new_c=(uint8_t)(colour&15u);
-  if (!inside(r,x,y)) return 0;
-  total=(size_t)r->width*r->height;
-  p=(size_t)y*r->width+(unsigned)x;
-  old_c=r->colour[p];old_cov=r->cover[p];
-  if (old_c==new_c && old_cov==1) return 0;
-  if (total>SIZE_MAX/sizeof(size_t))return 0;
-  queue=(size_t*)malloc(total*sizeof(size_t));
-  if(!queue)return 0;
-  queue[tail++]=p;r->colour[p]=new_c;r->cover[p]=1;count=1;
-  while (head<tail) {
-    size_t q=queue[head++];
-    unsigned cx=(unsigned)(q%r->width),cy=(unsigned)(q/r->width);
-    size_t candidates[4];unsigned n=0,i;
-    if(cx>(unsigned)r->x0)candidates[n++]=q-1;
-    if(cx<(unsigned)r->x1)candidates[n++]=q+1;
-    if(cy>(unsigned)r->y0)candidates[n++]=q-r->width;
-    if(cy<(unsigned)r->y1)candidates[n++]=q+r->width;
-    for(i=0;i<n;i++) {
-      size_t v=candidates[i];
-      if(r->colour[v]==old_c && r->cover[v]==old_cov) {
-        r->colour[v]=new_c;r->cover[v]=1;queue[tail++]=v;count++;
-      }
-    }
+void twodfx_raster_fill_triangle(twodfx_raster*r,int ax,int ay,int bx,int by,int cx,int cy,uint8_t c){twodfx_raster_fill_triangle_sample(r,ax,ay,bx,by,cx,cy,c,1);}
+size_t twodfx_raster_flood(twodfx_raster*r,int x,int y,uint8_t color){
+ struct{int x,y;}pending[128];unsigned count=1;size_t changed=0;
+ if(!inside(r,x,y))return 0;
+ uint8_t old=r->colour[(size_t)y*r->width+x];color&=15;
+ if(old==color)return 0;
+ pending[0].x=x;pending[0].y=y;
+ while(count){
+  --count;x=pending[count].x;y=pending[count].y;
+  if(r->colour[(size_t)y*r->width+x]!=old)continue;
+  int left=x,right=x;
+  while(left>r->x0&&r->colour[(size_t)y*r->width+left-1]==old)--left;
+  while(right<r->x1&&r->colour[(size_t)y*r->width+right+1]==old)++right;
+  twodfx_raster_fill_rect(r,left,y,right,y,color);changed+=right-left+1;
+  for(int delta=-1;delta<=1;delta+=2){
+   int row=y+delta;if(row<r->y0||row>r->y1)continue;
+   int in_run=0;for(int xx=left;xx<=right;xx++){
+    int same=r->colour[(size_t)row*r->width+xx]==old;
+    if(same&&!in_run&&count<128){pending[count].x=xx;pending[count++].y=row;}
+    in_run=same;
+   }
   }
-  free(queue);return count;
+ }
+ return changed;
 }
 int twodfx_raster_blit4(twodfx_raster *r,int x,int y,unsigned width,unsigned height,
                         const uint8_t *src,size_t src_bytes,size_t stride,uint8_t transparent) {

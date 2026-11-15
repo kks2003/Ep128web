@@ -92,8 +92,8 @@ SOURCES="
   web/src/twodfx/core/twodfx_raster.c
   web/src/twodfx/core/twodfx_3d.c
   web/src/twodfx/assets/logo_2dfx_asset.c
-  web/src/twodfx/firmware_eggs/firmware_page.c
-  $(ls web/src/twodfx/firmware_eggs/egg_*.c)
+  web/src/twodfx/demos/firmware_page.c
+  $(ls web/src/twodfx/demos/egg_*.c)
   web/src/twodfx_bridge.cpp
   web/src/webdebug.cpp
   web/src/webscript.cpp
@@ -123,7 +123,7 @@ for src in $SOURCES; do
     case "$src" in
       web/src/card/*.c|web/src/card/*/*.c) emcc -O3 -w -DHAVE_STDINT_H -DLFS_NO_ASSERT -Iweb/src -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;  # vendored C code
       web/src/lua/*.c) emcc -O2 -w -DLUA_COMPAT_5_2 -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;  # Lua 5.3 (MIT)
-      web/src/twodfx/*/*.c) emcc -O3 -std=c99 -w -Iweb/src/twodfx/include -Iweb/src/twodfx/core -Iweb/src/twodfx/assets -Iweb/src/twodfx/firmware_eggs -Iweb/src/twodfx/firmware_eggs/portable -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;  # 2dfx module (MIT)
+      web/src/twodfx/*/*.c) emcc -O3 -std=c99 -w -Iweb/src/twodfx/include -Iweb/src/twodfx/core -Iweb/src/twodfx/assets -Iweb/src/twodfx/demos -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;  # 2dfx module (MIT)
       *) em++ $CFLAGS -MMD -MF "$obj.d" -c "$src" -o "$obj" ;;
     esac
   fi

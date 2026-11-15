@@ -1,13 +1,14 @@
-# START HERE — Portable 2dfx emulator
+# Portable 2dfx emulator 1.1.4
 
-For **Károly Kiss and Zoltán Balogh** — the same complete source module is suitable for integration in either ep128emu host implementation.
+A complete behavioural 2dfx device for developers integrating 2dfx into **Enterprise or TVC emulators**.
 
-1. Read `README.md` and `ASSET_LICENSES.md` (the original Elite/Wriggler-derived demonstration content is **not** MIT-licensed).
-2. Build the complete C99 library: `cmake -S . -B build && cmake --build build --parallel`.
-3. Run its native smoke tests: `ctest --test-dir build --output-on-failure`.
-4. Use `src/include/twodfx_emu.h` or the C++11 convenience wrapper `src/adapter/ep128emu_twodfx_adapter.hpp`.
-5. Wire VM F8h/F9h port read/write, 50 Hz VSYNC, raw HSYNC scanline, IRQ and the indexed video compositor according to `docs/INTEGRATION.md`.
-6. Integrate snapshot format v13 as a distinct peripheral state chunk; see `docs/SNAPSHOT_FORMAT.md` and the mid-egg limitation in `docs/COMPATIBILITY.md`.
-7. Run Enterprise and TVC host regressions, including TVC256+++, and compare with physical hardware when practical.
+1. Build and test the package using the commands in `README.md`.
+2. Link the `twodfx_emu` target and include `src/include/twodfx_emu.h`.
+3. Connect the guest's F8h/F9h accesses, HSYNC, VSYNC, interrupt line and indexed video overlay as described in `docs/INTEGRATION.md`.
+4. Use the generic C++11 connector in `src/adapter/twodfx_adapter.hpp` if convenient. The C interface works independently of it.
+5. Use [COMMAND_REFERENCE.md](docs/COMMAND_REFERENCE.md) for the complete guest command set and [EGGS.md](docs/EGGS.md) for all built-in demos and their controls.
+6. When updating an existing integration, read `docs/UPGRADING.md`; saved peripheral state uses format 15.
 
-Every production source and asset is under `src/`. No MCU-private firmware or Pico SDK is needed. The original public v1.1.0 egg code and owned artwork are included; the hardware-specific RP2354 renderer, DMA, PIO, multicore workers and timing optimizations are not.
+All production sources and assets are under `src/`. There are no external runtime dependencies beyond the C standard library. The included eggs follow the final 2dfx 1.1.4 demonstrations, including the six-scene D4 graphics demo and D5 public-mesh tunnel.
+
+Read `LICENSE` and `ASSET_LICENSES.md` when redistributing the package. See `docs/COMPATIBILITY.md` for the behavioural timing boundary.

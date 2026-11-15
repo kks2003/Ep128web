@@ -3,10 +3,7 @@
  */
 #ifndef TWODFX_RASTER_H
 #define TWODFX_RASTER_H
-/* Independent, portable 4-bit indexed + coverage raster kernel.  C99.
- * This is a geometric implementation, NOT a claim of RP2354B pixel parity.
- * The caller owns colour/coverage storage, each width*height bytes.
- */
+
 #include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus
@@ -15,6 +12,7 @@ extern "C" {
 typedef struct {
   uint8_t *colour, *cover;
   unsigned width, height;
+  uint8_t key;
   int x0, y0, x1, y1; /* inclusive clip rectangle */
 } twodfx_raster;
 int twodfx_raster_bind(twodfx_raster *r, uint8_t *colour, uint8_t *coverage,
@@ -29,7 +27,8 @@ void twodfx_raster_triangle(twodfx_raster *r, int x0, int y0, int x1, int y1,
                             int x2, int y2, uint8_t colour);
 void twodfx_raster_fill_triangle(twodfx_raster *r, int x0, int y0, int x1, int y1,
                                  int x2, int y2, uint8_t colour);
-/* Four-connected fill matching colour AND coverage; returns modified pixels. */
+void twodfx_raster_fill_triangle_sample(twodfx_raster*,int,int,int,int,int,int,uint8_t,int);
+/* Four-connected fill matching colour; 128 pending scanline seeds; returns modified pixels. */
 size_t twodfx_raster_flood(twodfx_raster *r, int x, int y, uint8_t colour);
 /* Interleaved low nibble=left pixel, high nibble=right. Transparent pixels
  * don't modify existing output. Stride is bytes, src_bytes bounds ALL reads. */

@@ -1,71 +1,34 @@
-# Portable 2dfx — ep128emu host integration
+# Host integration
 
-The C99 core has no dependency on ep128emu. Compile it as the `twodfx_emu` CMake target or include the following **28 production C translation units** in your build:
+Create one `twodfx_emu` with `TWODFX_EMU_ENTERPRISE` or `TWODFX_EMU_TVC`. Destroy it with `twodfx_emu_destroy`. Keep the device alive across ordinary guest CPU resets; call `twodfx_emu_power_cycle` only for a physical card reset or power cycle.
 
-```text
-src/core/twodfx_emu.c
-src/core/twodfx_raster.c
-src/core/twodfx_3d.c
-src/assets/logo_2dfx_asset.c
-src/firmware_eggs/firmware_page.c
-src/firmware_eggs/egg_C0_logo.c
-src/firmware_eggs/egg_C1_benchmark.c
-src/firmware_eggs/egg_C2_primitives.c
-src/firmware_eggs/egg_C3_text.c
-src/firmware_eggs/egg_C4_blit.c
-src/firmware_eggs/egg_C5_pattern.c
-src/firmware_eggs/egg_C6_tilemap.c
-src/firmware_eggs/egg_C7_pong_basic.c
-src/firmware_eggs/egg_C8_pong_wow.c
-src/firmware_eggs/egg_C9_wriggler.c
-src/firmware_eggs/egg_CA_boulder.c
-src/firmware_eggs/egg_CB_arcpie_benchmark.c
-src/firmware_eggs/egg_CC_diag.c
-src/firmware_eggs/egg_CD_blit_full.c
-src/firmware_eggs/egg_CE_layer.c
-src/firmware_eggs/egg_CF_tvc_bitpattern.c
-src/firmware_eggs/egg_D0_tvc_crisp_tearing.c
-src/firmware_eggs/egg_D1_ruler.c
-src/firmware_eggs/egg_D2_xy_offset.c
-src/firmware_eggs/egg_D3_elite_showcase.c
-src/firmware_eggs/egg_D4_3d_scope.c
-src/firmware_eggs/egg_D5_public_mesh.c
-src/firmware_eggs/egg_DF_graphics_test.c
-```
+## Ports and interrupts
 
-Use C99 with include paths `src/include`, `src/core`, `src/assets`, `src/firmware_eggs`, `src/firmware_eggs/portable`; link the C math library (`-lm` on Unix-like hosts). `twodfx_public_api_adapter.inc` and `twodfx_source_eggs.inc` are compiled into `twodfx_emu.c` via local `#include` and **must not be compiled independently**. Assets and original headers reside entirely under `src/`.
+Decode the low byte of Z80 I/O addresses. Route F8h writes to `twodfx_emu_write_f8`, F9h writes to `twodfx_emu_write_f9`, and F8h reads to `twodfx_emu_read_f8`. F9h is write-only. Combine reads with other emulated devices using the host machine's bus rules; the connector must not suppress another device's response.
 
-The C++11 header-only adapter `src/adapter/ep128emu_twodfx_adapter.hpp` is an optional convenience layer with no ep128emu headers; a host may instead use `src/include/twodfx_emu.h` directly.
+Pass absolute physical scanline numbers to `twodfx_emu_hsync` on every scanline, including when no raster interrupt is enabled and during resource loading. HSYNC drains the 16-job resource FIFO in order, without publishing a new scene; jobs are not limited to one per frame. Call `twodfx_emu_vsync` once per physical 50 Hz frame, including when rendering is set to 25 fps. Combine `twodfx_emu_irq_asserted` with other interrupt sources. IRQ remains asserted until the guest clears its pending raster latches.
 
-## Device event contract
+Cold boot starts asleep and OFF. The guest wakes the card with F8h=50h, F9h=01h (or another nonzero engine mode). F8h bit6 becomes zero when ready. Software should keep this handshake when running on 2dfx hardware; the behavioural model completes it immediately.
 
-| Host event | Library call / requirement |
-|---|---|
-| Create Enterprise or TVC device | `twodfx_emu_create(TWODFX_EMU_ENTERPRISE)` or `TWODFX_EMU_TVC` |
-| Dispose | `twodfx_emu_destroy()` |
-| Z80 OUT F8h | `twodfx_emu_write_f8()` |
-| Z80 OUT F9h | `twodfx_emu_write_f9()` |
-| Z80 IN F8h | `twodfx_emu_read_f8()`; active-low result |
-| Z80 IN F9h | Not a 2dfx result port; use host's normal bus handling |
-| Every physical VSYNC | `twodfx_emu_vsync()`, at the computer's 50 Hz cadence including 25-fps engine setting |
-| Every raw scanline | `twodfx_emu_hsync(device, raw_scanline)` |
-| Interrupt | OR `twodfx_emu_irq_asserted()` with other VM IRQ contributors |
-| Scanout | `twodfx_emu_overlay_raw_line()` on raw coordinates, or `twodfx_emu_overlay_line()` for device framebuffer-local coordinates |
-| Physical card power cycle | `twodfx_emu_power_cycle()`; distinct from CPU soft reset |
-| Device state | `twodfx_emu_snapshot_size/save_snapshot/load_snapshot` as a separate v13 chunk |
+## Video
 
-### Coordinate and pixel contract
+Read indices and coverage with `twodfx_emu_overlay_raw_line`, using physical raw coordinates, or `twodfx_emu_overlay_line`, using stored-framebuffer coordinates. Both functions clear their output buffers before filling them. An index is meaningful wherever coverage is nonzero.
 
-`overlay_line` uses local framebuffer coordinates: Enterprise local (0,0) is raw (88,16), TVC local (0,0) is raw (0,41). `overlay_raw_line` accepts raw host coordinates and handles the stored-frame offset. The C API returns indexed 4-bit colours and a 0/1 coverage mask. Composite the overlay **before** the machine's indexed-to-RGB conversion; preserve Enterprise NICK and TVC palette semantics. Respect OFF, NORMAL (transparent key) and FORCED modes. The VM decides the final viewport and priority relative to unrelated overlays.
+| Profile | Stored framebuffer | Raw origin | Practical visible pointer bounds, inclusive |
+|---|---|---|---|
+| Enterprise | 744 × 288 | (88, 16) | X=88..811, Y=18..303 |
+| TVC | 704 × 256 | (0, 41) | X=79..686, Y=41..296 |
 
-### Shadow publication
+NORMAL overlays pixels whose index differs from the transparent key. FORCED overlays every stored pixel, including the key. OFF supplies no coverage. Retained layers draw in this order: background, sprites 0..63, foreground, built-in logo, pointer, optional overrun marker. Each drawing layer starts with a full clip and zero XY offset; overlays and sprites ignore 2DPT clipping.
 
-Sprite, descriptor and BG/FG 2DPT writes update shadow state; publication occurs at accepted VSYNC frames. Camera pose is likewise frame latched. The original eggs use public `twodfx_api.h` against that same model. Resource RAM is a logical 8 MiB address space; no Pico SDK or MCU timing services are needed by the host.
+Keep numeric indices unchanged. Enterprise colours depend on the host NICK palette and BIAS; TVC uses its external-colour interpretation. NICK-format upload conversion is already performed by this module: do not apply another bit shuffle at the overlay boundary. Raw packed resources store the left pixel in the low nibble.
 
-### Snapshots and lifecycle
+## State and execution
 
-The saved peripheral chunk uses **format v13 only**. A state of another format is not a valid v13 chunk; reject it explicitly. The original egg modules use file-static internal animation state not completely serialized by the device API; avoid promising mid-egg resumption or concurrently independent egg state until that limitation is resolved. A guest soft reset should not automatically invoke `twodfx_emu_power_cycle()`.
+Use the snapshot functions for a complete peripheral chunk; do not serialize the opaque struct. They include resources, unfinished commands, accepted and pending scenes, cursor caches, the pending resource FIFO and overflow latch, demo state and the current frame. The host must save its own video phase separately.
 
-### Integration guidance
+Multiple devices may run independent demos. Calls into the library, including calls for different devices, must be serialized on one thread or protected by a host lock. Demo callbacks temporarily bind their saved state to the portable API. The module itself creates no threads.
 
-Use separate Enterprise and TVC VM-port hooks but the same core. Preserve and regress TVC256+++ and unrelated expansion-card code. The supplied module does **not** alter ep128emu source or require a particular version of the VM; adapt the host to its current I/O, VSYNC/HSYNC, compositor and snapshot abstractions.
+`twodfx_emu_set_render_enabled` is a host diagnostic option, independent of guest ENGINE_OFF. Leave it enabled in an ordinary integration. `twodfx_emu_set_logo_art` overrides only the normal-size logo; the small logo uses the supplied 103 × 40 asset.
+
+The generic `TwoDfxAdapter` demonstrates port, sync, IRQ, overlay and snapshot wiring. It owns its device and cannot be copied. The older adapter header and class name remain compatibility aliases.
