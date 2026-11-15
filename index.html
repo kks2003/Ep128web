@@ -12,12 +12,12 @@
     if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   } catch (e) { }
 </script>
-<link rel="stylesheet" href="style.css?v=202611151406-cec311b">
+<link rel="stylesheet" href="style.css?v=202611151417-f7a95b9">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <meta name="theme-color" content="#1b1f45">
-<meta name="build" content="202611151406-cec311b">
+<meta name="build" content="202611151417-f7a95b9">
 </head>
 <body>
 <header id="bar">
@@ -110,7 +110,7 @@
       <a class="item" href="https://github.com/kks2003/Ep128web" target="_blank" rel="noopener">Ep128web a GitHubon</a>
       <a class="item" href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu (Varga István)</a>
       <hr>
-      <div class="about"><b>Enterprise 128 · TVC</b><span>ep128emu · web</span><small id="build" title="Fordítás ideje és verziója">2026.11.15 15:06 · cec311b</small></div>
+      <div class="about"><b>Enterprise 128 · TVC</b><span>ep128emu · web</span><small id="build" title="Fordítás ideje és verziója">2026.11.15 15:17 · f7a95b9</small></div>
     </div></div>
   </nav>
   <div id="quick">
@@ -614,6 +614,12 @@
     </div>
   </section>
 </div>
+  <dialog id="alert-dlg">
+    <div class="dm-head"><b id="alert-title">Figyelem</b><button id="alert-close" title="Bezárás">✕</button></div>
+    <p id="alert-text"></p>
+    <div class="alert-btns"><button id="alert-open" hidden></button><button id="alert-ok">OK</button></div>
+  </dialog>
+
   <dialog id="help">
     <div class="dm-head"><b>Súgó</b><button id="help-close" title="Bezárás">✕</button></div>
     <ul data-i18n-html="help">
@@ -656,11 +662,11 @@
     (Varga István, GPL v2) változatlan forráskódja, WebAssemblyre fordítva.</p>
   </dialog>
 
-<script src="i18n-strings.js?v=202611151406-cec311b"></script>
-<script src="i18n.js?v=202611151406-cec311b"></script>
-<script src="ep128emu.js?v=202611151406-cec311b"></script>
-<script src="screenfx.js?v=202611151406-cec311b"></script>
-<script src="ep128.js?v=202611151406-cec311b"></script>
-<script src="ui.js?v=202611151406-cec311b"></script>
+<script src="i18n-strings.js?v=202611151417-f7a95b9"></script>
+<script src="i18n.js?v=202611151417-f7a95b9"></script>
+<script src="ep128emu.js?v=202611151417-f7a95b9"></script>
+<script src="screenfx.js?v=202611151417-f7a95b9"></script>
+<script src="ep128.js?v=202611151417-f7a95b9"></script>
+<script src="ui.js?v=202611151417-f7a95b9"></script>
 </body>
 </html>

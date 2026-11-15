@@ -685,7 +685,7 @@
       if (e.d) api.usbMkdir(e.p);
       else if (!usbPutBytes(e.p, e.b)) failed.push(e.p);
     }
-    if (failed.length) setMessage(fullWarning(false, failed), true);
+    if (failed.length) warnFull(false, failed);
   }
 
   function usbPutBytes(path, bytes) {
@@ -711,7 +711,7 @@
     }
     const failed = entries.filter((e) => !usbPutBytes(usbJoin(usbCwd, e.path), e.bytes)).map((e) => e.path);
     if (failed.length)
-      setMessage(T('Nem sikerült (megtelt, vagy a név nem megengedett): ') + failed.join(', '), true);
+      warnFull(false, failed);
     else
       setMessage(entries.length + T(' fájl a pendrive-ra került'));
     saveUsb();
@@ -967,7 +967,7 @@
       if (e.d) api.sdMkdir(e.p);
       else if (!sdPutBytes(e.p, e.b)) failed.push(e.p);
     }
-    if (failed.length) setMessage(fullWarning(true, failed), true);
+    if (failed.length) warnFull(true, failed);
   }
 
   function sdPutBytes(path, bytes) {
@@ -1002,7 +1002,7 @@
     }
     const failed = entries.filter((e) => !sdPutBytes(usbJoin(sdCwd, e.path), e.bytes)).map((e) => e.path);
     if (failed.length)
-      setMessage(T('Nem sikerült (megtelt, vagy a név nem megengedett): ') + failed.join(', '), true);
+      warnFull(true, failed);
     else
       setMessage(entries.length + T(' fájl az SD kártyára került'));
     saveSd();
@@ -1123,10 +1123,11 @@
     saveSd();
     renderSd();
     if (failed.includes(name) || failed.includes(base + '.cas')) {
-      setMessage(fullWarning(true, failed), true);
+      warnFull(true, failed);
       return;
     }
     if (failed.length) {
+      warnFull(true, failed);
       startAutostart('load "' + base + '"\n', () => setMessage(fullWarning(true, failed), true), false,
                      tvcRedirectFor(SLOT_NANOSD), () => api.sdChdir(''));
       return;
@@ -1140,7 +1141,7 @@
     const failed = names.filter((f) => !sdPutBytes(f, M.FS.readFile('/files/' + f)));
     saveSd();
     renderSd();
-    if (failed.length) setMessage(fullWarning(true, failed), true);
+    if (failed.length) warnFull(true, failed);
     else setMessage(T('Az SD kártyára került: ') + names.join(', '));
   }
 
@@ -2846,8 +2847,40 @@ registerProcessor('ep-output', EPOutput);
     const failed = names.filter((f) => !usbPutBytes(f, M.FS.readFile('/files/' + f)));
     saveUsb();
     renderUsb();
-    if (failed.length) setMessage(fullWarning(false, failed), true);
+    if (failed.length) warnFull(false, failed);
     else setMessage(T('A TVC256k++ pendrive-jára került: ') + names.join(', '));
+  }
+
+  // a warning in a window that stays until it is closed; openLabel / onOpen:
+  // an extra button (e.g. to the pendrive's files)
+  function showAlert(title, text, openLabel, onOpen) {
+    const dlg = $('alert-dlg');
+    if (!dlg) { setMessage(text, true); return; }
+    $('alert-title').textContent = title;
+    $('alert-text').textContent = text;
+    const open = $('alert-open');
+    open.hidden = !openLabel;
+    open.textContent = openLabel || '';
+    open.onclick = () => { dlg.close(); if (onOpen) onOpen(); };
+    $('alert-ok').onclick = () => dlg.close();
+    $('alert-close').onclick = () => dlg.close();
+    if (!dlg.open) dlg.showModal();
+    $('alert-ok').focus();
+  }
+  // the warning of a full pendrive / SD card: in a window and the status line
+  // at most 1 MB free: full for the files that did not fit
+  const mediaFull = (sd) => (sd ? api.sdInfo(1) : api.usbInfo(1)) < 1024;
+  function warnFull(sd, failed) {
+    const text = fullWarning(sd, failed);
+    setMessage(text, true);
+    const title = !mediaFull(sd) ? T('Nem sikerült felrakni') : sd ? T('Megtelt az SD kártya') : T('Megtelt a pendrive');
+    showAlert(title, text,
+              sd ? T('SD kártya megnyitása') : T('Pendrive megnyitása'), () => {
+                const tab = document.querySelector('#panel .tabs button[data-tab="disk"]');
+                if (tab) tab.click();
+                const g = $(sd ? 'sd-group' : 'usb-group');
+                if (g) g.scrollIntoView({ block: 'start', behavior: 'smooth' });
+              });
   }
 
   // the warning when the pendrive (or the NanoSD card's SD card) is full:
@@ -2856,6 +2889,9 @@ registerProcessor('ep-output', EPOutput);
     const info = sd ? api.sdInfo : api.usbInfo;
     const free = info(1), total = info(0);
     const names = failed.slice(0, 4).join(', ') + (failed.length > 4 ? F(' és még {0}', failed.length - 4) : '');
+    if (!mediaFull(sd))
+      return F('Nem sikerült felrakni: {0} (a név nem megengedett, vagy túl nagy a fájl; szabad: {1}).',
+               names, fmtSize(Math.max(0, free) * 1024));
     return F(sd ? 'Megtelt az SD kártya (szabad: {0} / {1}), nem fért rá: {2}. Törölj róla fájlokat, vagy válassz nagyobb méretet (Lemezek fül, SD kártya).'
                 : 'Megtelt a pendrive (szabad: {0} / {1}), nem fért rá: {2}. Törölj róla fájlokat, vagy válassz nagyobb méretet (Lemezek fül, USB pendrive).',
              fmtSize(Math.max(0, free) * 1024), fmtSize(Math.max(0, total) * 1024), names);
@@ -2890,13 +2926,13 @@ registerProcessor('ep-output', EPOutput);
       renderUsb();
       if (failed.includes(name) || failed.includes(base + '.cas')) {
         // without the program itself LOAD would find an old copy, or nothing
-        setMessage(fullWarning(false, failed), true);
+        warnFull(false, failed);
         return;
       }
       // the warning stays after the start (the autostart's messages would hide it)
       startAutostart('load "' + base + '"\n', failed.length ? () => setMessage(fullWarning(false, failed), true) : null,
                      false, tvcRedirectFor(SLOT_CARD256), () => api.cardSelectDrive(0));
-      if (failed.length) setMessage(fullWarning(false, failed), true);
+      if (failed.length) warnFull(false, failed);
       return;
     }
     const prepare = () => {
