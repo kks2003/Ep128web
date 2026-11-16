@@ -1,17 +1,14 @@
 /* SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Károly Vaczkó
  */
-/* Portable C99 behavioral 3D, independent mathematical implementation.
- * Not a translation of the RP2354B firmware render algorithm. */
+
 #include "twodfx_3d.h"
-#include <math.h>
+#include <stdbool.h>
+#include "../demos/mesh3d_angles.h"
+#include "../demos/egg_D3_elite_showcase.h"
 #include <stdlib.h>
 #include <string.h>
 
-#define DFX_PI 3.14159265358979323846
-typedef struct { double x, y, z; } v3;
-typedef struct { double x,y; } p2;
-typedef struct { uint16_t index; double z; } sorted_face;
 static uint16_t u16(const uint8_t *p) {
   return (uint16_t)((unsigned)p[0] | ((unsigned)p[1] << 8));
 }
@@ -21,15 +18,12 @@ static int16_t i16(const uint8_t *p) {
 }
 void twodfx_3d_unpack_angles(const uint8_t p[4],
                             uint16_t *roll,uint16_t *yaw,uint16_t *pitch) {
-  uint32_t b=(uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);
-  if(roll)*roll=(uint16_t)(b&1023u);
-  if(yaw)*yaw=(uint16_t)((b>>10)&1023u);
-  if(pitch)*pitch=(uint16_t)((b>>20)&1023u);
+  twodfx_unpack_angles10(p,roll,yaw,pitch);
 }
 void twodfx_3d_reset(twodfx_3d_scene *s) {
   if(!s)return;
   memset(s,0,sizeof *s);
-  s->projection_shadow.fx=365u;s->projection_shadow.fy=300u;
+  s->projection_shadow.fx=579u;s->projection_shadow.fy=300u;
   s->projection_shadow.near_z=96u;s->projection_shadow.far_z=2490u;
   s->projection_active=s->projection_shadow;
 }
@@ -62,179 +56,121 @@ void twodfx_3d_scene_set_camera(twodfx_3d_scene *s,const uint8_t p[10]) {
   twodfx_3d_unpack_angles(p+6,&s->camera_shadow.roll,
     &s->camera_shadow.yaw,&s->camera_shadow.pitch);
 }
-static v3 rotate(v3 v,unsigned roll,unsigned yaw,unsigned pitch) {
-  double a=(double)roll*(2.0*DFX_PI/1024.0);
-  double b=(double)yaw*(2.0*DFX_PI/1024.0);
-  double c=(double)pitch*(2.0*DFX_PI/1024.0);
-  double sn=sin(a),cs=cos(a),x=cs*v.x-sn*v.y,y=sn*v.x+cs*v.y;
-  v.x=x;v.y=y;
-  sn=sin(b);cs=cos(b);
-  x=cs*v.x+sn*v.z;v.z=-sn*v.x+cs*v.z;v.x=x;
-  sn=sin(c);cs=cos(c);
-  y=cs*v.y-sn*v.z;v.z=sn*v.y+cs*v.z;v.y=y;
-  return v;
+
+/* Camera-space coordinates use 1/256 world units. Each Q12 product is
+ * truncated separately, including negative products, before addition. */
+typedef struct {int32_t x,y,z;} vector3;
+typedef struct {int x,y;} point2;
+static int sine10(unsigned a){
+ unsigned i=(a>>2)&255,f=a&3;
+ return d3_sine_q12[i]+((d3_sine_q12[(i+1)&255]-d3_sine_q12[i])*(int)f)/4;
 }
-static v3 inverse_rotate(v3 v,const twodfx_3d_pose *p) {
-  double a=(double)p->pitch*(2.0*DFX_PI/1024.0);
-  double sn=sin(a),cs=cos(a),y=cs*v.y+sn*v.z;
-  v.z=-sn*v.y+cs*v.z;v.y=y;
-  a=(double)p->yaw*(2.0*DFX_PI/1024.0);sn=sin(a);cs=cos(a);
-  {double x=cs*v.x-sn*v.z;v.z=sn*v.x+cs*v.z;v.x=x;}
-  a=(double)p->roll*(2.0*DFX_PI/1024.0);sn=sin(a);cs=cos(a);
-  {double x=cs*v.x+sn*v.y;v.y=-sn*v.x+cs*v.y;v.x=x;}
-  return v;
+static int32_t product(int32_t v,int factor){return (int32_t)((int64_t)v*factor/4096);}
+static vector3 rotate_axis(vector3 v,unsigned axis,unsigned angle,int inverse){
+ int s=sine10(angle),c=sine10(angle+256),a,b;
+ if(inverse)s=-s;
+ if(axis==2){a=product(v.x,c)-product(v.y,s);b=product(v.x,s)+product(v.y,c);v.x=a;v.y=b;}
+ else if(axis==1){a=product(v.x,c)+product(v.z,s);b=-product(v.x,s)+product(v.z,c);v.x=a;v.z=b;}
+ else{a=product(v.y,c)-product(v.z,s);b=product(v.y,s)+product(v.z,c);v.y=a;v.z=b;}
+ return v;
 }
-static v3 interp(v3 a,v3 b,double t) {
-  v3 p={a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,a.z+(b.z-a.z)*t};return p;
+static vector3 cut_depth(vector3 a,vector3 b,int z){
+ int64_t den=(int64_t)b.z-a.z;
+ if(!den)return a;
+ vector3 q={a.x+(int32_t)(((int64_t)z-a.z)*((int64_t)b.x-a.x)/den),
+            a.y+(int32_t)(((int64_t)z-a.z)*((int64_t)b.y-a.y)/den),z};return q;
 }
-/* Sutherland-Hodgman in camera space: clip near then far, at most 5 vertices. */
-static unsigned zclip(const v3 *in,unsigned n,v3 *out,double plane,int minimum) {
-  unsigned i,m=0;
-  v3 a;int ai;
-  if(!n)return 0;
-  a=in[n-1];ai=minimum?a.z>=plane:a.z<=plane;
-  for(i=0;i<n;i++) {
-    v3 b=in[i];int bi=minimum?b.z>=plane:b.z<=plane;
-    if(ai!=bi && m<8) {
-      double t=(plane-a.z)/(b.z-a.z);
-      out[m++]=interp(a,b,t);
+static unsigned clip_depth(vector3 *out,const vector3 *in,unsigned count,int z,int upper){
+ unsigned n=0;if(!count)return 0;
+ for(unsigned i=0;i<count;i++){
+  vector3 a=in[(i+count-1)%count],b=in[i];
+  int ai=upper?a.z<=z:a.z>=z,bi=upper?b.z<=z:b.z>=z;
+  if(ai!=bi)out[n++]=cut_depth(a,b,z);
+  if(bi)out[n++]=b;
+ }return n;
+}
+static point2 project_point(vector3 v,const twodfx_3d_projection*p,int cx,int cy){
+ int64_t dx=(int64_t)v.x*p->fx/v.z,dy=(int64_t)v.y*p->fy/v.z;
+ if(dx>1000000)dx=1000000;
+ if(dx< -1000000)dx=-1000000;
+ if(dy>1000000)dy=1000000;
+ if(dy< -1000000)dy=-1000000;
+ point2 q={cx+(int)dx,cy-(int)dy};return q;
+}
+static unsigned screen_region(point2 p,const twodfx_raster*r){
+ return (p.x<r->x0?1:0)|(p.x>r->x1?2:0)|(p.y<r->y0?4:0)|(p.y>r->y1?8:0);
+}
+static void mesh_edge(twodfx_raster*r,vector3 a,vector3 b,const twodfx_3d_projection*p,int cx,int cy,uint8_t c){
+ int near=p->near_z*256,far=p->far_z*256;
+ if((a.z<near&&b.z<near)||(a.z>far&&b.z>far)||r->x0>r->x1||r->y0>r->y1)return;
+ if(a.z<near)a=cut_depth(a,b,near);else if(b.z<near)b=cut_depth(a,b,near);
+ if(a.z>far)a=cut_depth(a,b,far);else if(b.z>far)b=cut_depth(a,b,far);
+ point2 u=project_point(a,p,cx,cy),v=project_point(b,p,cx,cy);
+ for(unsigned n=0;n<12;n++){
+  unsigned first=screen_region(u,r),last=screen_region(v,r),mask=first?first:last;
+  if(!(first|last)){twodfx_raster_line(r,u.x,u.y,v.x,v.y,c);return;}
+  if(first&last)return;
+  point2 q;
+  if(mask&12){
+   if(u.y==v.y)return;
+   q.y=(mask&4)?r->y0:r->y1;
+   q.x=u.x+(int)((int64_t)(v.x-u.x)*(q.y-u.y)/(v.y-u.y));
+  }else{
+   if(u.x==v.x)return;
+   q.x=(mask&2)?r->x1:r->x0;
+   q.y=u.y+(int)((int64_t)(v.y-u.y)*(q.x-u.x)/(v.x-u.x));
+  }
+  if(first)u=q;else v=q;
+ }
+}
+static int face_front(vector3 a,vector3 b,vector3 c){
+ int64_t u[3]={(b.x-a.x)/64,(b.y-a.y)/64,(b.z-a.z)/64};
+ int64_t v[3]={(c.x-a.x)/64,(c.y-a.y)/64,(c.z-a.z)/64};
+ return (u[1]*v[2]-u[2]*v[1])*(a.x/64)+(u[2]*v[0]-u[0]*v[2])*(a.y/64)+(u[0]*v[1]-u[1]*v[0])*(a.z/64)<0;
+}
+void twodfx_3d_render(const twodfx_3d_scene*s,const uint8_t*ram,twodfx_raster*r,
+ const uint8_t entry[11],unsigned mode,uint8_t edge_colour,int ox,int oy,
+ int origin_x,int origin_y,int optical_x,int optical_y){
+ if(!s||!ram||!r||!entry||mode>2)return;
+ const twodfx_3d_mesh*m=&s->mesh_active[entry[10]];
+ if(!m->vertices||!m->faces||m->vertices>256||m->faces>512||m->address>=8388608u||
+    (uint64_t)m->address+m->vertices*6u+m->faces*4u>8388608u)return;
+ vector3 vertices[256];struct{int32_t depth;unsigned index;}order[512];unsigned count=0;
+ uint16_t angles[3];twodfx_3d_unpack_angles(entry+6,&angles[2],&angles[1],&angles[0]);
+ const twodfx_3d_pose*camera=&s->camera_active;
+ unsigned inverse[3]={camera->pitch,camera->yaw,camera->roll};
+ const twodfx_3d_projection*p=&s->projection_active;
+ int cx=optical_x+ox-origin_x,cy=optical_y+oy-origin_y,near=p->near_z*256,far=p->far_z*256;
+ for(unsigned i=0;i<m->vertices;i++){
+  const uint8_t*b=ram+m->address+6*i;
+  vector3 v={i16(b)*256,i16(b+2)*256,i16(b+4)*256};
+  for(int axis=2;axis>=0;axis--)v=rotate_axis(v,axis,angles[axis],0);
+  v.x+=(i16(entry)-camera->x)*256;v.y+=(i16(entry+2)-camera->y)*256;v.z+=(i16(entry+4)-camera->z)*256;
+  for(unsigned axis=0;axis<3;axis++)v=rotate_axis(v,axis,inverse[axis],1);
+  vertices[i]=v;
+ }
+ const uint8_t*faces=ram+m->address+6*m->vertices;
+ for(unsigned i=0;i<m->faces;i++){
+  const uint8_t*f=faces+4*i;if(f[0]>=m->vertices||f[1]>=m->vertices||f[2]>=m->vertices)continue;
+  vector3 a=vertices[f[0]],b=vertices[f[1]],c=vertices[f[2]];
+  if(!(f[3]&128)&&!face_front(a,b,c))continue;
+  if((a.z<near&&b.z<near&&c.z<near)||(a.z>far&&b.z>far&&c.z>far))continue;
+  int32_t depth=(int32_t)(((int64_t)a.z+b.z+c.z)/3);unsigned j=count++;
+  while(j&&depth>order[j-1].depth){order[j]=order[j-1];j--;}
+  order[j].depth=depth;order[j].index=i;
+ }
+ for(unsigned i=0;i<count;i++){
+  const uint8_t*f=faces+4*order[i].index;
+  vector3 tri[3]={vertices[f[0]],vertices[f[1]],vertices[f[2]]};
+  if(mode){
+   vector3 scratch[8],poly[8];unsigned n=clip_depth(scratch,tri,3,near,0);n=clip_depth(poly,scratch,n,far,1);
+   if(n>=3){point2 first=project_point(poly[0],p,cx,cy);
+    for(unsigned j=2;j<n;j++){
+     point2 a=project_point(poly[j-1],p,cx,cy),b=project_point(poly[j],p,cx,cy);
+     twodfx_raster_fill_triangle(r,first.x,first.y,a.x,a.y,b.x,b.y,f[3]&15);
     }
-    if(bi && m<8)out[m++]=b;
-    a=b;ai=bi;
+   }
   }
-  return m;
-}
-static p2 project(v3 a,const twodfx_3d_projection *p,double cx,double cy) {
-  p2 r={cx+a.x*(double)p->fx/a.z,cy-a.y*(double)p->fy/a.z};return r;
-}
-/* Clip a segment to raster bounds before invoking integer Bresenham: huge
- * projected coordinates cannot overflow the generic raster line routine. */
-static void clipped_line(twodfx_raster *r,p2 a,p2 b,uint8_t colour) {
-  double dx=b.x-a.x,dy=b.y-a.y,t0=0.0,t1=1.0;
-  double p[4]={-dx,dx,-dy,dy};
-  double q[4]={a.x-r->x0,r->x1-a.x,a.y-r->y0,r->y1-a.y};
-  unsigned i;
-  for(i=0;i<4u;i++) {
-    if(fabs(p[i])<1e-12) {if(q[i]<0)return;}
-    else {
-      double t=q[i]/p[i];
-      if(p[i]<0){if(t>t0)t0=t;}
-      else if(t<t1)t1=t;
-      if(t0>t1)return;
-    }
-  }
-  {p2 c={a.x+dx*t0,a.y+dy*t0},d={a.x+dx*t1,a.y+dy*t1};
-   twodfx_raster_line(r,(int)lround(c.x),(int)lround(c.y),
-                      (int)lround(d.x),(int)lround(d.y),colour);}
-}
-/* Polygon clipping in projected space bounds the fill to the framebuffer,
- * preventing giant off-screen polygons from creating integer overflow. */
-static int inside(p2 p,unsigned side,double limit) {
-  if(side==0)return p.x>=limit;
-  if(side==1)return p.x<=limit;
-  if(side==2)return p.y>=limit;
-  return p.y<=limit;
-}
-static p2 intersect(p2 a,p2 b,unsigned side,double limit) {
-  double u=(side<2)?(limit-a.x)/(b.x-a.x):(limit-a.y)/(b.y-a.y);
-  p2 p={a.x+(b.x-a.x)*u,a.y+(b.y-a.y)*u};return p;
-}
-static unsigned plane_clip(const p2 *in,unsigned n,p2 *out,unsigned side,double limit) {
-  unsigned i,k=0; p2 a;int ai;
-  if(!n)return 0;
-  a=in[n-1];ai=inside(a,side,limit);
-  for(i=0;i<n;i++) {
-    p2 b=in[i];int bi=inside(b,side,limit);
-    if(ai!=bi && k<16)out[k++]=intersect(a,b,side,limit);
-    if(bi && k<16)out[k++]=b;
-    a=b;ai=bi;
-  }
-  return k;
-}
-static void fill_clipped(twodfx_raster *r,const v3 *in,unsigned count,
-                         const twodfx_3d_projection *p,double cx,double cy,
-                         uint8_t colour) {
-  p2 a[16],b[16];unsigned i,k=count;
-  if(count<3)return;
-  for(i=0;i<count;i++)a[i]=project(in[i],p,cx,cy);
-  k=plane_clip(a,k,b,0,(double)r->x0);
-  k=plane_clip(b,k,a,1,(double)r->x1);
-  k=plane_clip(a,k,b,2,(double)r->y0);
-  k=plane_clip(b,k,a,3,(double)r->y1);
-  for(i=1;i+1<k;i++)
-    twodfx_raster_fill_triangle(r,(int)lround(a[0].x),(int)lround(a[0].y),
-      (int)lround(a[i].x),(int)lround(a[i].y),
-      (int)lround(a[i+1].x),(int)lround(a[i+1].y),colour);
-}
-static void edge(twodfx_raster *r,v3 a,v3 b,const twodfx_3d_projection *p,
-                 double cx,double cy,uint8_t colour) {
-  double near=(double)p->near_z,far=(double)p->far_z;
-  if ((a.z<near&&b.z<near)||(a.z>far&&b.z>far))return;
-  if(a.z<near)a=interp(a,b,(near-a.z)/(b.z-a.z));
-  else if(b.z<near)b=interp(a,b,(near-a.z)/(b.z-a.z));
-  if(a.z>far)a=interp(a,b,(far-a.z)/(b.z-a.z));
-  else if(b.z>far)b=interp(a,b,(far-a.z)/(b.z-a.z));
-  clipped_line(r,project(a,p,cx,cy),project(b,p,cx,cy),colour);
-}
-static int front_face(v3 a,v3 b,v3 c) {
-  v3 u={b.x-a.x,b.y-a.y,b.z-a.z},v={c.x-a.x,c.y-a.y,c.z-a.z};
-  v3 n={u.y*v.z-u.z*v.y,u.z*v.x-u.x*v.z,u.x*v.y-u.y*v.x};
-  return n.x*a.x+n.y*a.y+n.z*a.z<0.0;
-}
-void twodfx_3d_render(const twodfx_3d_scene *s,const uint8_t *ram,
-                      twodfx_raster *r,const uint8_t entry[11],
-                      unsigned mode,uint8_t edge_colour,int ox,int oy,
-                      int origin_x,int origin_y,int optical_x,int optical_y) {
-  v3 points[256];sorted_face order[512];
-  const twodfx_3d_mesh *m;
-  unsigned i,j,n=0,roll,yaw,pitch;
-  uint32_t table;
-  double cx=(double)(optical_x+ox-origin_x);
-  double cy=(double)(optical_y+oy-origin_y);
-  if(!s||!ram||!r||!entry||mode>2u)return;
-  m=&s->mesh_active[entry[0]];
-  if(!m->vertices||!m->faces||m->vertices>256||m->faces>512||
-     m->address>=8388608u ||
-     (uint64_t)m->address+(uint64_t)m->vertices*6u+(uint64_t)m->faces*4u>8388608u)return;
-  {uint16_t rr,yy,pp;twodfx_3d_unpack_angles(entry+7,&rr,&yy,&pp);
-   roll=rr;yaw=yy;pitch=pp;}
-  for(i=0;i<m->vertices;i++) {
-    const uint8_t *a=ram+m->address+i*6u;
-    v3 v={(double)i16(a),(double)i16(a+2),(double)i16(a+4)};
-    v=rotate(v,roll,yaw,pitch);
-    v.x+=(double)i16(entry+1)-(double)s->camera_active.x;
-    v.y+=(double)i16(entry+3)-(double)s->camera_active.y;
-    v.z+=(double)i16(entry+5)-(double)s->camera_active.z;
-    points[i]=inverse_rotate(v,&s->camera_active);
-  }
-  table=m->address+(uint32_t)m->vertices*6u;
-  for(i=0;i<m->faces;i++) {
-    const uint8_t *t=ram+table+i*4u;
-    v3 a,b,c;double depth;
-    unsigned k;
-    if(t[0]>=m->vertices||t[1]>=m->vertices||t[2]>=m->vertices)continue;
-    a=points[t[0]];b=points[t[1]];c=points[t[2]];
-    if(!(t[3]&0x80u)&&!front_face(a,b,c))continue;
-    if((a.z<s->projection_active.near_z&&b.z<s->projection_active.near_z&&c.z<s->projection_active.near_z)||
-       (a.z>s->projection_active.far_z&&b.z>s->projection_active.far_z&&c.z>s->projection_active.far_z))continue;
-    depth=(a.z+b.z+c.z)/3.0;k=n++;
-    while(k>0u && order[k-1u].z<depth){order[k]=order[k-1u];k--;}
-    order[k].z=depth;order[k].index=(uint16_t)i;
-  }
-  for(j=0;j<n;j++) {
-    const uint8_t *t=ram+table+(uint32_t)order[j].index*4u;
-    v3 a=points[t[0]],b=points[t[1]],c=points[t[2]];
-    if(mode!=0u) {
-      v3 aa[8],bb[8];unsigned count;
-      aa[0]=a;aa[1]=b;aa[2]=c;
-      count=zclip(aa,3u,bb,(double)s->projection_active.near_z,1);
-      count=zclip(bb,count,aa,(double)s->projection_active.far_z,0);
-      fill_clipped(r,aa,count,&s->projection_active,cx,cy,(uint8_t)(t[3]&15u));
-    }
-    if(mode!=1u){
-      if(t[3]&0x10u)edge(r,a,b,&s->projection_active,cx,cy,edge_colour);
-      if(t[3]&0x20u)edge(r,b,c,&s->projection_active,cx,cy,edge_colour);
-      if(t[3]&0x40u)edge(r,c,a,&s->projection_active,cx,cy,edge_colour);
-    }
-  }
+  if(mode!=1)for(unsigned edge=0;edge<3;edge++)if(f[3]&(16u<<edge))mesh_edge(r,tri[edge],tri[(edge+1)%3],p,cx,cy,edge_colour);
+ }
 }

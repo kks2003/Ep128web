@@ -1,791 +1,462 @@
-# 2dfx Command Reference Guide
-
-This guide documents the public F8h/F9h command interface in **2dfx v1.1.0**, including its 3D extension.
-This document specifies the public command interface; no private firmware source is supplied.
-
-## 1. General model
-
-2dfx receives command bytes on port F8h and, when required, parameter/data bytes on port F9h.
-
-Public command families:
-
-- `00h..3Fh`: select sprite and enter sequential SPB write session
-- `40h..4Fh`: transparent colour select
-- `50h..5Fh`: engine, timing, raster interrupt and resource-definition commands
-- `60h..7Fh`: background 2DPT slot commands
-- `80h..85h`: resource upload and ZX1 decompression/conversion commands
-- `86h..88h`: 3D mesh definition, projection and frame-latched camera control
-- `8Eh`: terminal `SHOW_FW` firmware-information page
-- `8Fh`: asynchronous `SYS_RESET`
-- `90h..91h`: built-in 2dfx logo overlay commands
-- `C0h..DFh`: firmware eggs / demos
-- `E0h..FFh`: foreground 2DPT slot commands (same commands as `60h..7Fh`, with bit7 set)
-
-Resource RAM is an 8 MiB logical resource address space using 23-bit addresses.
-Address byte order is always little-endian LSB-first:
-
-- byte 0 = bits 7..0
-- byte 1 = bits 15..8
-- byte 2 = bits 22..16 in bits 6..0, bit7 ignored
-
-During an active `80h..82h` upload or `83h..85h` UNZX1 argument session,
-ordinary F8h commands are ignored so payload/argument bytes cannot accidentally
-start another command. `8Eh SHOW_FW` follows the same strict-session rule.
-`8Fh SYS_RESET` is the deliberate exception and is recognized while such a
-transaction is active. Once `SHOW_FW` has been accepted, however, all later
-F8h/F9h writes—including `SYS_RESET`—are ignored until physical reset or power
-cycle.
-
-## 2. Sprite commands and SPB format
-
-Any command `00ssssssb` with bit7..bit6 = `00` selects sprite `s` (`0..63`) and starts a sequential 9-byte SPB write session.
-Each subsequent F9h byte writes the next SPB byte immediately. Partial SPB updates are valid and supported.
-
-9-byte SPB layout:
-
-- `BYTE0`: enable, collision enable, X/Y/W/H high bits
-- `BYTE1`: X low
-- `BYTE2`: Y low
-- `BYTE3`: resource address low
-- `BYTE4`: resource address mid
-- `BYTE5`: resource address high (bits 22..16 in bits 6..0)
-- `BYTE6`: sprite flags
-- `BYTE7`: width low
-- `BYTE8`: height low
-
-Sprite flag bits in `BYTE6`:
-
-- bit7 = X double
-- bit6 = Y double
-- bit5 = X flip
-- bit4 = Y flip
-
-### Collision-detection area
-
-Collision detection is evaluated in the complete boot-selected renderer
-framebuffer, not necessarily only in the portion that is physically visible on
-the connected display. A machine profile may retain pixels in its framebuffer
-that lie outside the practical visible screen area; overlapping
-collision-enabled sprites in those stored pixels can therefore set the
-collision status even though the overlap cannot be seen on screen.
-
-Applications should enable collision detection only for sprites that are
-currently intended to be displayed and to participate in gameplay collision
-logic. Disable the collision-enable bit when a sprite is parked or hidden in an
-off-screen framebuffer area.
-
-## 3. Transparent colour command
-
-Any command in the range `40h..4Fh` sets the transparent colour directly from the low nibble:
-
-- command value low nibble = transparent colour index `0..15`
-
-## 4. Global / control commands (`50h..5Fh`)
-
-### `50h` — `SET_ENGINE_MODE`
-
-**Cold-boot gate in v0.9.45:** this is the only command recognized before the
-engine has been initialized. `50h` is 80 decimal; do not confuse it with `80h`
-`UPLOAD_RAW`. All other commands, including egg starts, are discarded until a
-nonzero mode byte completes this transaction.
-One F9h byte:
-
-- `00h` = engine off; `/EXTC` inactive and EC0..EC3 electrically released
-- `01h..FEh` = engine on (normal mode)
-- `FFh` = forced on
-
-Cold-start software must send this wake transaction unconditionally rather than
-probing bit6 first. It may then poll F8h bit6 until it reads `0`; that transition
-is the ready handshake indicating that the engine and normal command parser are
-available. Commands sent before bit6 becomes `0` are intentionally discarded.
-
-### `51h` — `SET_FPS`
-One F9h byte:
-
-- `00h` = 50 fps update mode
-- `01h` = 25 fps update mode
-
-This changes scene update/render cadence only. Video output timing remains 50 Hz.
-
-### `52h` — `SET_RENDER_OVERRUN_VISUAL`
-One F9h byte:
-
-- `00h` = disabled
-- nonzero = enabled
-
-When enabled, render overruns are shown by a flashing on-screen exclamation-mark overlay.
-
-### `53h` — `CLEAR_RENDER_OVERRUN`
-No F9h bytes. Clears the sticky render-overrun latch.
-
-### `54h..57h` — `SET_RASTER_INT1..4`
-Two F9h bytes, high byte first:
-
-- `0000h` = disabled
-- `0001h..0137h` (`1..311`) = trigger on that NICK scanline
-
-### `58h` — `CLEAR_RASTER_INT`
-No F9h bytes. Clears all four pending raster interrupt latches.
-
-### Resource descriptor commands
-
-- `5Bh` — `DEFINE_FONT`
-  - 5 F9h bytes: font id, addr low, addr mid, addr high7, width/height units
-  - each 4-bit dimension stores `(8-pixel units - 1)`: `0..15` = `8..128` pixels
-  - 128 glyphs per font, 1bpp data
-- `5Ch` — `DEFINE_BITMAP`
-  - 7 F9h bytes: bitmap id 0..255, addr low, addr mid, addr high7, width/height highbits, width low, height low
-- `5Dh` — `DEFINE_PATTERN`
-  - 4 F9h bytes: pattern definition id, addr low, addr mid, addr high7
-  - the address is the base of a bank containing up to 256 fixed 16×8 patterns
-- `5Eh` — `DEFINE_TILESET`
-  - 4 F9h bytes: tileset id, addr low, addr mid, addr high7
-- `5Fh` — `DEFINE_TILEMAP`
-  - 7 F9h bytes: map id, addr low, addr mid, addr high7, encoded width, encoded height, tileset id
-  - width/height bytes store `(cells - 1)`: `00h..FFh` = `1..256` cells
-
-## 5. Resource upload / processing commands
-
-All source-format commands produce the same internal 2dfx packed-pixel format.
-The command name describes the format of the **source data**, not the currently
-selected Enterprise/TVC hardware profile. Therefore NICK and TVC conversion
-commands are available on both machines.
-
-### Common upload header (`80h..82h`)
-
-Five F9h header bytes, followed by the declared payload:
-
-- bytes 0..2 = destination resource address
-- bytes 3..4 = real upload length, little-endian
-- bytes 5.. = payload
-
-Upload length `0001h..FFFFh` means 1..65535 bytes. `0000h` means 65536 bytes.
-
-### `80h` — `UPLOAD_RAW`
-
-Stores payload bytes byte-exact. Use it for:
-
-- ZX1 compressed streams
-- already-internal packed graphics
-- fonts and text strings
-- tilemap cell arrays
-- lookup tables and metadata
-
-### `81h` — `UPLOAD_NICK`
-
-Converts uncompressed Enterprise/NICK 16-colour graphics bytes to internal
-internal packed format before storage.
-
-NICK source bytes contain the two pixel nibbles interleaved by bit plane:
-
-- left pixel = source bits 7,5,3,1
-- right pixel = source bits 6,4,2,0
-
-### `82h` — `UPLOAD_TVC`
-
-Converts uncompressed TVC Graphics-16 bytes to internal packed format before
-storage.
-
-A TVC source byte is interleaved `IIGGRRBB`:
-
-- left pixel `IGRB` = source bits 7,5,3,1
-- right pixel `IGRB` = source bits 6,4,2,0
-
-Because the TVC motherboard external-colour wiring uses numeric bit order
-`BGRI`, conversion swaps the I and B bit positions after extracting each pixel.
-The converted left pixel is stored in the internal low nibble and the converted
-right pixel in the internal high nibble.
-
-### Common ZX1 argument block (`83h..85h`)
-
-Six F9h bytes:
-
-- bytes 0..2 = compressed source address
-- bytes 3..5 = destination address
-
-The compressed stream must first be uploaded byte-exact with `UPLOAD_RAW`.
-The operation is logically queued and completes at a frame-safe boundary.
-The emulator preserves the front framebuffer while a resource operation is pending.
-
-### `83h` — `UNZX1_RAW`
-
-ZX1-decompresses to byte-exact output. Use this when the compressed data was
-already in internal packed format, or when the result is non-pixel raw data.
-
-### `84h` — `UNZX1_NICK`
-
-ZX1-decompresses a stream whose uncompressed bytes are in NICK graphics format
-and converts those output bytes to internal packed format while producing the
-destination.
-
-### `85h` — `UNZX1_TVC`
-
-ZX1-decompresses a stream whose uncompressed bytes are in TVC Graphics-16
-format and converts those output bytes to internal packed format while
-producing the destination.
-
-The converted ZX1 modes produce the same observable output as decompressing
-the entire stream before performing the corresponding NICK or TVC conversion.
-The portable emulator is free to use its own equivalent implementation.
-
-Recommended paths:
-
-| Source representation | Uncompressed path | ZX1-compressed path |
+# 2dfx 1.1.4 command reference
+
+This is the complete current guest-command reference for emulator integrators. It covers sprites, global controls, every implemented resource and 2DPT command, 3D, overlays and demo selection. Host callback wiring is in [INTEGRATION.md](INTEGRATION.md); migration instructions are separate in [UPGRADING.md](UPGRADING.md). Command names use the public 2dfx names throughout.
+
+Write the command byte to F8h and its parameters, in the order shown, to F9h. Hexadecimal command numbers below have an `h` suffix. Resource addresses are three bytes, low byte first; bit 7 of the third byte is ignored. Resource RAM contains 8 MiB. Ordinary upload and pixel reads wrap at its end; a mesh descriptor must fit entirely in it.
+
+## Startup and status
+
+After a physical reset, send `50h` followed by a nonzero engine mode. Before this transaction, other commands are ignored. The portable device completes wake-up synchronously. Read F8h bit 6 until it is zero before sending normal commands in software intended for 2dfx hardware.
+
+| F8h status bit | Meaning when zero |
+|---|---|
+| 7 | Collision in the previously completed frame |
+| 6 | Device initialized and ready |
+| 5 | Sticky resource FIFO overflow; no execution-duration overruns are simulated |
+| 4, 3, 2, 1 | Raster interrupt 4, 3, 2, 1 pending |
+| 0 | Hardware: render activity / SYS_RESET busy. Emulator: remains one because rendering and reset finish synchronously within host calls |
+
+Collision is a two-horizontal-pixel cell approximation between enabled, collision-enabled sprites with overlapping bounding boxes. It is evaluated in the stored framebuffer, including pixels outside the host's visible window. The completed result appears at the next VSYNC and is retained across skipped frames.
+
+An upload transaction (`80h..82h`, including its header) or UNZX1 argument transaction (`83h..85h`) ignores ordinary F8h commands. `8Fh SYS_RESET` can abort it. A completed `8Eh SHOW_FW` command enters a terminal information display: all subsequent F8h/F9h writes, including SYS_RESET, are ignored until a physical reset.
+
+## Command families and parameter notation
+
+| F8h opcode | Scope |
+|---|---|
+| `00h..3Fh` | Sprite selection and sequential SPB writes |
+| `40h..4Fh` | Global transparent-colour index |
+| `50h..58h` | Global engine, cadence, status and raster controls |
+| `5Bh..5Fh` | Resource definitions |
+| `60h..7Fh` | Background 2DPT slots |
+| `80h..88h` | Upload, decompression, mesh definition, global projection/camera |
+| `8Eh..95h` | System commands and global logo/pointer controls |
+| `C0h..DFh` | Built-in demo selection |
+| `E0h..FFh` | Foreground 2DPT slots |
+
+Each F9h count excludes the F8h opcode. Drawing-command counts include the
+slot byte. `address[3]` is a 23-bit little-endian address; `X[2]` denotes a
+little-endian 16-bit value. Signed bytes use two's complement. Unless specified
+otherwise, X/width have 10 bits (0..1023), Y/height have 9 bits (0..511), and
+dimensions are literal counts. Reserved high bits are ignored.
+
+Global commands execute outside the two 2DPTs. Commands listed under the
+2DPT section write retained slots, including their own SET_COLOR,
+SET_XY_OFFSET and SET_CLIP_RECT replay state. Pointer commands are global:
+`94h` is **SET_POINTER_REL**, with no slot parameter.
+
+Soft sprite, global-parameter and 2DPT input sessions can be replaced by a new
+F8h command. A global/2DPT command commits only after all of its parameters
+arrive; an interrupted partial packet leaves that command's existing state
+unchanged. Sprite bytes are the exception: each received SPB byte updates its
+shadow byte immediately. Strict upload/UNZX1 sessions follow the rules above.
+
+## Global commands and resources
+
+| Command | F9h bytes | Parameters / behaviour |
+|---|---:|---|
+| `00h..3Fh` | up to 9 | Select sprite 0..63 and write its SPB sequentially; partial updates are valid, additional bytes after byte 9 are ignored until another command |
+| `40h..4Fh` | 0 | Set transparent colour from the command's low nibble |
+| `50h` SET_ENGINE_MODE | 1 | 0=off, 1..254=normal, 255=forced |
+| `51h` SET_FPS | 1 | 1=25 fps; all other values=50 fps; video callbacks remain 50 Hz |
+| `52h` SET_RENDER_OVERRUN_VISUAL | 1 | Zero=off, nonzero=on; displays the shared sticky overrun condition |
+| `53h` CLEAR_RENDER_OVERRUN | 0 | Clear overrun status |
+| `54h` SET_RASTER_INT1 | 2 | Comparator 1 line, **high byte first**: 0 disables, 1..311 enables, other values disable; clears its pending latch |
+| `55h` SET_RASTER_INT2 | 2 | Comparator 2 line, same encoding and behaviour |
+| `56h` SET_RASTER_INT3 | 2 | Comparator 3 line, same encoding and behaviour |
+| `57h` SET_RASTER_INT4 | 2 | Comparator 4 line, same encoding and behaviour |
+| `58h` CLEAR_RASTER_INT | 0 | Clear all four pending latches |
+| `5Bh` DEFINE_FONT | 5 | id, address[3], size |
+| `5Ch` DEFINE_BITMAP | 7 | id, address[3], WH high bits, W low, H low |
+| `5Dh` DEFINE_PATTERN | 4 | bank, address[3] |
+| `5Eh` DEFINE_TILESET | 4 | bank, address[3] |
+| `5Fh` DEFINE_TILEMAP | 7 | id, address[3], columns−1, rows−1, tileset |
+| `80h` UPLOAD_RAW | 5 + data | address[3], length low, length high, payload; zero length means 65536; stores bytes unchanged |
+| `81h` UPLOAD_NICK | 5 + data | Same header and length rule; converts NICK-format pixel bytes |
+| `82h` UPLOAD_TVC | 5 + data | Same header and length rule; converts TVC-format pixel bytes |
+| `83h` UNZX1_RAW | 6 | source address[3], destination address[3]; decoded bytes unchanged |
+| `84h` UNZX1_NICK | 6 | source address[3], destination address[3]; decoded NICK pixels converted |
+| `85h` UNZX1_TVC | 6 | source address[3], destination address[3]; decoded TVC pixels converted |
+| `86h` DEFINE_MESH | 7 | id, address[3], vertices−1, triangle-count high, triangle-count low |
+| `87h` SET_3D_PROJECTION | 8 | FX, FY, near, far: four unsigned 16-bit little-endian values |
+| `88h` SET_CAMERA_POSE | 10 | X[2], Y[2], Z[2], angle high bits, roll low, yaw low, pitch low |
+| `8Eh` SHOW_FW | 0 | Terminal 1.1.4 information screen |
+| `8Fh` SYS_RESET | 0 | Reset application/resources while preserving engine mode |
+| `90h` SHOW_BUILTIN_LOGO | 4 | XY high bits (bit 7=small), X low, Y low, main/accent colours |
+| `91h` HIDE_BUILTIN_LOGO | 0 | Hide logo |
+| `92h` SET_POINTER_MODE | 2 | mode, outer/inner colours |
+| `93h` SET_POINTER_POS | 3 | XY high bits, X low, Y low |
+| `94h` SET_POINTER_REL | 2 | signed 8-bit delta X, delta Y |
+| `95h` DEFINE_USER_POINTER | 5 | address[3], hotspot X, hotspot Y |
+| `C0h..D5h` | 0 | Start a built-in demo; CFh and D0h are TVC-only; see [EGGS.md](EGGS.md) |
+
+Unassigned commands have no drawing or resource effect. An unavailable demo selector stops demo updates while retaining the current graphics and resources; D6h..DFh do not select demos.
+
+### Engine, transparency, cadence and interrupts
+
+`40h..4Fh` selects the global transparent index directly: `40h` means index 0,
+`4Fh` means index 15, and no F9h byte follows. This selects an index, not an RGB
+colour. The host emulator maps indices to its NICK palette/BIAS or TVC colours.
+
+`50h SET_ENGINE_MODE` selects OFF, NORMAL or FORCED. OFF removes the overlay
+without deleting resources, descriptors or drawing lists. Resource processing
+and raster callbacks continue after wake-up. NORMAL supplies the 2dfx pixel
+where its index differs from the transparent key. FORCED supplies the entire
+stored 2dfx framebuffer, including key-coloured pixels. A zero mode while cold
+does not complete the wake-up handshake.
+
+`51h SET_FPS` changes scene acceptance to 25 fps for parameter 1, or 50 fps for
+every other value. Changing it restarts the cadence phase. The host must still
+call VSYNC at 50 Hz and HSYNC on every scanline. Pointer updates, demos and
+retained scene publication follow the accepted scene cadence.
+
+`52h SET_RENDER_OVERRUN_VISUAL` controls the flashing exclamation mark; it does
+not acknowledge an existing error. `53h CLEAR_RENDER_OVERRUN` clears sticky
+STATUS5 without cancelling accepted resource jobs. Resource FIFO overflow is
+modelled; hardware execution-time and input-byte timing overruns are not.
+
+`54h`, `55h`, `56h`, `57h` set raster comparators 1, 2, 3, 4 respectively.
+They use raw host scanline numbers and unusually take the **high byte first**.
+Writing a comparator clears its own pending latch. Reaching its enabled line
+sets that latch; passing the line or reaching VSYNC does not clear it.
+`58h CLEAR_RASTER_INT` acknowledges all four. The host IRQ is the OR of the
+four pending latches; it remains asserted until acknowledged. These callbacks
+and comparators operate independently of scene cadence.
+
+### System lifecycle
+
+`8Fh SYS_RESET` stops the selected demo, cancels pending jobs and incomplete
+transactions, clears all 8 MiB of resource RAM and the displayed frame, and
+restores application defaults. It preserves the selected OFF/NORMAL/FORCED
+engine mode and the machine profile. Both 2DPTs have RET in every slot;
+sprites and resource descriptors are disabled; raster and collision latches,
+STATUS5, logo and pointer are cleared; transparent index is 0 and cadence is
+50 fps. Projection resets to the defaults listed below. The device remains
+awake. In the portable model reset completes synchronously; on 2dfx hardware
+STATUS0 indicates the asynchronous reset interval.
+
+`8Eh SHOW_FW` stops the application, cancels pending resource work and prepares
+the 1.1.4 information page. The next VSYNC publishes it in FORCED mode. This is
+terminal: even `SYS_RESET` is ignored until `twodfx_emu_power_cycle` or device
+recreation. A physical reset returns to the cold wake gate.
+
+`C0h..DFh` selects a demo; selection is deferred to a safe scene boundary.
+The full catalogue, platform restrictions and idle-F9h controls are in
+[EGGS.md](EGGS.md). An unsupported selection stops demo updates while keeping
+the current scene and resources. Demo selection is not part of either 2DPT.
+
+### Resource definitions and memory layout
+
+Definitions hold metadata pointing into resource RAM; they neither upload nor
+copy the referenced data. The complete descriptor becomes visible to drawing
+with an accepted scene. Resource bytes themselves are shared and are not
+snapshotted with a descriptor: overwriting a live resource changes what later
+draws read. Undefined descriptors make their dependent draw commands do
+nothing. Except for explicit address-boundary rules on meshes, resource reads
+wrap modulo 8 MiB.
+
+| Definition | IDs | Layout of the referenced resource |
 |---|---|---|
-| Raw/internal bytes | `UPLOAD_RAW` | `UPLOAD_RAW` + `UNZX1_RAW` |
-| NICK graphics | `UPLOAD_NICK` | `UPLOAD_RAW` + `UNZX1_NICK` |
-| TVC Graphics-16 | `UPLOAD_TVC` | `UPLOAD_RAW` + `UNZX1_TVC` |
-
-## 6. Firmware information command
-
-### `8Eh` — `SHOW_FW`
-
-No F9h parameters:
-
-```text
-OUT 248,142   ; 8Eh SHOW_FW
-```
-
-`SHOW_FW` replaces the active 2dfx application with the built-in static
-firmware-information screen. It is always compiled in and does not depend on
-`TWO_DFX_ENABLE_EGGS` or the optional C0 logo-egg switch.
-
-After the command is accepted, 2dfx:
-
-- aborts all ordinary SPB, 2DPT, descriptor and command-session state;
-- stops the active egg/demo and cancels queued-but-not-started rendering or ZX1 work;
-- safely completes or cancels pending work at the specified logical boundary;
-- sets transparent colour index `0`, clears the scene to background colour `0`, and renders one static framebuffer;
-- displays the large 2dfx logo using the boot-selected profile layout;
-- displays `FIRMWARE: Vx.y.z` and the boot-selected `MODE: TVC` or
-  `MODE: ENTERPRISE` with the built-in VCR/OSD font;
-- displays a QR code for `https://2dfx.net/firmware/latest/`;
-- enters `ENGINE_ON_FORCED` when the completed page is published at VSYNC.
-
-Logo/text colours are profile-aware:
-
-- TVC: black `00h`, red `03h`, white `0Fh`;
-- Enterprise default IS-BASIC text palette: black `00h`, red `03h`, white `04h`.
-
-On TVC the logo and QR frame are adjusted to the corrected BASIC-safe geometry,
-with the QR frame made visually square for the 2:1 pixel aspect. On Enterprise
-the complete page is kept inside the corrected IS-BASIC-safe rectangle
-X=124..763, Y=38..262; the QR panel begins at Y=39.
-
-`SHOW_FW` is a terminal information mode. From the instant it is accepted, all
-subsequent F8h and F9h writes are ignored, including `8Fh SYS_RESET`. The page
-remains displayed until the emulated peripheral is physically reset or power-cycled.
-
-Like other ordinary F8h commands, `SHOW_FW` is not recognized in the middle of
-an active strict upload or UNZX1 argument transaction. `SYS_RESET` remains the
-recovery command for such an incomplete transaction before `SHOW_FW` is entered.
-
-## 7. System reset command
-
-### `8Fh` — `SYS_RESET`
-
-No F9h parameters:
-
-```text
-OUT 248,143   ; 8Fh SYS_RESET
-```
-
-`SYS_RESET` resets the public 2dfx application state; it is not the same
-as a peripheral power cycle. The command clears the complete 8 MiB resource
-RAM and exposes the documented busy status during that logical operation.
-
-The current engine mode is deliberately preserved. `SYS_RESET` temporarily
-hides `/EXTC` while it works, then restores the exact OFF/NORMAL/FORCED mode
-that was active when the reset command was accepted. It does not require the
-host to emulate the physical clock or voltage-control hardware.
-
-Immediately after the command is accepted:
-
-- `/EXTC` is forced inactive and the host computer picture remains visible;
-- new renders and ordinary F8h/F9h commands are blocked;
-- all active command sessions are aborted, including partial SPB, 2DPT,
-  descriptor, upload and UNZX1-argument sessions;
-- a queued-but-not-started render or UNZX1 job is cancelled;
-- previously active operations are completed or cancelled consistently.
-
-The device then clears:
-
-- all 8 MiB of resource RAM;
-- both internal framebuffers.
-
-After the memory clear, the firmware restores these power-on defaults:
-
-- engine mode = preserved exactly as it was when `SYS_RESET` was requested (`OFF`, `NORMAL` or `FORCED`);
-- scene update cadence = 50 fps;
-- transparent colour index = 0;
-- render-overrun visual = disabled;
-- sticky render-overrun status = cleared;
-- built-in logo = hidden/default state;
-- all four raster comparators = disabled and all pending latches = cleared;
-- all 64 shadow/active SPBs = disabled/cleared;
-- collision status = no collision;
-- background and foreground 2DPTs = `RET` at slot 0 / cleared;
-- all font, bitmap, pattern, tileset and tilemap descriptors = cleared;
-- active firmware egg/demo mode = stopped.
-
-The boot-selected **Enterprise or TVC profile** is preserved. The portable
-emulator does not reproduce MCU-specific clock, PIO or memory-controller setup.
-
-### Reset completion polling
-
-While `SYS_RESET` is running, F8h bit0 / STATUS0 is held at `0`. It returns to
-`1` when reset is complete:
-
-```text
-OUT 248,143
-wait:
-    read F8h
-    repeat while bit0 = 0
-```
-
-After completion, STATUS0 resumes its normal render-time scope-pulse role, so
-bit0 is a defined reset-busy/completion indication only during a `SYS_RESET`.
-F8h/F9h writes received while reset is busy are ignored.
-
-## 8. Built-in logo overlay commands
-
-### `90h` — `SHOW_BUILTIN_LOGO`
-Four F9h bytes:
-
-- byte0 = high bits: X bits 9..8 in bits 2..1, Y bit 8 in bit0
-- byte1 = X low byte
-- byte2 = Y low byte
-- byte3 = colours: high nibble = main/white colour, low nibble = accent/red colour
-
-On Enterprise, byte3 selects both colours through the current NICK/LPT palette.
-On TVC, byte3 is still required and consumed to preserve the unified command
-format, but its value is ignored. The fixed TVC indexes are always used:
-
-- main/white = `0Fh`
-- accent/red = `03h`
-
-The built-in logo source artwork size is **206 × 79 pixels**.
-White background pixels are transparent; the logo uses a main colour and an accent colour.
-
-### `91h` — `HIDE_BUILTIN_LOGO`
-No F9h bytes.
-
-## 9. 2DPT command model
-
-`60h..7Fh` write the background 2D parameter table.
-`E0h..FFh` write the foreground 2D parameter table using the same command numbers with bit7 set.
-
-Each retained 2DPB is **12 bytes** (256 indexed slots per layer, with both shadow and active copies). Legacy 2DPT commands keep their original F8/F9 transfer lengths. In general:
-
-- `BYTE0` = opcode
-- `BYTE1` = command-specific bits plus X/Y/W/H high bits
-- `BYTE2` = X low
-- `BYTE3` = Y low
-- `BYTE4` = W low or command-specific low byte
-- `BYTE5` = H low or command-specific low byte
-- `BYTE6..BYTE11` = command-specific / reserved
-
-Primitive opcodes:
-
-- `60h` NOP
-- `61h` SET_COLOR
-- `62h` PLOT
-- `63h` LINE
-- `64h` ERASE_LINE
-- `65h` BUCKET_FILL
-- `66h` RECT
-- `67h` FILL_RECT
-- `68h` ROUND_RECT
-- `69h` FILL_ROUND_RECT
-- `6Ah` ELLIPSE
-- `6Bh` FILL_ELLIPSE
-- `6Ch` ARC
-- `6Dh` PIE
-- `6Eh` SET_XY_OFFSET
-- `6Fh` SKIP_NEXT
-- `70h` DRAW_TEXT
-- `71h` BLIT
-- `72h` PATTERN_FILL
-- `73h` TILEMAP
-- `74h` PATTERN_BUCKET_FILL
-- `75h` TRIANGLE (all three vertices have full coordinate range)
-- `76h` FILL_TRIANGLE (all three vertices have full coordinate range)
-- `77h` CROP_BLIT
-- `78h` STRETCH_BLIT
-- `79h` SET_CLIP_RECT
-- `7Ah` DRAW_MESH_WIREFRAME
-- `7Bh` DRAW_MESH_FILLED
-- `7Ch` DRAW_MESH_FWE (filled with edges)
-- `7Dh` unassigned
-- `7Eh` RESERVED extension prefix (not implemented in v1.1.0)
-- `7Fh` RET
-
-### `6Eh` / `EEh` — `SET_XY_OFFSET`
-
-Parameters after the command byte:
-
-- byte0 = 2DPT slot number
-- byte1 = signed X offset (`-128..+127`, two's complement)
-- byte2 = signed Y offset (`-128..+127`, two's complement)
-
-`SET_XY_OFFSET` sets a persistent destination-coordinate offset for the following
-commands in the same playlist run:
-
-```text
-effective X = command X + SET_XY_OFFSET X
-effective Y = command Y + SET_XY_OFFSET Y
-```
-
-The command **sets** the offset; it does not add to the previous offset. A
-later `SET_XY_OFFSET 0,0` restores unmodified coordinates. At the beginning of every
-background and foreground 2DPT run, the offset is reset independently to
-`0,0`.
-
-The offset affects destination/position coordinates of PLOT, BUCKET_FILL,
-RECT/FILL_RECT, ROUND_RECT/FILL_ROUND_RECT, ELLIPSE/FILL_ELLIPSE, ARC, PIE,
-DRAW_TEXT, BLIT, PATTERN_FILL, TILEMAP and PATTERN_BUCKET_FILL. TRIANGLE/FILL_TRIANGLE translate all three vertices. For LINE and ERASE_LINE it affects
-both endpoint coordinate pairs. TILEMAP source-tile coordinates, dimensions,
-radii, resource addresses and descriptor numbers are not changed.
-
-Signed results are clipped against the renderer framebuffer; they do not wrap
-through the unsigned coordinate range.
-
-### `6Fh` / `EFh` — `SKIP_NEXT`
-
-Parameters after the command byte:
-
-- byte0 = 2DPT slot number
-- byte1 = unsigned number of following slots to skip (`0..255`)
-
-A count of 0 continues with the immediately following slot. A count of 1 skips
-one following slot, and so on. Skipped slots are not interpreted at all, so a
-skipped SET_COLOR, SET_XY_OFFSET, SKIP_NEXT or RET has no effect.
-
-Execution can only move forward. If the calculated next slot is beyond slot
-255, the current 2DPT run ends. Therefore `SKIP_NEXT` cannot create an infinite
-playlist loop.
-
-Notes:
-
-- stroked primitives use `BYTE1` bits 7..6 as `stroke - 1`
-- `ROUND_RECT` / `FILL_ROUND_RECT`: `BYTE6` = radius X, `BYTE7` = radius Y
-- `ELLIPSE`, `FILL_ELLIPSE`, `ARC`, `PIE` use centre/radius semantics
-- `ARC` / `PIE`: `BYTE6` = start angle, `BYTE7` = end angle, clockwise, where 0=top, 64=right, 128=bottom, 192=left
-
-## 10. Resource-aware 2D commands
-
-### `70h` — `DRAW_TEXT`
-Uses a font descriptor and a raw string resource. String terminator is `80h`.
-
-### `71h` — `BLIT`
-Uses a bitmap descriptor. Source data is PIO-native packed 4bpp bitmap data.
-
-BLIT uses `BYTE1` as follows:
-
-- bit7 = transparency-aware flag
-  - `0`: exact packed-byte copy; this is the original maximum-speed path
-  - `1`: source pixels matching the current transparent-colour index preserve the existing framebuffer pixel
-- bits5..4 = destination X bits 9..8
-- bit3 = destination Y bit 8
-- bit6 and bits2..0 are reserved
-
-Exact BLIT deliberately copies all source pixels, including the transparent
-colour index. Transparency-aware BLIT is useful for foreground/HUD graphics
-that must preserve previously rendered sprites or 2D graphics underneath.
-The same bitmap descriptor may be used in either mode.
-
-### `72h` — `PATTERN_FILL`
-Uses one fixed 16×8 pattern from a pattern table.
-
-### `73h` — `TILEMAP`
-Draws a viewport from a defined fixed 16×8 tilemap.
-
-### `74h` — `PATTERN_BUCKET_FILL`
-Fills one four-connected region with a selected fixed 16×8 pattern.
-
-Parameters after the command byte:
-
-- byte0 = 2DPT slot number
-- byte1 = seed X/Y high bits (`bits5..4 = X9..8`, `bit3 = Y8`)
-- byte2 = seed X low byte
-- byte3 = seed Y low byte
-- byte4 = pattern-table descriptor number (`0..63`)
-- byte5 = pattern number within that table (`0..255`)
-
-The effective seed coordinate first samples the colour already present in the
-current framebuffer. Every four-connected pixel of that same colour is then
-replaced by the corresponding pixel from the selected pattern. The fill uses an
-independent visited bitmap, so it remains correct even when one or more pattern
-pixels are the same colour as the sampled target.
-
-Pattern phase is anchored to absolute effective 2dfx coordinates, not to the
-seed: pattern X is `effective_pixel_x & 15`, pattern Y is
-`effective_pixel_y & 7`. Therefore selecting another seed inside the same
-connected region produces the same final pattern alignment. `SET_XY_OFFSET`
-affects the seed position but does not add another pattern-phase offset.
-
-Pattern pixels are copied exactly. No transparency test is performed. The
-implementation uses transient renderer scratch RAM only; it does not reserve
-additional persistent SRAM. If its very large finite internal span stack were
-ever exhausted by a deliberately pathological region, the operation degrades
-safely to a partial fill rather than risking MCU memory corruption.
-
-### `75h` / `76h` — TRIANGLE / FILL_TRIANGLE
-
-Triangle coordinates are encoded using two highbits bytes, including the
-third vertex Y high bit. **Nine F9h bytes after the opcode**:
-
-| F9h byte | Meaning |
-|---|---|
-| 0 | Slot 0..255 |
-| 1 | Vertex highbits 0+1: bits5..4 X0[9:8], bit3 Y0[8], bits2..1 X1[9:8], bit0 Y1[8]; bits7..6 reserved |
-| 2 | Vertex 2 highbits: bits5..4 X2[9:8], bit3 Y2[8]; all other bits reserved |
-| 3,4 | X0, Y0 low bytes |
-| 5,6 | X1, Y1 low bytes |
-| 7,8 | X2, Y2 low bytes |
-
-`75h` draws three 1-pixel lines; `76h` fills. Foreground `F5h`/`F6h`.
-All coordinates have X=0..1023, Y=0..511 and all three obey the current
-`SET_XY_OFFSET`. Both windings accepted, no implicit culling; zero-area fill
-is empty. Boundary and edge pixels depend on the rasterizer. 
-
-### `77h` / `F7h` — CROP_BLIT
-
-Copies a bitmap subrectangle at its native size. **Ten F9h bytes**:
-
-| F9h byte | Meaning |
-|---|---|
-| 0 | Slot 0..255 |
-| 1 | Source highbits: bit7 transparency; bit6 reserved; bits5..4 X[9:8], bit3 Y[8], bits2..1 W[9:8], bit0 H[8] |
-| 2..5 | Source X, Y, W, H low bytes |
-| 6 | Destination highbits: bits5..4 X[9:8], bit3 Y[8], all other bits reserved |
-| 7..8 | Destination X, Y low bytes |
-| 9 | Bitmap descriptor ID |
-
-The selected source region uses bitmap-relative coordinates. `SET_XY_OFFSET`
-changes only the destination; source sampling does not move. Actual width and
-height are in pixels, zero means no drawing. Source pixels outside the defined
-bitmap are skipped safely, not wrapped or read from unrelated RRAM. Supports
-odd source X / destination X / widths and optional transparency.
-
-### `78h` / `F8h` — STRETCH_BLIT (new)
-
-Copies a bitmap subrectangle with nearest-neighbour scaling. **Twelve F9h bytes**:
-
-| F9h byte | Meaning |
-|---|---|
-| 0 | Slot 0..255 |
-| 1 | Source highbits and transparency, exactly as CROP_BLIT |
-| 2..5 | Source X, Y, W, H low bytes |
-| 6 | Destination highbits: bits5..4 X[9:8], bit3 Y[8], bits2..1 W[9:8], bit0 H[8]; bits7..6 reserved |
-| 7..10 | Destination X, Y, W, H low bytes |
-| 11 | Bitmap descriptor ID |
-
-All X/W fields are 10 bits, Y/H fields 9 bits. Source and destination
-width/height are actual pixel counts; zero means no drawing. Sampling is
-`source + floor(destination_relative * source_extent / destination_extent)`
-for each axis, with clipping applied **after** determining the sampling phase.
-Out-of-source-bitmap samples are skipped, never read outside the descriptor.
-Destination-only `SET_XY_OFFSET`, full nibble-accurate precision, and the same
-transparency semantics as BLIT/CROP_BLIT.
-
-### Updated `71h` — BLIT pixel precision
-
-Unchanged wire protocol and bitmap descriptor definition. Odd destination X
-is no longer rounded down. An odd bitmap width is preserved: rows are now
-`ceil(width/2)` bytes, with the final high nibble unused for odd widths.
-Even-aligned copies retain the optimized fast copy/transparent-run path.
-
-### `79h` / `F9h` — SET_CLIP_RECT
-
-Seven Z80 OUT instructions: `opcode, slot, highbits, X low, Y low, W low,
-H low`. Highbits bits 5:4 carry X9:8; bit 3 Y8; bits 2:1 W9:8;
-bit 0 H8; bits 7:6 are reserved and ignored. X/W are 10-bit, Y/H 9-bit.
-The corresponding typed API is `twodfx_2d_set_clip_rect(layer, slot, x, y,
-width, height)`.
-
-The clip replaces the previous clip for subsequent instructions in the SAME
-2DPT replay. It is anchored in physical display coordinates; SET_XY_OFFSET
-moves subsequent shapes, **not** this clip. A zero width or height makes an
-empty region. Each background and foreground replay resets its clip to the
-complete visible framebuffer, with no inheritance across passes/frames.
-Clipping applies to all 2DPT drawing, including flood-fill traversal, and
-never changes source bitmap coordinates or the phase of an absolute pattern.
-It does NOT clip sprites or the firmware's built-in logo overlay. `SKIP_NEXT`
-can skip a SET_CLIP_RECT exactly as any other slot. Use a replacement clip
-covering the full visible area to restore unrestricted drawing.
-
-## 3D mesh commands (v1.1.0)
-
-These are the **public** 3D commands. The original D3 and D4 demo renderers are
-separate demonstration implementations and do not redefine this protocol.
-All 16-bit quantities below are **little-endian**. 3D world axes are +X right,
-+Y up, +Z forward. Object rotations are applied in ROLL (about Z), then YAW
-(about Y), then PITCH (about X) order. Positive yaw points +Z toward +X,
-positive pitch points +Z toward -Y, positive roll points +X toward +Y.
-The camera uses the inverse of the same pose convention.
-
-### 10-bit 3D angle encoding
-
-Both camera and mesh objects use **three 10-bit unsigned rotation angles**,
-with 1024 steps = one complete turn (0.3515625 degrees per step). Their common
-four-byte little-endian bitstream is:
-
-```text
-bits  0.. 9    ROLL   (0..1023)
-bits 10..19    YAW    (0..1023)
-bits 20..29    PITCH  (0..1023)
-bits 30..31    reserved, send zero
-```
-
-Pack as `A = (ROLL & 1023) | ((YAW & 1023) << 10) |
-((PITCH & 1023) << 20)` and send low byte first. For ROLL=1023,
-YAW=513 and PITCH=772, send `FF 07 48 30`.
-The existing 2D ARC/PIE commands **still use 8-bit** rotation units.
-
-### `86h` — DEFINE_MESH (7 F9h bytes)
-
-| F9h byte | Meaning |
-|---|---|
-| 0 | Mesh ID, 0..255 |
-| 1..3 | Resource RAM start address, 23-bit little-endian |
-| 4 | Vertex count minus one (00h..FFh = 1..256 vertices) |
-| 5..6 | Triangle count, uint16 little-endian (supported 1..512) |
-
-A resource mesh is stored as a consecutive vertex table followed immediately
-by a triangle table. Each vertex is 6 bytes: signed `X,Y,Z` (three int16 LE).
-Each triangle is 4 bytes: three zero-based vertex indices `A,B,C` and one
-attribute byte:
-
-- Bits 0..3: filled face colour index (0..15).
-- Bit 4: enable edge A–B in wireframe/FWE rendering.
-- Bit 5: enable edge B–C.
-- Bit 6: enable edge C–A.
-- Bit 7: draw two-sided (disable backface rejection for this face).
-
-Vertex IDs are 8-bit. An invalid mesh definition becomes inactive; individual
-triangles with invalid vertex indexes are ignored. Mesh memory must lie inside
-the 8 MiB address space **without wrapping**. Multiple draw slots can share
-one mesh ID with different object poses.
-
-### `87h` — SET_3D_PROJECTION (8 F9h bytes)
-
-Four uint16 LE values in order: `FX, FY, NEAR, FAR`.
-`FX` and `FY` are perspective focal factors in native projected screen units;
-`NEAR` and `FAR` are positive camera-space Z distances. The command requires
-`FX>0`, `FY>0`, `NEAR>0`, and `FAR>NEAR`, otherwise the previous shadow
-projection is retained. Defaults after graphics reset are
-`FX=365, FY=300, NEAR=96, FAR=2490`.
-The optical centre is calculated from the boot-selected machine profile's
-maximum visible rectangle, not supplied by the programmer. It is unaffected
-by `SET_CLIP_RECT` or `SET_XY_OFFSET`.
-
-### `88h` — SET_CAMERA_POSE (10 F9h bytes)
-
-| F9h bytes | Meaning |
-|---|---|
-| 0..1 | X, signed int16 LE |
-| 2..3 | Y, signed int16 LE |
-| 4..5 | Z, signed int16 LE |
-| 6..9 | 10-bit packed ROLL, YAW, PITCH (as above) |
-
-There is one global camera shared by BACKGROUND and FOREGROUND. Camera pose
-starts at zero and updates the **shadow** state; the active camera changes
-only when the renderer accepts a frame.
-
-### `7Ah/FAh`, `7Bh/FBh`, `7Ch/FCh` — 3D draw commands (12 F9h bytes each)
-
-| Background / foreground opcode | Action |
-|---|---|
-| `7Ah` / `FAh` | DRAW_MESH_WIREFRAME — enabled face edges |
-| `7Bh` / `FBh` | DRAW_MESH_FILLED — solid per-face colours |
-| `7Ch` / `FCh` | DRAW_MESH_FWE — filled faces plus enabled edges |
-
-All three commands have the **same** parameter bytes:
-
-| F9h bytes | Meaning |
-|---|---|
-| 0 | 2DPT slot ID, 0..255 |
-| 1 | Mesh ID, 0..255 |
-| 2..3 | Mesh world X, int16 LE |
-| 4..5 | Mesh world Y, int16 LE |
-| 6..7 | Mesh world Z, int16 LE |
-| 8..11 | Packed 10-bit ROLL, YAW, PITCH |
-
-The internal 2DPT command block remains exactly 12 bytes, with opcode in byte
-0, mesh ID in byte 1, XYZ in bytes 2..7 and packed angles in bytes 8..11.
-There is **no drawing-mode data byte** and no extension prefix.
-
-`SET_COLOR` determines wireframe and FWE edge colour; filled faces take their
-colours from triangle attribute bytes. `SET_CLIP_RECT` clips projected pixels;
-`SET_XY_OFFSET` affects projected X/Y only, not camera/world positions. The
-selected 2DPT order determines draw ordering among separate mesh instances;
-the renderer sorts triangles within each mesh far to near. No general
-Z-buffer, cross-mesh sorting, hidden-line elimination, lighting or textures.
-
-### Frame-latch and Resource RAM rules
-
-Mesh definitions, camera and projection settings have shadow/active state and
-are latched at frame acceptance with the existing 2DPTs. A render in progress
-uses stable active state. Writes across the acceptance boundary can still
-combine an old slot with a new camera (same existing 2DPT snapshot caveat).
-The actual **Resource RAM geometry bytes are not latched**: do not overwrite a
-mesh region while a render may read it. A safe animation pattern uploads into
-an unused resource bank and switches the mesh descriptor after completion.
-
-The extension opcodes `7Eh/FEh` are reserved and unimplemented. The supported
-public 3D angle representation is a 10-bit turn (0..1023).
-
-## 11. F8h readback / STATUS bit map
-
-The external F8h readback map is:
-
-- bit7 = collision detected in previous completed frame; collision is evaluated across the complete renderer framebuffer, including any profile-specific stored area outside the physically visible screen
-- bit6 = 2dfx awake/ready presence detector: `1` during cold sleep/wake transition, `0` after the complete active engine is ready
-- bit5 = render-budget overrun since last clear
-- bit4 = raster interrupt 4 pending
-- bit3 = raster interrupt 3 pending
-- bit2 = raster interrupt 2 pending
-- bit1 = raster interrupt 1 pending
-- bit0 = render-time measurement pin during normal operation; during `SYS_RESET`, `0` means reset busy and `1` means reset complete
-
-Bits 7, 6 and 5 are active-low at the GPIO/status-pin level. In particular, bit6 is intentionally indistinguishable from an absent board until software sends the mandatory `SET_ENGINE_MODE` wake transaction and the engine finishes initialization. STATUS0 is also active-low for the reset-busy interval.
-
-## 12. Easter eggs / demos
-
-`C0h..DFh` are reserved for firmware-side eggs and diagnostics. They are not
-part of the stable application command interface and may change between
-firmware releases.
-
-The v1.1.0 registry includes:
-
-| Command | Demo | Profiles |
-|---|---|---|
-| `C0h` | animated 2dfx logo | Enterprise, TVC |
-| `C1h` | sprite benchmark/showcase | Enterprise, TVC |
-| `C2h` | 2D primitive showcase | Enterprise, TVC |
-| `C3h` | text/font showcase | Enterprise, TVC |
-| `C4h` | animated BLIT showcase | Enterprise, TVC |
-| `C5h` | PATTERN_FILL showcase | Enterprise, TVC |
-| `C6h` | TILEMAP showcase | Enterprise, TVC |
-| `C7h` | basic Pong | Enterprise, TVC |
-| `C8h` | WOW Pong | Enterprise, TVC |
-| `C9h` | Wriggler | Enterprise, TVC |
-| `CAh` | Boulder | Enterprise, TVC |
-| `CBh` | ARC/PIE benchmark | Enterprise, TVC |
-| `CCh` | internal diagnostic stages | Enterprise, TVC |
-| `CDh` | full-frame BLIT benchmark | Enterprise, TVC |
-| `CEh` | dual-layer proof | Enterprise, TVC |
-| `CFh` | EC bit-pattern timing test | TVC only |
-| `D0h` | CRISP tearing test | TVC only |
-| `D1h` | visible-area coordinate probe | Enterprise, TVC |
-| `D2h` | C2 primitives + animated SET_XY_OFFSET whole-scene motion | Enterprise, TVC |
-| `D3h` | rotating Elite ship showcase, specialized 2D drawing path | Enterprise, TVC |
-| `D4h` | curved tunnel and Asp chase, original specialized renderer | Enterprise, TVC |
-| `D5h` | curved tunnel and Asp chase via public 3D mesh commands | Enterprise, TVC |
-| `DFh` | temporary five-phase graphics benchmark: pattern bucket, crop, crop+offset, stretch, stretch+offset | Enterprise, TVC |
-
-A valid selection starts from centralized clean public graphics state. Resource
-RAM is retained, but sprites, both 2DPTs, descriptors, collision/raster state,
-transparent colour and other visible scene producers are reset before the egg
-`start()` callback.
+| DEFINE_FONT | 0..63, high ID bits ignored | 128 glyphs in character-code order; each glyph has `height` rows of `width/8` bytes; bit7 is the leftmost pixel |
+| DEFINE_BITMAP | 0..255 | Packed 4bpp rows, `ceil(width/2)` bytes per row |
+| DEFINE_PATTERN | 0..63, high ID bits ignored | Up to 256 patterns; each 16×8 pattern occupies 64 bytes, row-major |
+| DEFINE_TILESET | 0..63, high ID bits ignored | Up to 256 tiles; each 16×8 tile occupies 64 bytes, row-major |
+| DEFINE_TILEMAP | 0..31, high ID bits ignored | Row-major bytes: one tile index per map cell; tileset ID uses its low six bits |
+| DEFINE_MESH | 0..255 | Vertex and triangle arrays described in the 3D section |
+| DEFINE_USER_POINTER | One global custom slot | 24×12 packed 4bpp pixels, 144 bytes, copied into the pointer cache when safe |
+
+For DEFINE_FONT, `size = ((width/8-1)<<4) | (height/8-1)`.
+Each nibble encodes an eight-pixel unit count minus one, giving dimensions
+from 8 to 128 pixels.
+For DEFINE_BITMAP, `WH = ((width>>8)<<1) | (height>>8)`; only bits2..0 are
+used. Zero width or height makes the bitmap empty.
+DEFINE_TILEMAP stores `columns-1` and `rows-1`, so a zero dimension byte
+means **one cell**, unlike the literal viewport counts in the TILEMAP draw
+command. Each map references a tileset descriptor; redefining that tileset
+changes subsequent accepted scenes using the map.
+
+### Upload and decompression
+
+All three upload commands take the same five-byte header and exactly the
+declared payload length. Data writes complete the transaction automatically;
+extra idle F9h bytes are not part of the upload. Addresses advance and wrap
+modulo 8 MiB. Use UPLOAD_RAW for compressed streams, fonts, strings, maps,
+meshes and already-packed 2dfx pixels. UPLOAD_NICK and UPLOAD_TVC convert each
+uncompressed source byte to the internal packed representation shown below.
+They do not reinterpret font, mesh or text metadata.
+
+UNZX1_RAW, UNZX1_NICK and UNZX1_TVC share the six-byte address packet and the
+same FIFO. RAW leaves decoded bytes unchanged; NICK/TVC convert decoded
+literal bytes and copy back-references from already-converted output. Choose
+the variant from the source graphics format, independently of the selected
+host machine. Compression does not change descriptor dimensions or addresses.
+
+RAW graphics store the left pixel in the low nibble, the right pixel in the high nibble. Bitmap/sprite row stride is `(width+1)/2` bytes; odd widths do not carry the unused nibble into the next row. NICK and TVC conversion commands are available on both machine profiles. Both map source bits as follows:
+
+| Result pixel | Index bit 3 | Index bit 2 | Index bit 1 | Index bit 0 |
+|---|---:|---:|---:|---:|
+| Left, stored in low nibble | source 1 | source 5 | source 3 | source 7 |
+| Right, stored in high nibble | source 0 | source 4 | source 2 | source 6 |
+
+Upload compressed streams with UPLOAD_RAW, then select the appropriate UNZX1 command for the decompressed source format. The dedicated FIFO accepts 16 outstanding jobs, counting the running job. Completed six-byte requests capture source, destination and conversion mode in arrival order. A full FIFO rejects only the new job and asserts sticky STATUS5; accepting the 16th job is not an overflow. Each HSYNC callback drains all accepted jobs; VSYNC also drains them as a fallback, skipping scene publication at that opportunity. Resource work continues with ENGINE_OFF and at either frame cadence. A failed decode does not discard subsequent jobs. `53h` clears STATUS5 without flushing the queue; draining alone does not clear it. SYS_RESET, power cycle and SHOW_FW cancel pending jobs; demo activation waits for them to finish.
+
+Keep compressed source regions stable until consumed: the FIFO stores addresses, not copies of data. Independent `UPLOAD_RAW`, `UNZX1_*`, `DEFINE_BITMAP` sequences require no added delay or Z80 handshake. READY remains an awake/presence indication. A host must advance HSYNC during guest execution; feeding more than 16 requests without a service opportunity deliberately exercises overflow. Decompression writes in place, so overlapping source/destination regions and malformed streams can affect subsequent reads or leave partial output, as on 2dfx hardware.
+
+## Sprite parameter block
+
+| Byte | Meaning |
+|---:|---|
+| 0 | bit 7 enable, bit 6 collision enable, bits 5..4 X9..8, bit 3 Y8, bits 2..1 W9..8, bit 0 H8 |
+| 1, 2 | X low, Y low |
+| 3..5 | Resource address, little-endian |
+| 6 | bit 7 double X, bit 6 double Y, bit 5 flip X, bit 4 flip Y; remaining bits ignored |
+| 7, 8 | Source width low, source height low |
+
+Zero width or height draws nothing. Transparent source pixels are skipped. Sprite 63 has the highest sprite priority. Rendering order is background 2DPT, sprites, foreground 2DPT, built-in logo, pointer, optional overrun marker.
+
+## Retained 2D drawing tables
+
+Background opcodes are `60h..7Fh`; foreground equivalents add `80h`. The first parameter is always the slot (0..255). Both tables reset with **RET in every slot**. A RET ends traversal; fill gaps with NOP when later slots must run. Complete entries become active at accepted frame boundaries. Each table starts with ink 15, paper equal to the transparent key, zero XY offset and the full framebuffer clip.
+
+Unless stated otherwise, `H` packs X9..8 into bits 5..4, Y8 into bit 3, W9..8 (or X1 high) into bits 2..1, and H8 (or Y1 high) into bit 0. Commands supporting a stroke use bits 7..6 for thickness minus one (1..4). Geometry uses raw display coordinates. SET_XY_OFFSET adds signed 8-bit offsets to drawing positions; SET_CLIP_RECT remains in absolute raw coordinates.
+
+The following parameter lists include the slot and give the complete F9h order.
+
+| Background | Foreground | 2DPT command | F9h bytes | Parameters in wire order |
+|---|---|---|---:|---|
+| `60h` | `E0h` | NOP | 1 | slot |
+| `61h` | `E1h` | SET_COLOR | 2 | slot, ink/paper |
+| `62h` | `E2h` | PLOT | 4 | slot, H, X, Y |
+| `63h` | `E3h` | LINE | 6 | slot, H, X0, Y0, X1, Y1 |
+| `64h` | `E4h` | ERASE_LINE | 6 | slot, H, X0, Y0, X1, Y1 |
+| `65h` | `E5h` | BUCKET_FILL | 4 | slot, H, X, Y |
+| `66h` | `E6h` | RECT | 6 | slot, H, X, Y, W, Ht |
+| `67h` | `E7h` | FILL_RECT | 6 | slot, H, X, Y, W, Ht |
+| `68h` | `E8h` | ROUND_RECT | 8 | slot, H, X, Y, W, Ht, radius X, radius Y |
+| `69h` | `E9h` | FILL_ROUND_RECT | 8 | slot, H, X, Y, W, Ht, radius X, radius Y |
+| `6Ah` | `EAh` | ELLIPSE | 6 | slot, H, centre X, centre Y, radius X, radius Y |
+| `6Bh` | `EBh` | FILL_ELLIPSE | 6 | slot, H, centre X, centre Y, radius X, radius Y |
+| `6Ch` | `ECh` | ARC | 8 | slot, H, centre X, centre Y, radius X, radius Y, start, end |
+| `6Dh` | `EDh` | PIE | 8 | slot, H, centre X, centre Y, radius X, radius Y, start, end |
+| `6Eh` | `EEh` | SET_XY_OFFSET | 3 | slot, signed X offset, signed Y offset |
+| `6Fh` | `EFh` | SKIP_NEXT | 2 | slot, count |
+| `70h` | `F0h` | DRAW_TEXT | 8 | slot, H, X, Y, font, string address[3] |
+| `71h` | `F1h` | BLIT | 5 | slot, H, X, Y, bitmap |
+| `72h` | `F2h` | PATTERN_FILL | 8 | slot, H, X, Y, W, Ht, bank, pattern |
+| `73h` | `F3h` | TILEMAP | 8 | slot, map/XY high bits, X, Y, source column, source row, columns, rows |
+| `74h` | `F4h` | PATTERN_BUCKET_FILL | 6 | slot, H, seed X, seed Y, bank, pattern |
+| `75h` | `F5h` | TRIANGLE | 9 | slot, H01, X0, Y0, X1, Y1, H2, X2, Y2 |
+| `76h` | `F6h` | FILL_TRIANGLE | 9 | slot, H01, X0, Y0, X1, Y1, H2, X2, Y2 |
+| `77h` | `F7h` | CROP_BLIT | 10 | slot, Hsource, source X, source Y, source W, source H, Hdest, dest X, dest Y, bitmap |
+| `78h` | `F8h` | STRETCH_BLIT | 12 | slot, Hsource, source X, source Y, source W, source H, Hdest, dest X, dest Y, dest W, dest H, bitmap |
+| `79h` | `F9h` | SET_CLIP_RECT | 6 | slot, H, X, Y, W, Ht |
+| `7Ah` | `FAh` | DRAW_MESH_WIREFRAME | 12 | slot, X[2], Y[2], Z[2], angle high bits, roll low, yaw low, pitch low, mesh id |
+| `7Bh` | `FBh` | DRAW_MESH_FILLED | 12 | slot, X[2], Y[2], Z[2], angle high bits, roll low, yaw low, pitch low, mesh id |
+| `7Ch` | `FCh` | DRAW_MESH_FWE | 12 | slot, X[2], Y[2], Z[2], angle high bits, roll low, yaw low, pitch low, mesh id |
+| `7Fh` | `FFh` | RET | 1 | slot |
+
+`Ht` denotes the low height byte, to distinguish it from the packed high-bits
+byte. Command-specific packing and behaviour are detailed below.
+
+### Replay control: NOP, SET_COLOR, SET_XY_OFFSET, SKIP_NEXT, RET
+
+NOP occupies a slot and continues. RET terminates the current layer, leaving
+the other layer independent. Since every slot resets to RET, a missing slot
+can hide all later commands. SKIP_NEXT advances past exactly its unsigned
+count of following slots without executing them; even a skipped RET has no
+effect. Traversal ends if the resulting next slot is beyond 255.
+
+SET_COLOR takes `(ink<<4)|paper` and changes subsequent commands in this layer.
+It does not change the host palette or the global transparent index.
+SET_XY_OFFSET replaces the current signed destination offset; it is not an
+increment. It translates both line endpoints and all triangle vertices, and
+the destination positions of bitmap, text, pattern and tile commands. It does
+not change widths, source rectangles, resource addresses or the global camera.
+Offsets reset independently to zero at the start of each layer replay.
+
+SET_CLIP_RECT replaces the current layer's clip with an absolute raw-coordinate
+rectangle. XY offsets do not move it. Zero width or height gives an empty clip.
+It affects subsequent 2DPT drawing, including flood traversal and mesh output,
+but not sprites, logo or pointer. Both layers begin with the complete stored
+framebuffer clip. A later full-size clip restores unrestricted drawing.
+
+### Primitive drawing
+
+PLOT writes one ink-coloured pixel. LINE draws between its two endpoints in
+ink; ERASE_LINE uses paper with the same geometry. H bits7..6 encode stroke
+width minus one for stroked primitives. These commands do not implicitly
+modify the following slot's ink, paper or offset.
+
+RECT and ROUND_RECT take a top-left position and literal width/height. Their
+filled counterparts paint with ink. Outlined forms draw in ink and fill their
+interior with paper only when paper differs from the global transparent key;
+otherwise the existing interior is retained. ROUND_RECT adds unsigned 8-bit
+corner radii X and Y. Zero rectangle dimensions draw nothing.
+
+ELLIPSE and FILL_ELLIPSE take a centre and horizontal/vertical radii, not a
+bounding-box corner and dimensions. ELLIPSE uses ink for its outline and the
+same optional paper rule; FILL_ELLIPSE uses ink. ARC draws the angular portion
+of an ellipse outline; PIE fills the sector in ink. Angles are unsigned 8-bit
+clockwise values: 0=top, 64=right, 128=bottom, 192=left.
+A start angle greater than the end angle
+sweeps through zero; equal angles draw nothing. Radius fields use the same
+10-bit/9-bit high-bit packing as W/H.
+
+BUCKET_FILL replaces the four-connected region matching the seed's current
+framebuffer colour with ink, bounded by the current clip. A seed outside the
+clip, or ink already equal to the seed colour, does nothing. This is a
+seed-colour fill, not a search for a specified border colour. Its bounded
+128-seed traversal can leave a pathological region partially filled.
+
+TRIANGLE has three full-range vertices. H01 packs X0/Y0/X1/Y1 like LINE and
+contains stroke bits; H2 packs X2 high bits in bits5..4 and Y2 bit8 in bit3,
+with other bits ignored. It draws all three edges in ink and
+optionally fills with paper. Triangle outline widths are native framebuffer
+pixels; even widths put the extra pixel on the negative side of the edge's
+minor axis. FILL_TRIANGLE ignores stroke bits and fills with ink using
+half-open pixel-centre coverage. Both windings are accepted; a zero-area fill
+draws nothing, while TRIANGLE may still draw its edges.
+
+### Text, bitmaps, patterns and tilemaps
+
+DRAW_TEXT reads a string at the supplied address using the selected font's
+glyph size. Every byte 0..127 selects a glyph, including byte zero; any byte
+128..255 terminates, with 80h the conventional terminator. At most 255 glyph
+bytes are consumed. Glyphs advance horizontally by their width, with no
+newline interpretation. Set bits paint ink; unset bits paint paper only when
+paper differs from the transparent key. Font and string data must be uploaded
+byte-exact with UPLOAD_RAW or UNZX1_RAW.
+
+BLIT draws the complete defined bitmap. CROP_BLIT draws a source rectangle at
+its native size; STRETCH_BLIT maps a source rectangle to the supplied
+destination rectangle. All use bit7 of their first coordinate high-bits byte
+for transparency: 0 copies every sampled pixel, including the key; 1 preserves
+the destination when the source pixel equals the key. Source coordinates are
+bitmap-relative. The XY offset affects only destinations. Missing source
+pixels outside the bitmap are skipped, not wrapped into unrelated resources.
+Zero source or destination extent draws nothing. Odd X and odd widths retain
+single-pixel precision. Scaling uses `floor(relative_dest * source_extent /
+dest_extent)` per axis; destination clipping does not restart that sampling
+phase. CROP_BLIT's Hdest uses X/Y bits only; STRETCH_BLIT's Hdest also packs
+destination width/height. Bit6 of Hsource and bits7..6 of Hdest are ignored.
+
+PATTERN_FILL repeats one 16×8 pattern over a rectangle. PATTERN_BUCKET_FILL
+uses the same pattern within the seed-colour-connected region. Ink and paper
+are not used. The pattern bank and pattern index are separate bytes; bank ID
+uses six bits. The first coordinate byte's bit6 selects screen versus local
+phase, and bit7 selects transparent versus opaque pattern pixels. A local
+anchor is the effective, unclipped rectangle/seed position after XY offset;
+a screen anchor is raw (0,0). Clipping never restarts the pattern. Pattern
+bucket traversal tracks visited pixels separately, so a replacement pixel
+equal to the seed colour does not stop the fill. Its finite span capacity is
+17,381; exhaustion can leave a partial fill.
+
+TILEMAP selects a map plus a source-cell rectangle. Its combined byte packs
+map ID in bits7..3, destination X9..8 in bits2..1 and Y8 in bit0. Source column
+and row are zero-based. Visible column/row bytes are literal counts; zero draws
+nothing. A viewport extending beyond the map is reduced to the remaining
+cells; a starting cell outside the map draws nothing. Each cell selects a
+16×8 tile from the map's tileset. Tile pixels are copied, including the key;
+host visibility still follows the global engine/transparent-colour rules.
+Effective destination X rounds down to an even pixel; Y retains line precision.
+
+## Mesh and camera data
+
+A face's low nibble is its fill colour. Bits 4, 5, 6 enable edges 0→1, 1→2, 2→0; bit 7 makes the face double-sided. Faces are depth-sorted within each mesh draw; 2DPT order determines ordering between draw commands. WIREFRAME uses current ink for enabled edges; FILLED uses face colours; FWE draws fills and enabled ink-coloured edges.
+
+All poses use signed 16-bit world coordinates and 10-bit angles. Angle high bits pack roll9..8 in bits 5..4, yaw9..8 in bits 3..2, pitch9..8 in bits 1..0; bits 7..6 are ignored. One turn is 1024 units. Object rotation order is roll → yaw → pitch. The global camera uses the corresponding inverse transform and is shared by both drawing tables.
+
+SET_3D_PROJECTION accepts only nonzero FX/FY/near with far greater than near; invalid settings preserve the previous projection. Defaults: Enterprise FX=579, TVC FX=508, FY=300, near=96, far=2490. Descriptors, projection and camera pose latch with the accepted scene.
+
+DEFINE_MESH takes `id, address[3], vertex_count_minus_1,
+triangle_count_high, triangle_count_low`. Counts are therefore 1..256 vertices
+and 1..512 triangles. The two-byte triangle value is **high part first** and
+encodes count minus one; only high-byte bit0 is used. Each vertex is six bytes
+of signed little-endian X/Y/Z; each triangle is three zero-based vertex indices
+followed by its flags/colour byte. Total storage is `vertices*6 + triangles*4`.
+The entire resource must fit before the end of resource RAM; it cannot wrap.
+
+SET_3D_PROJECTION's eight bytes are `FXlo, FXhi, FYlo, FYhi, nearlo, nearhi,
+farlo, farhi`. SET_CAMERA_POSE supplies the global camera's position and
+orientation; its first six bytes are signed X/Y/Z and its last four are angle
+high bits plus roll/yaw/pitch low bytes. DRAW_MESH_* uses the same pose encoding
+after its slot byte, with the mesh ID last. Projection and camera are global,
+shared by both layers; a mesh draw is a retained 2DPT command.
+
+World axes are +X right, +Y up and +Z forward. Object rotations are ROLL about
+Z, YAW about Y, then PITCH about X. Draw commands apply object pose, inverse
+camera pose, clipping and perspective projection. A larger FX/FY enlarges the
+projection on that axis. Invalid vertex indices are skipped.
+SET_XY_OFFSET moves the projected mesh image in screen space without changing
+its world pose; SET_CLIP_RECT clips its rendered pixels. WIREFRAME ignores paper.
+
+## Logo and pointer
+
+SHOW_BUILTIN_LOGO's XY high byte packs X9..8 in bits 2..1 and Y8 in bit 0. Bit 7 selects the 103×40 small logo; otherwise the logo is 206×79. The colour byte has main in its high nibble, accent in its low nibble. TVC uses fixed main/accent colours 15/3. The logo is independent of the 2DPT clip.
+
+All pointers are 24×12 pixels. Built-in pointer colours use outer in the high
+nibble and inner in the low nibble. Custom images retain their own palette
+indices. A custom definition pending behind an upload/resource job completes
+when it is safe to read those bytes; the latest pending valid definition wins.
+
+Pointer position is its hotspot, with the same high-bits packing as SHOW_BUILTIN_LOGO. Movement while hidden is ignored. Coordinates clamp to Enterprise X=88..811, Y=18..303 or TVC X=79..686, Y=41..296; the image is clipped to those bounds. Pointer state is frame-latched, uses the transparent key, ignores the 2DPT clip and is composited above the logo but below the optional overrun marker.
+
+### Pointer command details
+
+`92h SET_POINTER_MODE` always takes two bytes, including when hiding the
+pointer. Mode 0 hides; 1..14 selects a built-in shape; 15 selects the custom
+image. Modes 16..255 are ignored completely, preserving mode and colours.
+Selecting custom mode without a valid custom definition draws nothing.
+
+`93h SET_POINTER_POS` takes `Hxy, Xlow, Ylow`, where Hxy bits2..1 are X9..8
+and bit0 is Y8. Other bits are ignored. `94h SET_POINTER_REL` takes two signed
+8-bit deltas, range −128..127. It adds them to the latest pending hotspot
+position, even before that position has been displayed. An absolute command
+replaces that pending position. Both commands are ignored while hidden.
+The pointer initially appears at (450,161) on Enterprise or (383,169) on TVC;
+hiding and re-enabling preserves its last position.
+
+`95h DEFINE_USER_POINTER` takes `address[3], hotspot X, hotspot Y`. Hotspots
+must lie within X=0..23 and Y=0..11. Invalid values preserve the existing
+definition or pending valid request. A valid request copies 144 bytes when
+resource access is safe; it does not enable the pointer. Re-uploading the
+original resource later has no effect until the pointer is defined again.
+Rows contain twelve packed bytes, low nibble first. Custom colours are pixel
+indices; the SET_POINTER_MODE colour byte does not recolour this image.
+
+| Mode | Built-in shape | Hotspot X,Y |
+|---:|---|---|
+| 1 | Top-left arrow | 0,0 |
+| 2 | Top-right arrow | 23,0 |
+| 3 | Hourglass | 11,5 |
+| 4 | I-beam | 11,5 |
+| 5 | Pointing hand | 8,0 |
+| 6 | Grabbing hand | 12,5 |
+| 7 | Crosshair | 11,5 |
+| 8 | Horizontal resize | 11,5 |
+| 9 | Vertical resize | 11,5 |
+| 10 | NW–SE resize | 11,5 |
+| 11 | NE–SW resize | 12,5 |
+| 12 | Move symbol | 11,5 |
+| 13 | Forbidden | 11,5 |
+| 14 | Pencil | 2,11 |
+
+Built-in shapes use transparent background plus outer/detail and inner/fill
+roles. A role assigned to the global transparent index is also skipped.
+Position denotes the hotspot; the bitmap's top-left is position minus hotspot.
+The pointer cache, shape, colours and position publish with an accepted scene.
+
+## Reserved commands and host integration boundary
+
+`59h..5Ah`, `89h..8Dh`, `96h..BFh` and `7Dh/FDh` are unassigned.
+`7Eh/FEh` is a reserved, unimplemented extension prefix. They have no resource
+or drawing effect. `D6h..DFh` are unavailable demo selectors and stop demo
+updates as described above. Do not invent parameter lengths for reserved
+commands. Strict input sessions still ignore ordinary command-port writes.
+
+The emulator implements these guest-visible operations as a behavioural model.
+It returns palette indices, not final RGB values, and does not simulate the
+hardware's instruction or electrical timing. Integrators must connect F8h/F9h,
+HSYNC, VSYNC, raster IRQ, reset and overlay composition; those interfaces and
+the timing boundary are documented in [INTEGRATION.md](INTEGRATION.md) and
+[COMPATIBILITY.md](COMPATIBILITY.md).

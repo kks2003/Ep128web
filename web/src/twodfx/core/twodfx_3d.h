@@ -3,10 +3,7 @@
  */
 #ifndef TWODFX_3D_H
 #define TWODFX_3D_H
-/* Standalone, independently written C99 reference geometry module.
- * The published v1.1.0 resource/port format is the behavioral contract.
- * Deliberately uses standard floating-point trigonometry, NOT MCU tables,
- * fixed point shortcuts, render-duration, or other firmware internals. */
+
 #include <stddef.h>
 #include <stdint.h>
 #include "twodfx_raster.h"
@@ -41,10 +38,8 @@ void twodfx_3d_scene_set_projection(twodfx_3d_scene *s, uint16_t fx,
 void twodfx_3d_scene_set_camera(twodfx_3d_scene *s, const uint8_t params[10]);
 void twodfx_3d_unpack_angles(const uint8_t wire[4],
                             uint16_t *roll, uint16_t *yaw, uint16_t *pitch);
-/* DRAW_MESH entries contain 11 bytes after the 2DPT slot: mesh ID,
- * signed xyz, and little endian packed 10-bit roll/yaw/pitch.
- * mode: 0 wireframe, 1 filled, 2 filled with edges.
- * raw origin is the stored framebuffer offset, not optical centre. */
+/* DRAW_MESH payload after slot: signed XYZ (6 bytes), angle highbits,
+ * roll/yaw/pitch low bytes, mesh ID. mode: 0 wireframe, 1 fill, 2 fill+edges. */
 void twodfx_3d_render(const twodfx_3d_scene *s, const uint8_t *ram,
                       twodfx_raster *r, const uint8_t entry[11],
                       unsigned mode, uint8_t edge_colour,

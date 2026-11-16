@@ -31,7 +31,7 @@ def build(main_src="test/native_harness.cpp", name="harness"):
           "-I" + os.path.join(ROOT, "web/stubs"), "-I" + os.path.join(ROOT, "web/src"),
           "-I" + E + "/src", "-I" + E + "/z80", "-I" + E] + \
          ["-I" + os.path.join(ROOT, "web/src/twodfx", d)
-          for d in ("include", "core", "assets", "firmware_eggs", "firmware_eggs/portable")] + \
+          for d in ("include", "core", "assets", "demos")] + \
          ["-DHAVE_LUA_H", "-I" + os.path.join(ROOT, "web/src/lua")]
     txt = open(os.path.join(ROOT, "build.sh")).read()
     block = txt.split('SOURCES="')[1].split('"\n')[0]

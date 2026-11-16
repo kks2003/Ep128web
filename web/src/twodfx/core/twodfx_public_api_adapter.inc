@@ -1,28 +1,24 @@
 /* SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Károly Vaczkó
- *
- * Portable implementation of the public v1.1.0 twodfx_api.h contract.
- * This is independently written against the portable emulator model;
- * NO MCU twodfx_api.c, 2dfx.h, PIO/DMA, IRQ or scanout code is copied.
- *
- * Bound for the duration of one start/tick/SHOW_FW callback. The original
- * egg source uses file-static state: just as in the source firmware, only one
- * instance can run eggs at a time. Host API operations use the same retained
- * shadow structures and renderer as F8/F9 commands.
  */
+
 #define TWODFX_RESOURCE_JOB_NONE TWODFX_FIRMWARE_JOB_NONE
 #define TWODFX_RESOURCE_JOB_BUSY TWODFX_FIRMWARE_JOB_BUSY
 #define TWODFX_RESOURCE_JOB_SUCCESS TWODFX_FIRMWARE_JOB_SUCCESS
 #define TWODFX_RESOURCE_JOB_ERROR TWODFX_FIRMWARE_JOB_ERROR
-#include "../firmware_eggs/twodfx_api.h"
+#include "../demos/twodfx_api.h"
 #undef TWODFX_RESOURCE_JOB_NONE
 #undef TWODFX_RESOURCE_JOB_BUSY
 #undef TWODFX_RESOURCE_JOB_SUCCESS
 #undef TWODFX_RESOURCE_JOB_ERROR
-#include "../firmware_eggs/twodfx_egg.h"
+#include "../demos/twodfx_egg.h"
 
 static twodfx_emu *egg_api_device;
-static void egg_api_bind(twodfx_emu *d) { egg_api_device=d; }
+static void egg_api_bind(twodfx_emu *d) {
+ if(egg_api_device)demo_state_swap(egg_api_device->demo_states,egg_api_device->egg_id,0);
+ egg_api_device=d;
+ if(d)demo_state_swap(d->demo_states,d->egg_id,1);
+}
 
 static void egg_api_put(unsigned layer,uint8_t slot,uint8_t op,const uint8_t *p,unsigned n){
   twodfx_emu *d=egg_api_device;
@@ -49,8 +45,8 @@ static void egg_api_linecmd(twodfx_layer_t layer,uint8_t slot,uint8_t op,
 }
 static void egg_api_tri(twodfx_layer_t layer,uint8_t slot,uint8_t op,
       uint16_t x0,uint16_t y0,uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2){
-  uint8_t p[8]={egg_api_hi(x0,y0,x1,y1,1),egg_api_hi(x2,y2,0,0,1),
-                (uint8_t)x0,(uint8_t)y0,(uint8_t)x1,(uint8_t)y1,
+  uint8_t p[8]={egg_api_hi(x0,y0,x1,y1,1),
+                (uint8_t)x0,(uint8_t)y0,(uint8_t)x1,(uint8_t)y1,egg_api_hi(x2,y2,0,0,1),
                 (uint8_t)x2,(uint8_t)y2};
   egg_api_put(layer,slot,op,p,8);
 }
@@ -68,18 +64,18 @@ twodfx_machine_t twodfx_get_machine(void){
 void twodfx_set_engine_mode(twodfx_engine_mode_t mode){
   if(egg_api_device)egg_api_device->engine=(uint8_t)mode;
 }
-void twodfx_set_fps(twodfx_fps_t fps){if(egg_api_device)egg_api_device->fps=fps==TWODFX_FPS_25?25:50;}
+void twodfx_set_fps(twodfx_fps_t fps){if(egg_api_device){egg_api_device->fps=fps==TWODFX_FPS_25?25:50;egg_api_device->fps_phase=0;}}
 void twodfx_set_transparent_color(uint8_t c){if(egg_api_device)egg_api_device->transparent=c&15u;}
 void twodfx_set_render_overrun_visual(bool enabled){if(egg_api_device)egg_api_device->overrun_visual=enabled;}
-void twodfx_clear_render_overrun(void){}
+void twodfx_clear_render_overrun(void){if(egg_api_device)egg_api_device->overrun_pending=0;}
 void twodfx_set_raster_interrupt(uint8_t n,uint16_t line){
-  if(egg_api_device&&n>=1&&n<=4){egg_api_device->raster_lines[n-1u]=line;
+  if(egg_api_device&&n>=1&&n<=4){egg_api_device->raster_lines[n-1u]=line<=311?line:0;
     egg_api_device->raster_pending&=(uint8_t)~(1u<<(n-1u));}
 }
 void twodfx_clear_raster_pending(void){if(egg_api_device)egg_api_device->raster_pending=0;}
 void twodfx_show_builtin_logo(uint16_t x,uint16_t y,uint8_t main,uint8_t accent){
   twodfx_emu *d=egg_api_device;if(!d)return;
-  d->logo_visible=1;d->logo_x=x;d->logo_y=y;d->logo_main=main&15u;d->logo_accent=accent&15u;
+  d->logo_visible=1;d->logo_small=0;d->logo_x=x&1023;d->logo_y=y&511;d->logo_main=d->machine==TWODFX_EMU_TVC?15:main&15u;d->logo_accent=d->machine==TWODFX_EMU_TVC?3:accent&15u;
 }
 void twodfx_hide_builtin_logo(void){if(egg_api_device)egg_api_device->logo_visible=0;}
 void twodfx_reset_sprites(void){if(egg_api_device)memset(egg_api_device->shadow_spt,0,sizeof egg_api_device->shadow_spt);}
@@ -87,7 +83,7 @@ static void egg_api_reset_layer(unsigned layer){
   twodfx_emu *d=egg_api_device;
   if(!d||layer>1u)return;
   memset(d->shadow_2dpt[layer],0,sizeof d->shadow_2dpt[layer]);
-  d->shadow_2dpt[layer][0].opcode=0x7f;
+  for(unsigned i=0;i<256;i++)d->shadow_2dpt[layer][i].opcode=0x7f;
 }
 void twodfx_reset_2dpt_background(void){egg_api_reset_layer(0);}
 void twodfx_reset_2dpt_foreground(void){egg_api_reset_layer(1);}
@@ -115,16 +111,12 @@ twodfx_resource_job_status_t twodfx_resource_job_status(void){
 }
 bool twodfx_reset_rram(void){
   twodfx_emu *d=egg_api_device;
-  if(!d||(int)d->resource_job==(int)TWODFX_FIRMWARE_JOB_BUSY)return false;
-  memset(d->ram,0,TWODFX_EMU_RESOURCE_BYTES);d->resource_job=TWODFX_FIRMWARE_JOB_SUCCESS;
-  return true;
+  if(!d||d->job_head!=d->job_tail)return false;
+  return queue_resource_job(d,0,0,3)!=0;
 }
 static bool egg_api_zx1(uint32_t src,uint32_t dst,uint8_t format){
   twodfx_emu *d=egg_api_device;
-  if(!d||(int)d->resource_job==(int)TWODFX_FIRMWARE_JOB_BUSY)return false;
-  d->job_source=src;d->job_destination=dst;d->job_format=format;
-  d->resource_job=TWODFX_FIRMWARE_JOB_BUSY;
-  return true;
+  return d && queue_resource_job(d,src,dst,format);
 }
 bool twodfx_unzx1_raw(uint32_t a,uint32_t b){return egg_api_zx1(a,b,0);}
 bool twodfx_unzx1_nick(uint32_t a,uint32_t b){return egg_api_zx1(a,b,1);}
@@ -137,7 +129,7 @@ void twodfx_define_font(uint8_t id,uint32_t addr,uint8_t wu,uint8_t hu){
 void twodfx_define_bitmap(uint8_t id,uint32_t addr,uint16_t w,uint16_t h){
   twodfx_emu *d=egg_api_device;twodfx_bitmap_descriptor *b;
   if(!d||w>1023||h>511)return;
-  b=&d->bitmaps[id];b->resource_address=addr&0x7fffffu;b->width=w&~1u;b->height=h;
+  b=&d->bitmaps[id];b->resource_address=addr&0x7fffffu;b->width=w;b->height=h;
   b->valid=b->width&&h;
 }
 void twodfx_define_pattern(uint8_t id,uint32_t addr){
@@ -248,7 +240,7 @@ void twodfx_2d_stretch_blit(twodfx_layer_t l,uint8_t s,uint8_t id,twodfx_blit_mo
 void twodfx_2d_pattern_fill(twodfx_layer_t l,uint8_t s,uint16_t x,uint16_t y,
  uint16_t w,uint16_t h,uint8_t pat,uint8_t n){egg_api_rectcmd(l,s,0x72,x,y,w,h,1,pat,n,7);}
 void twodfx_2d_pattern_bucket_fill(twodfx_layer_t l,uint8_t s,uint16_t x,uint16_t y,uint8_t pat,uint8_t n){
-  uint8_t p[5]={egg_api_hi(x,y,0,0,1),(uint8_t)x,(uint8_t)y,pat,n};
+  uint8_t p[5]={(uint8_t)(egg_api_hi(x,y,0,0,1)|64),(uint8_t)x,(uint8_t)y,pat,n};
   egg_api_put(l,s,0x74,p,5);
 }
 void twodfx_2d_tilemap(twodfx_layer_t l,uint8_t s,uint16_t x,uint16_t y,uint8_t map,
@@ -258,7 +250,7 @@ void twodfx_2d_tilemap(twodfx_layer_t l,uint8_t s,uint16_t x,uint16_t y,uint8_t 
   egg_api_put(l,s,0x73,p,7);
 }
 bool twodfx_collision_detected(void){return egg_api_device && egg_api_device->collision_reported;}
-bool twodfx_render_overrun_detected(void){return false;}
+bool twodfx_render_overrun_detected(void){return egg_api_device && egg_api_device->overrun_pending;}
 bool twodfx_raster_interrupt_pending(uint8_t n){return egg_api_device && n>0&&n<=4&&((egg_api_device->raster_pending>>(n-1u))&1u);}
 void twodfx_3d_define_mesh(uint8_t id,uint32_t addr,uint16_t nv,uint16_t nt){
   if(egg_api_device)twodfx_3d_define(&egg_api_device->scene3d,id,addr,nv,nt);
@@ -275,12 +267,44 @@ void twodfx_3d_set_camera(twodfx_pose3d_t pose){
   twodfx_3d_scene_set_camera(&egg_api_device->scene3d,p);
 }
 void twodfx_3d_draw_mesh(uint8_t layer,uint8_t slot,uint8_t id,twodfx_pose3d_t pose,twodfx_mesh_mode_t mode){
-  uint8_t p[11]={id,(uint8_t)pose.x,(uint8_t)(pose.x>>8),
-                 (uint8_t)pose.y,(uint8_t)(pose.y>>8),
-                 (uint8_t)pose.z,(uint8_t)(pose.z>>8)};
-  twodfx_pack_angles10(p+7,pose.roll,pose.yaw,pose.pitch);
+  uint8_t p[11]={(uint8_t)pose.x,(uint8_t)((uint16_t)pose.x>>8),
+                 (uint8_t)pose.y,(uint8_t)((uint16_t)pose.y>>8),
+                 (uint8_t)pose.z,(uint8_t)((uint16_t)pose.z>>8)};
+  if(layer>1||mode>2)return;
+  twodfx_pack_angles10(p+6,pose.roll,pose.yaw,pose.pitch);p[10]=id;
   egg_api_put(layer,slot,(uint8_t)(0x7a+mode),p,11);
 }
 bool twodfx_egg_read_f9(uint8_t *value){return egg_api_device&&twodfx_emu_egg_pop_input(egg_api_device,value);}
 bool twodfx_egg_f9_overflowed(void){return egg_api_device&&egg_api_device->egg_overflow;}
 void twodfx_egg_clear_f9_overflow(void){if(egg_api_device)egg_api_device->egg_overflow=0;}
+
+void twodfx_2d_triangle_stroke(twodfx_layer_t l,uint8_t slot,uint16_t x0,uint16_t y0,uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2,uint8_t stroke){
+ egg_api_tri(l,slot,0x75,x0,y0,x1,y1,x2,y2);
+ if(egg_api_device&&l<=1)egg_api_device->shadow_2dpt[l][slot].payload[0]|=(((stroke?stroke:1)-1u)&3u)<<6;
+}
+void twodfx_2d_pattern_fill_ex(twodfx_layer_t l,uint8_t slot,uint16_t x,uint16_t y,uint16_t w,uint16_t h,uint8_t bank,uint8_t pat,uint8_t flags){
+ egg_api_rectcmd(l,slot,0x72,x,y,w,h,1,bank,pat,7);
+ if(egg_api_device&&l<=1)egg_api_device->shadow_2dpt[l][slot].payload[0]|=flags&192;
+}
+void twodfx_2d_pattern_bucket_fill_ex(twodfx_layer_t l,uint8_t slot,uint16_t x,uint16_t y,uint8_t bank,uint8_t pat,uint8_t flags){
+ uint8_t p[5]={(uint8_t)(egg_api_hi(x,y,0,0,1)|(flags&192)),(uint8_t)x,(uint8_t)y,bank,pat};
+ egg_api_put(l,slot,0x74,p,5);
+}
+void twodfx_show_builtin_logo_ex(uint16_t x,uint16_t y,uint8_t main,uint8_t accent,bool small){
+ twodfx_show_builtin_logo(x,y,main,accent);if(egg_api_device)egg_api_device->logo_small=small;
+}
+uint32_t time_us_32(void){return egg_api_device?(uint32_t)(egg_api_device->video_frames*20000u):0;}
+uint32_t get_rand_32(void){
+ if(!egg_api_device)return 0x9e3779b9u;
+ uint32_t x=egg_api_device->rng_state;x^=x<<13;x^=x>>17;x^=x<<5;
+ return egg_api_device->rng_state=x;
+}
+
+void twodfx_set_pointer_mode(uint8_t id,uint8_t outer,uint8_t inner){if(egg_api_device)pointer_mode(egg_api_device,id,((outer&15)<<4)|(inner&15));}
+void twodfx_set_pointer_pos(uint16_t x,uint16_t y){if(egg_api_device)pointer_pos(egg_api_device,x,y);}
+void twodfx_set_pointer_rel(int8_t x,int8_t y){if(egg_api_device)pointer_pos(egg_api_device,egg_api_device->pointer_shadow.x+x,egg_api_device->pointer_shadow.y+y);}
+bool twodfx_define_user_pointer(uint32_t a,uint8_t x,uint8_t y){return egg_api_device&&pointer_define(egg_api_device,a,x,y);}
+twodfx_pointer_bounds_t twodfx_get_pointer_bounds(void){
+ int l=0,t=0,r=0,b=0;if(egg_api_device)pointer_bounds(egg_api_device,&l,&t,&r,&b);
+ return (twodfx_pointer_bounds_t){l,t,r,b};
+}
