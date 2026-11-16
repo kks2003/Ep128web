@@ -419,8 +419,9 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 #usb-list li .s, #sd-list li .s { color: var(--muted); font-variant-numeric: tabular-nums; }
 #usb-list li button, #sd-list li button { padding: 0 6px; min-height: 0; }
 #usb-drop, #sd-drop { color: var(--muted); font-size: 12px; margin-top: 4px; }
-#usb-group, #sd-group { grid-column: span 2; min-width: 0; }
-@media (max-width: 560px) { #usb-group, #sd-group { grid-column: auto; } }
+/* the whole width of the tab, however many columns it has (span 2 made a
+   second, empty column in the one-column side layout) */
+#usb-group, #sd-group { grid-column: 1 / -1; min-width: 0; }
 
 /* joystick panel: input name | joystick it drives */
 #joy-map {
