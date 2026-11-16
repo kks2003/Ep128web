@@ -1,5 +1,104 @@
 [
   {
+    "title": "15-ös fejtörő",
+    "description": "A klasszikus 15-ös puzzle játék számítógépes megvalósítása.",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/fejtoro.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=fejtoro.zip",
+    "file_name": "fejtoro.zip",
+    "type": "Játék - Logikai - Kirakó",
+    "date": ""
+  },
+  {
+    "title": "21",
+    "description": "21-es kártyajáték megvalósítása TVC-n",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/21.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=21.zip",
+    "file_name": "21.zip",
+    "type": "Játék - Logikai - Kártya",
+    "date": ""
+  },
+  {
+    "title": "2D Grafika",
+    "description": "TVC Felhasználói - Rajzoló",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/2dgrafika.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=2dgrafika.zip",
+    "file_name": "2dgrafika.zip",
+    "type": "Felhasználói - Rajzoló",
+    "date": ""
+  },
+  {
+    "title": "3 játék",
+    "description": "2 játék van kész, egy kígyós és egy labirintusos",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/3jatek.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=3jatek.zip",
+    "file_name": "3jatek.zip",
+    "type": "Játék - Ügyességi",
+    "date": ""
+  },
+  {
+    "title": "32",
+    "description": "TVC Játék - Ügyességi",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/32.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=32.zip",
+    "file_name": "32.zip",
+    "type": "Játék - Ügyességi",
+    "date": "2025"
+  },
+  {
+    "title": "32/64k Forth (eredeti kazettás verzió)",
+    "description": "TVC Felhasználói - Programnyelv",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/forth.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=3264K-FORTH%20eredeti%208bit%20wav.zip",
+    "file_name": "3264K-FORTH eredeti 8bit wav.zip",
+    "type": "Felhasználói - Programnyelv",
+    "date": ""
+  },
+  {
+    "title": "3D Cube (Basic)",
+    "description": "TVC Demo - Kép/Animáció",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/3dcube.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=3dcube.zip",
+    "file_name": "3dcube.zip",
+    "type": "Demo - Kép/Animáció",
+    "date": "2019"
+  },
+  {
+    "title": "4GO",
+    "description": "TVC Játék - Ügyességi - Arkanoid típusú",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/4go.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=4GO.zip",
+    "file_name": "4GO.zip",
+    "type": "Játék - Ügyességi - Arkanoid típusú",
+    "date": "2026"
+  },
+  {
+    "title": "5 labdajáték",
+    "description": "TVC Játék - Ügyességi - Pong típusú",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/5labdajatek.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=5labdaj.zip",
+    "file_name": "5labdaj.zip",
+    "type": "Játék - Ügyességi - Pong típusú",
+    "date": "1987"
+  },
+  {
+    "title": "5 labdajáték (f3)",
+    "description": "A klasszikus Pong játék TVC-s megvalósítása több játékossal",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/5labdajatek.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=5labdajatek.zip",
+    "file_name": "5labdajatek.zip",
+    "type": "Játék - Ügyességi - Pong típusú",
+    "date": "1987"
+  },
+  {
+    "title": "8 bit sunset (64k+)",
+    "description": "10 soros basic programok verseyére készült \"SCHAU\" kategóriában első lett",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/8bitsunset.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=8bitsunset.zip",
+    "file_name": "8bitsunset.zip",
+    "type": "Demo - Kép/Animáció",
+    "date": "2022"
+  },
+  {
     "title": "A bolygó neve: Halál (f3)",
     "description": "Hova lehetne besorolni ezt a programot... Labirintus és lövöldözős.",
     "image_url": "https://tvc.homeserver.hu/html/gamepic/bnh.gif",
@@ -63,6 +162,15 @@
     "date": ""
   },
   {
+    "title": "A sárkány szeme",
+    "description": "TVC Játék - Szöveges kaland",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/sarkanyszeme.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=sarkanyszeme.zip",
+    "file_name": "sarkanyszeme.zip",
+    "type": "Játék - Szöveges kaland",
+    "date": "2026"
+  },
+  {
     "title": "A sünikéd éhes...",
     "description": "Gyűjtögesd az almákat a sünivel.",
     "image_url": "https://tvc.homeserver.hu/html/gamepic/a_suniked.gif",
@@ -97,6 +205,15 @@
     "file_name": "atorejtelye.zip",
     "type": "Játék - Szöveges kaland",
     "date": "2023"
+  },
+  {
+    "title": "A varjútorony ura",
+    "description": "TVC Játék - Szöveges kaland",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/varjutorony.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=varjutorony.zip",
+    "file_name": "varjutorony.zip",
+    "type": "Játék - Szöveges kaland",
+    "date": "2026"
   },
   {
     "title": "A vár kincse",
@@ -1251,6 +1368,24 @@
     "date": "1991"
   },
   {
+    "title": "Blokk3D",
+    "description": "TVC Játék - Ügyességi - Tetris",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/blokk3d.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=blokk.zip",
+    "file_name": "blokk.zip",
+    "type": "Játék - Ügyességi - Tetris",
+    "date": "2026"
+  },
+  {
+    "title": "Blokk3D (64k+)",
+    "description": "TVC Játék - Ügyességi - Tetris",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/blokk3d.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=blokk64p.zip",
+    "file_name": "blokk64p.zip",
+    "type": "Játék - Ügyességi - Tetris",
+    "date": "2026"
+  },
+  {
     "title": "Blue Thunder",
     "description": "TVC Játék - Szimuláció",
     "image_url": "https://tvc.homeserver.hu/html/gamepic/bluethunder.gif",
@@ -2007,6 +2142,15 @@
     "date": "1993"
   },
   {
+    "title": "Commando (256k++)",
+    "description": "TVC Játék - Ügyességi - Platformer",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/commando256.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=COMMANDO256.ZIP",
+    "file_name": "COMMANDO256.ZIP",
+    "type": "Játék - Ügyességi - Platformer",
+    "date": "2026"
+  },
+  {
     "title": "Commando (Trainer)",
     "description": "TVC Játék - Ügyességi - Lövöldözős",
     "image_url": "https://tvc.homeserver.hu/html/gamepic/commando.gif",
@@ -2283,6 +2427,15 @@
     "download_url": "https://tvc.homeserver.hu/dl.php?file=Cube_2dfx.zip",
     "file_name": "Cube_2dfx.zip",
     "type": "Demo - Kép/Animáció",
+    "date": "2026"
+  },
+  {
+    "title": "Cursor",
+    "description": "TVC Játék - Ügyességi",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/cursor.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=cursor.zip",
+    "file_name": "cursor.zip",
+    "type": "Játék - Ügyességi",
     "date": "2026"
   },
   {
@@ -4339,20 +4492,20 @@
   },
   {
     "title": "Hajó",
-    "description": "TVC Játék - Ügyességi - Le Mans típusú",
-    "image_url": "https://tvc.homeserver.hu/html/gamepic/hajol.gif",
-    "download_url": "https://tvc.homeserver.hu/dl.php?file=hajol.zip",
-    "file_name": "hajol.zip",
-    "type": "Játék - Ügyességi - Le Mans típusú",
-    "date": ""
-  },
-  {
-    "title": "Hajó",
     "description": "Nincs befejezve a játék",
     "image_url": "https://tvc.homeserver.hu/html/gamepic/hajor.gif",
     "download_url": "https://tvc.homeserver.hu/dl.php?file=hajor.zip",
     "file_name": "hajor.zip",
     "type": "Demo - Programdemo",
+    "date": ""
+  },
+  {
+    "title": "Hajó",
+    "description": "TVC Játék - Ügyességi - Le Mans típusú",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/hajol.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=hajol.zip",
+    "file_name": "hajol.zip",
+    "type": "Játék - Ügyességi - Le Mans típusú",
     "date": ""
   },
   {
@@ -4474,21 +4627,21 @@
   },
   {
     "title": "Hanoi tornyai",
-    "description": "A Hanoi-tornyos játék.",
-    "image_url": "https://tvc.homeserver.hu/html/gamepic/hanoi_t.gif",
-    "download_url": "https://tvc.homeserver.hu/dl.php?file=hanoi_t.zip",
-    "file_name": "hanoi_t.zip",
-    "type": "Játék - Logikai - Hanoi torony",
-    "date": "1986"
-  },
-  {
-    "title": "Hanoi tornyai",
     "description": "TVC Játék - Logikai - Hanoi torony",
     "image_url": "https://tvc.homeserver.hu/html/gamepic/hanoith.gif",
     "download_url": "https://tvc.homeserver.hu/dl.php?file=hanoith.zip",
     "file_name": "hanoith.zip",
     "type": "Játék - Logikai - Hanoi torony",
     "date": "1989"
+  },
+  {
+    "title": "Hanoi tornyai",
+    "description": "A Hanoi-tornyos játék.",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/hanoi_t.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=hanoi_t.zip",
+    "file_name": "hanoi_t.zip",
+    "type": "Játék - Logikai - Hanoi torony",
+    "date": "1986"
   },
   {
     "title": "Hanoi torony",
@@ -5203,19 +5356,19 @@
   },
   {
     "title": "Karate",
-    "description": "verekedős játék",
-    "image_url": "https://tvc.homeserver.hu/html/gamepic/karate.gif",
-    "download_url": "https://tvc.homeserver.hu/dl.php?file=karate.zip",
-    "file_name": "karate.zip",
+    "description": "TVC Játék - Ügyességi - Verekedős",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/karateg.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=karateg.zip",
+    "file_name": "karateg.zip",
     "type": "Játék - Ügyességi - Verekedős",
     "date": ""
   },
   {
     "title": "Karate",
-    "description": "TVC Játék - Ügyességi - Verekedős",
-    "image_url": "https://tvc.homeserver.hu/html/gamepic/karateg.gif",
-    "download_url": "https://tvc.homeserver.hu/dl.php?file=karateg.zip",
-    "file_name": "karateg.zip",
+    "description": "verekedős játék",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/karate.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=karate.zip",
+    "file_name": "karate.zip",
     "type": "Játék - Ügyességi - Verekedős",
     "date": ""
   },
@@ -5245,6 +5398,15 @@
     "file_name": "kardhalakeskincsekkgy.zip",
     "type": "Játék - Szöveges kaland",
     "date": "1991"
+  },
+  {
+    "title": "Karlos",
+    "description": "TVC Játék - Ügyességi - Platformer",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/karlos.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=Karlos.zip",
+    "file_name": "Karlos.zip",
+    "type": "Játék - Ügyességi - Platformer",
+    "date": "2026"
   },
   {
     "title": "Katakombák mélyén",
@@ -5437,20 +5599,20 @@
   },
   {
     "title": "Kincskereső",
-    "description": "össze kell szedni a kincseket a libiruntisban közben kikerülni az ellent",
-    "image_url": "https://tvc.homeserver.hu/html/gamepic/kincskereso.gif",
-    "download_url": "https://tvc.homeserver.hu/dl.php?file=kincsker.zip",
-    "file_name": "kincsker.zip",
-    "type": "Játék - Ügyességi - Labirintusos",
-    "date": ""
-  },
-  {
-    "title": "Kincskereső",
     "description": "TVC Játék - Logikai - Aknakereső/Torpedó",
     "image_url": "https://tvc.homeserver.hu/html/gamepic/kincskeresomj.gif",
     "download_url": "https://tvc.homeserver.hu/dl.php?file=kincskeresomj.zip",
     "file_name": "kincskeresomj.zip",
     "type": "Játék - Logikai - Aknakereső/Torpedó",
+    "date": ""
+  },
+  {
+    "title": "Kincskereső",
+    "description": "össze kell szedni a kincseket a libiruntisban közben kikerülni az ellent",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/kincskereso.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=kincsker.zip",
+    "file_name": "kincsker.zip",
+    "type": "Játék - Ügyességi - Labirintusos",
     "date": ""
   },
   {
@@ -6212,15 +6374,6 @@
   {
     "title": "Labirintus",
     "description": "TVC Játék - Ügyességi - Labirintusos",
-    "image_url": "https://tvc.homeserver.hu/html/gamepic/labirintusm.gif",
-    "download_url": "https://tvc.homeserver.hu/dl.php?file=labirintusm.zip",
-    "file_name": "labirintusm.zip",
-    "type": "Játék - Ügyességi - Labirintusos",
-    "date": ""
-  },
-  {
-    "title": "Labirintus",
-    "description": "TVC Játék - Ügyességi - Labirintusos",
     "image_url": "https://tvc.homeserver.hu/html/gamepic/labirintus-zold.gif",
     "download_url": "https://tvc.homeserver.hu/dl.php?file=lab_zold.zip",
     "file_name": "lab_zold.zip",
@@ -6228,11 +6381,11 @@
     "date": "1987"
   },
   {
-    "title": "Labirintus (3D)",
+    "title": "Labirintus",
     "description": "TVC Játék - Ügyességi - Labirintusos",
-    "image_url": "https://tvc.homeserver.hu/html/gamepic/3dlabirintus.gif",
-    "download_url": "https://tvc.homeserver.hu/dl.php?file=3dlabirintus.zip",
-    "file_name": "3dlabirintus.zip",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/labirintusm.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=labirintusm.zip",
+    "file_name": "labirintusm.zip",
     "type": "Játék - Ügyességi - Labirintusos",
     "date": ""
   },
@@ -6242,6 +6395,15 @@
     "image_url": "https://tvc.homeserver.hu/html/gamepic/labirintus.gif",
     "download_url": "https://tvc.homeserver.hu/dl.php?file=labirintus.zip",
     "file_name": "labirintus.zip",
+    "type": "Játék - Ügyességi - Labirintusos",
+    "date": ""
+  },
+  {
+    "title": "Labirintus (3D)",
+    "description": "TVC Játék - Ügyességi - Labirintusos",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/3dlabirintus.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=3dlabirintus.zip",
+    "file_name": "3dlabirintus.zip",
     "type": "Játék - Ügyességi - Labirintusos",
     "date": ""
   },
@@ -6415,6 +6577,15 @@
     "file_name": "Lemmings.zip",
     "type": "Játék - Stratégia",
     "date": "2025"
+  },
+  {
+    "title": "Lemmings (256k++)",
+    "description": "TVC Játék - Stratégia",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/lemmings.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=Lemmings256.zip",
+    "file_name": "Lemmings256.zip",
+    "type": "Játék - Stratégia",
+    "date": "2026"
   },
   {
     "title": "Lennon",
@@ -7903,21 +8074,21 @@
   },
   {
     "title": "Nebulus",
-    "description": "Kicsit Impossible Mission feeling...",
-    "image_url": "https://tvc.homeserver.hu/html/gamepic/nebulus.gif",
-    "download_url": "https://tvc.homeserver.hu/dl.php?file=nebulus.zip",
-    "file_name": "nebulus.zip",
-    "type": "Játék - Ügyességi - Platformer",
-    "date": ""
-  },
-  {
-    "title": "Nebulus",
     "description": "TVC Játék - Ügyességi - Platformer",
     "image_url": "https://tvc.homeserver.hu/html/gamepic/nebulusn.gif",
     "download_url": "https://tvc.homeserver.hu/dl.php?file=nebulusn.zip",
     "file_name": "nebulusn.zip",
     "type": "Játék - Ügyességi - Platformer",
     "date": "2021"
+  },
+  {
+    "title": "Nebulus",
+    "description": "Kicsit Impossible Mission feeling...",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/nebulus.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=nebulus.zip",
+    "file_name": "nebulus.zip",
+    "type": "Játék - Ügyességi - Platformer",
+    "date": ""
   },
   {
     "title": "Nehéz út",
@@ -9064,21 +9235,21 @@
   },
   {
     "title": "Póker",
-    "description": "Egy grafikailag egész jól kidolgozott póker megoldás.",
-    "image_url": "https://tvc.homeserver.hu/html/gamepic/poker.gif",
-    "download_url": "https://tvc.homeserver.hu/dl.php?file=poker.zip",
-    "file_name": "poker.zip",
-    "type": "Játék - Logikai - Kártya",
-    "date": "1986"
-  },
-  {
-    "title": "Póker",
     "description": "Egy kevésbé grafikus póker megoldás.",
     "image_url": "https://tvc.homeserver.hu/html/gamepic/pokerz.gif",
     "download_url": "https://tvc.homeserver.hu/dl.php?file=pokerz.zip",
     "file_name": "pokerz.zip",
     "type": "Játék - Logikai - Kártya",
     "date": ""
+  },
+  {
+    "title": "Póker",
+    "description": "Egy grafikailag egész jól kidolgozott póker megoldás.",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/poker.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=poker.zip",
+    "file_name": "poker.zip",
+    "type": "Játék - Logikai - Kártya",
+    "date": "1986"
   },
   {
     "title": "Póker (átdolgozott)",
@@ -9774,12 +9945,39 @@
     "date": "1988"
   },
   {
+    "title": "Shadow Maze fehér",
+    "description": "TVC Játék - Ügyességi - Labirintusos",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/shadowmazefeher.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=Shadow_Maze_feher.zip",
+    "file_name": "Shadow_Maze_feher.zip",
+    "type": "Játék - Ügyességi - Labirintusos",
+    "date": "2026"
+  },
+  {
+    "title": "Shadow Maze sárga",
+    "description": "TVC Játék - Ügyességi - Labirintusos",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/shadowmazesarga.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=Shadow_Maze_sarga.zip",
+    "file_name": "Shadow_Maze_sarga.zip",
+    "type": "Játék - Ügyességi - Labirintusos",
+    "date": "2026"
+  },
+  {
     "title": "Shikaku",
     "description": "TVC Játék - Logikai - Táblás",
     "image_url": "https://tvc.homeserver.hu/html/gamepic/shikaku.gif",
     "download_url": "https://tvc.homeserver.hu/dl.php?file=Shikaku.zip",
     "file_name": "Shikaku.zip",
     "type": "Játék - Logikai - Táblás",
+    "date": "2026"
+  },
+  {
+    "title": "Sidplay (256k++)",
+    "description": "SC64 SID zenei fájl lejátszó 256k++ kártyán",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/sidplay.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=sidplay256.zip",
+    "file_name": "sidplay256.zip",
+    "type": "Felhasználói - Zene/Hang",
     "date": "2026"
   },
   {
@@ -10864,19 +11062,19 @@
   },
   {
     "title": "Szörnyek az útvesztőben",
-    "description": "TVC Játék - Ügyességi - Labirintusos",
-    "image_url": "https://tvc.homeserver.hu/html/gamepic/szornyek.gif",
-    "download_url": "https://tvc.homeserver.hu/dl.php?file=szornyek.zip",
-    "file_name": "szornyek.zip",
+    "description": "Kedvesen bólogató fejű nyullal szedjél össze cuccokat a labirintusba. Randomra mozgó szörnyek kergetnek. :)",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/szornyekazutvesztoben.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=szornyekazutvesztoben.zip",
+    "file_name": "szornyekazutvesztoben.zip",
     "type": "Játék - Ügyességi - Labirintusos",
     "date": ""
   },
   {
     "title": "Szörnyek az útvesztőben",
-    "description": "Kedvesen bólogató fejű nyullal szedjél össze cuccokat a labirintusba. Randomra mozgó szörnyek kergetnek. :)",
-    "image_url": "https://tvc.homeserver.hu/html/gamepic/szornyekazutvesztoben.gif",
-    "download_url": "https://tvc.homeserver.hu/dl.php?file=szornyekazutvesztoben.zip",
-    "file_name": "szornyekazutvesztoben.zip",
+    "description": "TVC Játék - Ügyességi - Labirintusos",
+    "image_url": "https://tvc.homeserver.hu/html/gamepic/szornyek.gif",
+    "download_url": "https://tvc.homeserver.hu/dl.php?file=szornyek.zip",
+    "file_name": "szornyek.zip",
     "type": "Játék - Ügyességi - Labirintusos",
     "date": ""
   },
