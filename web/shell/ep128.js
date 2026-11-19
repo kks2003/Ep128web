@@ -1688,6 +1688,15 @@ registerProcessor('ep-output', EPOutput);
     }
   }, true);
 
+  // a left Ctrl held back for AltGr (see below): pressed now
+  let ctrlWait = 0;
+  function flushCtrl() {
+    if (!ctrlWait) return;
+    clearTimeout(ctrlWait);
+    ctrlWait = 0;
+    if (!autoTask) keyDown(KEYMAP.ControlLeft);
+  }
+
   document.addEventListener('keydown', (e) => {
     if (isTextInput(e.target)) return;
     if (e.code === 'F11') {
@@ -1724,6 +1733,20 @@ registerProcessor('ep-output', EPOutput);
     e.preventDefault();
     resumeAudio();
     if (autoTask || e.repeat) return;   // the EP has its own auto-repeat
+    // AltGr on Windows: a left Ctrl, then at once the right Alt. The left
+    // Ctrl waits a moment; if the right Alt comes, it is dropped, so AltGr
+    // presses only ALT
+    if (e.code === 'ControlLeft') {
+      flushCtrl();
+      ctrlWait = setTimeout(flushCtrl, 30);
+      return;
+    }
+    if (e.code === 'AltRight' && ctrlWait) {
+      clearTimeout(ctrlWait);
+      ctrlWait = 0;
+    } else {
+      flushCtrl();
+    }
     keyDown(code);
   });
 
@@ -1743,6 +1766,7 @@ registerProcessor('ep-output', EPOutput);
     const code = mapKey(e);
     if (code === undefined) return;
     e.preventDefault();
+    flushCtrl();
     keyUp(code);
     // the browser may swallow some keyup events (e.g. Shift+key combos)
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
@@ -3226,6 +3250,11 @@ registerProcessor('ep-output', EPOutput);
     canvas.focus({ preventScroll: true });
   }
 
+  const hasEpProg = (progs) => progs.some((f) => ['com', 'prg', 'ep', 'exe', 'app'].includes(extOf(f.name)));
+  const hasEpTape = (tapes) => tapes.some((f) => ['tap', 'tzx', 'cdt'].includes(extOf(f.name)));
+  const hasTvcFiles = (progs, tapes) => progs.some((f) => extOf(f.name) === 'cas') ||
+                                        tapes.some((f) => extOf(f.name) === 'wav');
+
   function processLoadedFiles(files) {
     const of = (kind) => files.filter((f) => fileKind(f) === kind);
     const cartridges = of('cartridge');
@@ -3241,14 +3270,11 @@ registerProcessor('ep-output', EPOutput);
 
     // Only switch to Enterprise if explicit Enterprise program or Enterprise tape (.tap, .tzx, .cdt)
     if (machine.type === 1) {
-      const isEpProg = progFiles.some((f) => {
-        const ext = extOf(f.name);
-        return ['com', 'prg', 'ep', 'exe', 'app'].includes(ext);
-      });
-      const isEpTape = tapes.some((f) => {
-        const ext = extOf(f.name);
-        return ['tap', 'tzx', 'cdt'].includes(ext);
-      });
+      // a TVC program (.cas, .wav) among the files: they are for the TVC,
+      // even if some of them (e.g. data files) have an Enterprise extension
+      const tvcToo = hasTvcFiles(progFiles, tapes);
+      const isEpProg = !tvcToo && hasEpProg(progFiles);
+      const isEpTape = !tvcToo && hasEpTape(tapes);
       if ((isEpProg || isEpTape) && !autoMachine()) {
         setMessage(T('Enterprise-ra való fájl, a TVC nem tudja betölteni') + AUTO_OFF(), true);
         return;
