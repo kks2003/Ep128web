@@ -85,6 +85,70 @@
   let lastPlainTvc = DEFAULT_TVC;    // the last TVC without a system cartridge
   const MACHINE_ALIASES = { 'tvc64p-22-vtdos': 'tvc64p-22', 'tvc64-12-vtdos': 'tvc64-12' };
 
+  // --- the Enterprise configurations of ep128emu (ep-configs.js, generated
+  // from its makecfg.cpp), for the "Enterprise setup" window. Their machine
+  // id: "ep:" + the configuration's path (e.g. ep:ep128hun/EP_128k_Tape_TASMON).
+  // FILE: is in every machine of the page (dropped programs start from it),
+  // so a configuration and its _FileIO pair are one machine here (the other
+  // id is an alias).
+  const EP_LANGS = [['ep128uk', T('angol (UK)')], ['ep128hun', T('magyar')],
+                    ['ep128esp', T('spanyol')], ['ep128brd', T('német')]];
+  const EP_MODELS = [
+    ['64', 'EP64 · 64K · EXOS 2.0'], ['128', 'EP128 · 128K · EXOS 2.1'],
+    ['640-22', 'EP 640K · EXOS 2.2'], ['640-23', 'EP 640K · EXOS 2.3'],
+    ['640-232', 'EP 640K · EXOS 2.32'], ['640-232-ide', 'EP 640K · EXOS 2.32 · IDE'],
+    ['640-24-sdext', 'EP 640K · EXOS 2.4 · SDEXT'], ['2048-24', 'EP 2048K · EXOS 2.4']];
+  const EP_EXTRAS = [['TASMON', T('TASMON (assembler, monitor)')], ['EP-PLUS', 'EP-PLUS'],
+                     ['SpectrumEmulator', T('Spectrum-emulátor')],
+                     ['NoCartridge', T('BASIC cartridge nélkül')], ['utils', T('bővítő ROM-ok (utils)')]];
+  function epCfgParts(path) {
+    const [dir, name] = path.split('/');
+    const words = name.split('_');
+    let model = '128';
+    if (/^EP_64k/.test(name)) model = '64';
+    else if (/^EP2048k/.test(name)) model = '2048-24';
+    else if (/^EP_640k/.test(name)) {
+      const m = /^EP_640k_EXOS(\d+)(?:_(SDEXT|IDE))?/.exec(name);
+      model = '640-' + m[1] + (m[2] ? '-' + m[2].toLowerCase() : '');
+    }
+    return {
+      lang: dir === 'ep64' ? 'ep128uk' : dir, model,
+      storage: words.includes('Tape') ? 'tape' : 'exdos',
+      extras: EP_EXTRAS.map((x) => x[0]).filter((x) => words.includes(x)),
+      fileio: words.includes('FileIO')
+    };
+  }
+  const epCfgKey = (p) => [p.lang, p.model, p.storage].concat(p.extras).join('|');
+  function epCfgName(p) {
+    const model = { '64': 'EP64', '128': 'EP128' }[p.model] || EP_MODELS.find((x) => x[0] === p.model)[1];
+    const lang = { ep128uk: 'UK', ep128hun: T('magyar'), ep128esp: T('spanyol'), ep128brd: T('német') }[p.lang];
+    return [model + ' (' + lang + ')', p.storage === 'tape' ? T('csak magnó') : 'EXDOS']
+      .concat(p.extras.map((x) => EP_EXTRAS.find((e) => e[0] === x)[1])).join(' · ');
+  }
+  const EP_CUSTOM = [];
+  {
+    const byKey = new Map();
+    // the configuration without _FileIO first, if there is one
+    const cfgs = (window.EP_CONFIGS || []).slice().sort((a, b) =>
+      epCfgParts(a.path).fileio - epCfgParts(b.path).fileio);
+    for (const c of cfgs) {
+      const p = epCfgParts(c.path);
+      const key = epCfgKey(p);
+      const id = 'ep:' + c.path;
+      if (byKey.has(key)) {
+        MACHINE_ALIASES[id] = byKey.get(key).id;
+        continue;
+      }
+      const roms = c.roms.slice();
+      if (!roms.some((r) => r[0] === 'epfileio.rom')) roms.push(['epfileio.rom', [0x10]]);
+      const m = { id, type: 0, custom: true, cfg: c.path, parts: p, name: epCfgName(p),
+                  ram: c.ram, roms, sdext: c.sdext };
+      byKey.set(key, m);
+      EP_CUSTOM.push(m);
+      MACHINES.push(m);
+    }
+  }
+
   // TVC expansion cards; the ids are those of ep_set_tvc_slot(), except for
   // the UPM disk card, which is the VT-DOS card's hardware (hw) with the
   // ROM of the UPM compatible floppy interface
@@ -1411,6 +1475,11 @@
     machine = m;
     if (api && api.cardFw) api.cardFw(card256Fw);
     if (m.type === 1 && !m.cart) lastPlainTvc = m.id;
+    if (m.custom && m.id !== epCustomId) {
+      epCustomId = m.id;
+      try { localStorage.setItem('ep128web.epCustom', m.id); } catch (e) { }
+      fillMachineSelect();
+    }
     const sel = $('machine');
     if (sel && sel.value !== m.id) sel.value = m.id;
     updateLoadButton();
@@ -1448,6 +1517,9 @@
         check(api.loadRom(seg, '/roms/' + file, i * 16384), file);
       });
     }
+    // the SDEXT card of ep128emu's EXOS 2.4 SDEXT configurations (off on
+    // the other Enterprise machines)
+    if (m.type === 0 && api.epSdext) check(api.epSdext(m.sdext ? 1 : 0, m.sdext ? '/roms/' + m.sdext : ''), 'SDEXT');
     if (diskName)
       api.setDisk(0, '/disk/' + diskName);
     if (diskNameB)
@@ -4539,21 +4611,147 @@ registerProcessor('ep-output', EPOutput);
   }
   // ========== END CATALOG SECTION ==========
 
-  function setupUI() {
+  // the machine list: the page's machines, the Enterprise put together last
+  // in the "Enterprise setup" window, and that window
+  const EP_SETUP = '__ep-setup';
+  let epCustomId = null;
+  try { epCustomId = localStorage.getItem('ep128web.epCustom'); } catch (e) { }
+  function fillMachineSelect() {
     const sel = $('machine');
+    if (!sel) return;
+    sel.textContent = '';
     ['Enterprise', 'Videoton TVC'].forEach((label, type) => {
       const g = document.createElement('optgroup');
       g.label = label;
-      for (const m of MACHINES.filter((x) => x.type === type)) {
+      const add = (value, text) => {
         const o = document.createElement('option');
-        o.value = m.id;
-        o.textContent = m.name;
+        o.value = value;
+        o.textContent = text;
         g.appendChild(o);
-      }
+      };
+      for (const m of MACHINES.filter((x) => x.type === type && (!x.custom || x.id === epCustomId)))
+        add(m.id, m.custom ? T('Saját: ') + m.name : m.name);
+      if (type === 0 && EP_CUSTOM.length) add(EP_SETUP, T('Enterprise összeállítása…'));
       sel.appendChild(g);
     });
-    sel.value = machine.id;
+    if (machine) sel.value = machine.id;
+  }
+
+  // the "Enterprise setup" window: language, model, storage and extras of
+  // one of ep128emu's configurations
+  let epSetup = null;
+  function openEpSetup() {
+    const dlg = $('epcfg-dlg');
+    if (!dlg) return;
+    const from = machine.custom ? machine : EP_CUSTOM.find((m) => m.cfg === 'ep128hun/EP_128k_EXDOS') || EP_CUSTOM[0];
+    epSetup = { lang: from.parts.lang, model: from.parts.model, storage: from.parts.storage,
+                extras: from.parts.extras.slice() };
+    renderEpSetup();
+    if (!dlg.open) dlg.showModal();
+  }
+  const epSame = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
+  function epFind(st) {
+    return EP_CUSTOM.find((m) => m.parts.lang === st.lang && m.parts.model === st.model &&
+                                 m.parts.storage === st.storage && epSame(m.parts.extras, st.extras));
+  }
+  // after a change: the closest existing configuration (the language first,
+  // then the model, the storage, and as many of the extras as possible)
+  function epSnap(st, keep) {
+    let best = null, bestScore = -1;
+    for (const m of EP_CUSTOM) {
+      const p = m.parts;
+      if (keep.includes('lang') && p.lang !== st.lang) continue;
+      if (keep.includes('model') && p.model !== st.model) continue;
+      let score = (p.lang === st.lang ? 1000 : 0) + (p.model === st.model ? 100 : 0) +
+                  (p.storage === st.storage ? 10 : 0);
+      for (const [x] of EP_EXTRAS) if (p.extras.includes(x) === st.extras.includes(x)) score++;
+      if (score > bestScore) { best = m; bestScore = score; }
+    }
+    if (best) Object.assign(st, { lang: best.parts.lang, model: best.parts.model,
+                                  storage: best.parts.storage, extras: best.parts.extras.slice() });
+  }
+  function renderEpSetup() {
+    const st = epSetup;
+    const inLang = EP_CUSTOM.filter((m) => m.parts.lang === st.lang);
+    const lang = $('epcfg-lang'), model = $('epcfg-model');
+    lang.textContent = '';
+    for (const [id, name] of EP_LANGS) lang.add(new Option(name, id));
+    lang.value = st.lang;
+    model.textContent = '';
+    for (const [id, name] of EP_MODELS) {
+      const o = new Option(name, id);
+      o.disabled = !inLang.some((m) => m.parts.model === id);
+      model.add(o);
+    }
+    model.value = st.model;
+    const here = inLang.filter((m) => m.parts.model === st.model);
+    for (const r of document.querySelectorAll('input[name="epcfg-storage"]')) {
+      r.checked = r.value === st.storage;
+      r.disabled = !here.some((m) => m.parts.storage === r.value);
+    }
+    const box = $('epcfg-extras');
+    box.textContent = '';
+    for (const [id, name] of EP_EXTRAS) {
+      const on = st.extras.includes(id);
+      const other = on ? st.extras.filter((x) => x !== id) : st.extras.concat([id]);
+      const possible = !!epFind(Object.assign({}, st, { extras: other }));
+      if (!on && !possible && !here.some((m) => m.parts.extras.includes(id))) continue;
+      const l = document.createElement('label');
+      l.className = 'check';
+      const c = document.createElement('input');
+      c.type = 'checkbox';
+      c.checked = on;
+      c.disabled = !possible;
+      c.addEventListener('change', () => { st.extras = other; renderEpSetup(); });
+      l.append(c, ' ' + name);
+      box.appendChild(l);
+    }
+    if (!box.childNodes.length) box.textContent = T('nincs');
+    const m = epFind(st);
+    $('epcfg-cfg').textContent = m ? m.cfg + '.cfg' : '—';
+    $('epcfg-roms').textContent = m ? m.roms.map(([f, segs]) =>
+      f.replace(/\.rom$/, '') + ' (' + segs.map((x) => x.toString(16).toUpperCase().padStart(2, '0')).join(', ') + ')').join(' · ') +
+      ' · ' + m.ram + 'K RAM' + (m.sdext ? ' · SDEXT' : '') : '';
+    $('epcfg-start').disabled = !m;
+  }
+  function setupEpSetup() {
+    const dlg = $('epcfg-dlg');
+    if (!dlg) return;
+    $('epcfg-lang').addEventListener('change', (e) => { epSetup.lang = e.target.value; epSnap(epSetup, ['lang']); renderEpSetup(); });
+    $('epcfg-model').addEventListener('change', (e) => { epSetup.model = e.target.value; epSnap(epSetup, ['lang', 'model']); renderEpSetup(); });
+    for (const r of document.querySelectorAll('input[name="epcfg-storage"]')) {
+      r.addEventListener('change', () => {
+        epSetup.storage = r.value;
+        if (!epFind(epSetup)) epSnap(epSetup, ['lang', 'model']);
+        renderEpSetup();
+      });
+    }
+    const close = () => { dlg.close(); canvas.focus({ preventScroll: true }); };
+    $('epcfg-close').onclick = close;
+    $('epcfg-cancel').onclick = close;
+    $('epcfg-start').onclick = () => {
+      const m = epFind(epSetup);
+      if (!m) return;
+      dlg.close();
+      autoTask = null;
+      releaseAllKeys();
+      applyMachine(m);
+      canvas.focus({ preventScroll: true });
+    };
+    const mi = $('mi-ep-setup');
+    if (mi) mi.addEventListener('click', openEpSetup);
+  }
+
+  function setupUI() {
+    setupEpSetup();
+    const sel = $('machine');
+    fillMachineSelect();
     sel.addEventListener('change', () => {
+      if (sel.value === EP_SETUP) {
+        sel.value = machine.id;
+        openEpSetup();
+        return;
+      }
       const m = MACHINES.find((x) => x.id === sel.value);
       if (m.type === 1 && !m.cart) userTvc = m.id;
       catalogSwitched = false;
@@ -7328,8 +7526,10 @@ registerProcessor('ep-output', EPOutput);
     return lines;
   }
   // BASIC waits for a command: the last line with text is "ok" (EP and TVC)
+  // (the clock line of the ZT ROM, e.g. "14:51:21  26 11 19", which comes
+  // last in the line table, does not count)
   function atPrompt() {
-    const t = screenLines().filter((l) => l.trim());
+    const t = screenLines().filter((l) => l.trim() && !/^\s*\d\d:\d\d:\d\d\s+\d\d \d\d \d\d\s*$/.test(l));
     return !autoTask && t.length > 0 && /^ok$/i.test(t[t.length - 1].trim());
   }
   const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -7963,7 +8163,7 @@ registerProcessor('ep-output', EPOutput);
     machine: async (id, opts) => {
       opts = opts || {};
       await pageStarted();
-      const m = MACHINES.find((x) => x.id === id);
+      const m = MACHINES.find((x) => x.id === (MACHINE_ALIASES[id] || id));
       if (!m) throw new Error('unknown machine: ' + id + ' (see ep.machines())');
       if (opts.slots) {
         const v = opts.slots.map((c) => (typeof c === 'number' ? c : EP_CARD_IDS[String(c).toLowerCase()]));
@@ -8696,6 +8896,7 @@ ep.log('CTRL+ESC megnyomva');`)
       reset: ((f) => (...a) => { const r = f(...a); scheduleTvcDefDev(); return r; })(newState(c('ep_reset', 'number', ['number']))),
       run: c('ep_run', 'number', ['number']),
       setKey: c('ep_set_key', null, ['number', 'number']),
+      epSdext: c('ep_ep_sdext', 'number', ['number', 'string']),
       frameBuffer: c('ep_frame_buffer', 'number', []),
       frameCount: c('ep_frame_count', 'number', []),
       frameIndex: c('ep_frame_index', 'number', []),

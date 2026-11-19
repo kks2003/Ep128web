@@ -13,7 +13,7 @@
 ## Essentials
 
 - Wait for the page: `await page.waitForFunction(() => window.ep)`, then `await ep.ready()` (BASIC shows "ok").
-- `await ep.machine('tvc64-12' | 'tvc64p-22' | 'ep128uk-exdos' | …)` – list: `ep.machines()`.
+- `await ep.machine('tvc64-12' | 'tvc64p-22' | 'ep128uk-exdos' | …)` – list: `ep.machines()`. The desktop ep128emu's Enterprise configurations: `ep:` + their .cfg path, e.g. `ep:ep128hun/EP_640k_EXOS232_EXDOS`.
 - `await ep.load(url | bytes, name)` – programs start by themselves; ROM package: `ep128emu_roms-2.0.11.bin`.
 - `await ep.type('PRINT 1+1\n')`, `ep.screenText()`, `await ep.waitText(/regexp/)`, `ep.runFrames(n)`.
 - Debugger: `ep.regs()`, `ep.read(addr, n)`, `ep.disasm(addr, n)`, `ep.bp(addr)`, `ep.onBreak(fn)`, `ep.monitor('?')`.

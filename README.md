@@ -276,6 +276,17 @@ Gépkonfigurációk:
 - **Enterprise**: EP128 (UK/magyar) EXDOS-szal vagy csak magnóval, EP 640K
   EXOS 2.32-vel (UK/magyar), EP 2048K EXOS 2.4-gyel (EXDOS-szal vagy csak magnóval). Mindegyikben benne van az
   ep128emu `epfileio.rom` bővítése (`FILE:` eszköz).
+  A Gép menü **Enterprise összeállítása…** ablakában az asztali ep128emu
+  összes Enterprise-konfigurációja választható (68 konfiguráció, ebből 53
+  különböző gép, mert a `_FileIO` párok egybeesnek): nyelv (angol, magyar,
+  spanyol, német), gép (EP64, EP128, EP 640K EXOS 2.2 / 2.3 / 2.32, IDE-vel
+  vagy EXOS 2.4 SDEXT-tel, EP 2048K), magnó vagy EXDOS, és a kiegészítők
+  (TASMON, EP-PLUS, Spectrum-emulátor, BASIC cartridge nélkül, bővítő
+  ROM-ok). Csak az ep128emu-ban létező összeállítások választhatók; a
+  választott gép a listában „Saját: …” néven marad. Az adatokat a
+  `scripts/gen_ep_configs.py` állítja elő az ep128emu `installer/makecfg.cpp`
+  fájljából (`web/shell/ep-configs.js`). Az IDE- és SD-képek csatolása még
+  nincs meg: ezek a gépek üres meghajtóval indulnak.
 - **Videoton TVC**: TVC 64k+ BASIC 2.2, TVC 64k és 32k BASIC 1.2, valamint
   rendszer-cartridge-dzsel: TVC 64k+ BASIC 2.2 · VT-DOS (`tvc_dos12c.rom`, a
   „(DOS)” programok rendszerlemezéhez) és TVC 64k+ BASIC 1.2 · UPM
