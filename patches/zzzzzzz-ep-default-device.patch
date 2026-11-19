@@ -1,0 +1,18 @@
+diff --git a/src/ep128vm.cpp b/src/ep128vm.cpp
+index acbfa40..9644a10 100644
+--- a/src/ep128vm.cpp
++++ b/src/ep128vm.cpp
+@@ -541,7 +541,12 @@ namespace Ep128 {
+       R.AF.B.h = 0x00;
+       break;
+     case 0x0E:                          // get if default device is 'FILE:'
+-      R.AF.B.h = uint8_t(defaultDeviceIsFILE);
++      // Ep128web: never at boot. With FILE: as the default, LOAD "" (and
++      // F1 / START) opens a file selector in ep128emu; the web page has
++      // none, so it only gave "Invalid filename". The machine keeps the
++      // EXOS default (TAPE:, or DISK: with EXDOS), as on a real Enterprise;
++      // :DEF_DEV_FILE still selects FILE: until the next reset.
++      R.AF.B.h = 0x00;
+       break;
+     case 0x0F:                          // set if default device is 'FILE:'
+       defaultDeviceIsFILE = (R.AF.B.h != 0x00);

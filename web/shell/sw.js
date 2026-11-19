@@ -4,7 +4,7 @@
 const SCOPE = new URL(self.registration.scope);
 const CACHE = 'ep128web:' + SCOPE.pathname;
 const CORE = [
-  './', 'index.html', 'style.css', 'ep128.js', 'ep128emu.js', 'ep128emu.wasm',
+  './', 'index.html', 'style.css', 'ep128.js', 'ep-configs.js', 'ep128emu.js', 'ep128emu.wasm',
   'epfileio.rom', 'tvcfileio.rom', 'catalog.json', 'catalog/programs.json', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-192.png', 'icons/icon-maskable-512.png',
   'icons/icon-180.png', 'icons/icon.svg',

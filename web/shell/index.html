@@ -39,6 +39,7 @@
       <label class="sel item">Gép
         <select id="machine"></select>
       </label>
+      <button id="mi-ep-setup" title="Az asztali ep128emu összes Enterprise-konfigurációja: nyelv, gép, magnó vagy EXDOS, kiegészítők">Enterprise összeállítása…</button>
       <button id="btn-reset" title="Meleg reset (F11)">Reset <kbd>F11</kbd></button>
       <button id="btn-cold" title="Hideg reset / bekapcsolás (Shift+F11)">Hideg reset <kbd>Shift+F11</kbd></button>
       <button data-act="btn-pause">Szünet / folytatás <kbd>Pause, F9</kbd></button>
@@ -620,6 +621,21 @@
     <div class="alert-btns"><button id="alert-open" hidden></button><button id="alert-ok">OK</button></div>
   </dialog>
 
+  <dialog id="epcfg-dlg">
+    <div class="dm-head"><b>Enterprise összeállítása</b><button id="epcfg-close" title="Bezárás">✕</button></div>
+    <p class="epcfg-note">Az asztali ep128emu Enterprise-konfigurációi. Csak a létező összeállítások választhatók; a FILE: eszköz mindegyikben benne van.</p>
+    <div class="epcfg-grid">
+      <label for="epcfg-lang">Nyelv, ROM-készlet</label><select id="epcfg-lang"></select>
+      <label for="epcfg-model">Gép</label><select id="epcfg-model"></select>
+      <span>Háttértár</span>
+      <span class="epcfg-row"><label class="check"><input type="radio" name="epcfg-storage" value="tape"> csak magnó</label>
+        <label class="check"><input type="radio" name="epcfg-storage" value="exdos"> EXDOS (lemez)</label></span>
+      <span>Kiegészítők</span><span class="epcfg-row" id="epcfg-extras"></span>
+    </div>
+    <p class="epcfg-info">ep128emu: <code id="epcfg-cfg"></code><br><span id="epcfg-roms"></span></p>
+    <div class="alert-btns"><button id="epcfg-cancel">Mégse</button><button id="epcfg-start">Indítás</button></div>
+  </dialog>
+
   <dialog id="help">
     <div class="dm-head"><b>Súgó</b><button id="help-close" title="Bezárás">✕</button></div>
     <ul data-i18n-html="help">
@@ -666,6 +682,7 @@
 <script src="i18n.js?v=__BUILD_V__"></script>
 <script src="ep128emu.js?v=__BUILD_V__"></script>
 <script src="screenfx.js?v=__BUILD_V__"></script>
+<script src="ep-configs.js?v=__BUILD_V__"></script>
 <script src="ep128.js?v=__BUILD_V__"></script>
 <script src="ui.js?v=__BUILD_V__"></script>
 </body>

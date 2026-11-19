@@ -451,6 +451,21 @@ EMSCRIPTEN_KEEPALIVE int ep_reset_memory(int ramKB)
   }
 }
 
+// Enterprise: the SDEXT card (SD card with a flash ROM in segment 07h) on or
+// off, as ep128emu's sdext.enabled / sdext.romFile ("": no ROM file)
+EMSCRIPTEN_KEEPALIVE int ep_ep_sdext(int enabled, const char *romFile)
+{
+  if (machineType != 0)
+    return 0;
+  try {
+    vm->configureSDCard(enabled != 0, std::string(romFile ? romFile : ""));
+    return 0;
+  }
+  catch (...) {
+    return handleException();
+  }
+}
+
 EMSCRIPTEN_KEEPALIVE int ep_load_rom(int segment, const char *fileName,
                                      int offset)
 {
