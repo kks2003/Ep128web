@@ -1688,6 +1688,15 @@ registerProcessor('ep-output', EPOutput);
     }
   }, true);
 
+  // a left Ctrl held back for AltGr (see below): pressed now
+  let ctrlWait = 0;
+  function flushCtrl() {
+    if (!ctrlWait) return;
+    clearTimeout(ctrlWait);
+    ctrlWait = 0;
+    if (!autoTask) keyDown(KEYMAP.ControlLeft);
+  }
+
   document.addEventListener('keydown', (e) => {
     if (isTextInput(e.target)) return;
     if (e.code === 'F11') {
@@ -1724,6 +1733,20 @@ registerProcessor('ep-output', EPOutput);
     e.preventDefault();
     resumeAudio();
     if (autoTask || e.repeat) return;   // the EP has its own auto-repeat
+    // AltGr on Windows: a left Ctrl, then at once the right Alt. The left
+    // Ctrl waits a moment; if the right Alt comes, it is dropped, so AltGr
+    // presses only ALT
+    if (e.code === 'ControlLeft') {
+      flushCtrl();
+      ctrlWait = setTimeout(flushCtrl, 30);
+      return;
+    }
+    if (e.code === 'AltRight' && ctrlWait) {
+      clearTimeout(ctrlWait);
+      ctrlWait = 0;
+    } else {
+      flushCtrl();
+    }
     keyDown(code);
   });
 
@@ -1743,6 +1766,7 @@ registerProcessor('ep-output', EPOutput);
     const code = mapKey(e);
     if (code === undefined) return;
     e.preventDefault();
+    flushCtrl();
     keyUp(code);
     // the browser may swallow some keyup events (e.g. Shift+key combos)
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
