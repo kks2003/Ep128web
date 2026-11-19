@@ -3226,6 +3226,11 @@ registerProcessor('ep-output', EPOutput);
     canvas.focus({ preventScroll: true });
   }
 
+  const hasEpProg = (progs) => progs.some((f) => ['com', 'prg', 'ep', 'exe', 'app'].includes(extOf(f.name)));
+  const hasEpTape = (tapes) => tapes.some((f) => ['tap', 'tzx', 'cdt'].includes(extOf(f.name)));
+  const hasTvcFiles = (progs, tapes) => progs.some((f) => extOf(f.name) === 'cas') ||
+                                        tapes.some((f) => extOf(f.name) === 'wav');
+
   function processLoadedFiles(files) {
     const of = (kind) => files.filter((f) => fileKind(f) === kind);
     const cartridges = of('cartridge');
@@ -3241,14 +3246,11 @@ registerProcessor('ep-output', EPOutput);
 
     // Only switch to Enterprise if explicit Enterprise program or Enterprise tape (.tap, .tzx, .cdt)
     if (machine.type === 1) {
-      const isEpProg = progFiles.some((f) => {
-        const ext = extOf(f.name);
-        return ['com', 'prg', 'ep', 'exe', 'app'].includes(ext);
-      });
-      const isEpTape = tapes.some((f) => {
-        const ext = extOf(f.name);
-        return ['tap', 'tzx', 'cdt'].includes(ext);
-      });
+      // a TVC program (.cas, .wav) among the files: they are for the TVC,
+      // even if some of them (e.g. data files) have an Enterprise extension
+      const tvcToo = hasTvcFiles(progFiles, tapes);
+      const isEpProg = !tvcToo && hasEpProg(progFiles);
+      const isEpTape = !tvcToo && hasEpTape(tapes);
       if ((isEpProg || isEpTape) && !autoMachine()) {
         setMessage(T('Enterprise-ra való fájl, a TVC nem tudja betölteni') + AUTO_OFF(), true);
         return;
