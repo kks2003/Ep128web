@@ -13,15 +13,15 @@
     if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   } catch (e) { }
 </script>
-<link rel="stylesheet" href="style.css?v=202611191419-c023eec">
+<link rel="stylesheet" href="style.css?v=202611191454-a99a79b">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <meta name="theme-color" content="#1b1f45">
-<meta name="build" content="202611191419-c023eec">
+<meta name="build" content="202611191454-a99a79b">
 </head>
 <body>
-<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #58 előnézete, nem az éles oldal · fordítva: 2026.11.19 15:19 · c023eec · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
+<div style="background:#b45309;color:#fff;padding:6px 16px;font:600 14px/1.4 system-ui,sans-serif">TESZT – PR #58 előnézete, nem az éles oldal · fordítva: 2026.11.19 15:54 · a99a79b · <a style="color:#fff" href="/Ep128web/">éles oldal</a></div>
 <header id="bar">
   <button id="menu-toggle" aria-label="Menü" aria-expanded="false">☰</button>
   <nav id="menus">
@@ -41,6 +41,7 @@
       <label class="sel item">Gép
         <select id="machine"></select>
       </label>
+      <button id="mi-ep-setup" title="Az asztali ep128emu összes Enterprise-konfigurációja: nyelv, gép, magnó vagy EXDOS, kiegészítők">Enterprise összeállítása…</button>
       <button id="btn-reset" title="Meleg reset (F11)">Reset <kbd>F11</kbd></button>
       <button id="btn-cold" title="Hideg reset / bekapcsolás (Shift+F11)">Hideg reset <kbd>Shift+F11</kbd></button>
       <button data-act="btn-pause">Szünet / folytatás <kbd>Pause, F9</kbd></button>
@@ -112,7 +113,7 @@
       <a class="item" href="https://github.com/kks2003/Ep128web" target="_blank" rel="noopener">Ep128web a GitHubon</a>
       <a class="item" href="https://github.com/istvan-v/ep128emu" target="_blank" rel="noopener">ep128emu (Varga István)</a>
       <hr>
-      <div class="about"><b>Enterprise 128 · TVC</b><span>ep128emu · web</span><small id="build" title="Fordítás ideje és verziója">2026.11.19 15:19 · c023eec</small></div>
+      <div class="about"><b>Enterprise 128 · TVC</b><span>ep128emu · web</span><small id="build" title="Fordítás ideje és verziója">2026.11.19 15:54 · a99a79b</small></div>
     </div></div>
   </nav>
   <div id="quick">
@@ -622,6 +623,21 @@
     <div class="alert-btns"><button id="alert-open" hidden></button><button id="alert-ok">OK</button></div>
   </dialog>
 
+  <dialog id="epcfg-dlg">
+    <div class="dm-head"><b>Enterprise összeállítása</b><button id="epcfg-close" title="Bezárás">✕</button></div>
+    <p class="epcfg-note">Az asztali ep128emu Enterprise-konfigurációi. Csak a létező összeállítások választhatók; a FILE: eszköz mindegyikben benne van.</p>
+    <div class="epcfg-grid">
+      <label for="epcfg-lang">Nyelv, ROM-készlet</label><select id="epcfg-lang"></select>
+      <label for="epcfg-model">Gép</label><select id="epcfg-model"></select>
+      <span>Háttértár</span>
+      <span class="epcfg-row"><label class="check"><input type="radio" name="epcfg-storage" value="tape"> csak magnó</label>
+        <label class="check"><input type="radio" name="epcfg-storage" value="exdos"> EXDOS (lemez)</label></span>
+      <span>Kiegészítők</span><span class="epcfg-row" id="epcfg-extras"></span>
+    </div>
+    <p class="epcfg-info">ep128emu: <code id="epcfg-cfg"></code><br><span id="epcfg-roms"></span></p>
+    <div class="alert-btns"><button id="epcfg-cancel">Mégse</button><button id="epcfg-start">Indítás</button></div>
+  </dialog>
+
   <dialog id="help">
     <div class="dm-head"><b>Súgó</b><button id="help-close" title="Bezárás">✕</button></div>
     <ul data-i18n-html="help">
@@ -664,11 +680,12 @@
     (Varga István, GPL v2) változatlan forráskódja, WebAssemblyre fordítva.</p>
   </dialog>
 
-<script src="i18n-strings.js?v=202611191419-c023eec"></script>
-<script src="i18n.js?v=202611191419-c023eec"></script>
-<script src="ep128emu.js?v=202611191419-c023eec"></script>
-<script src="screenfx.js?v=202611191419-c023eec"></script>
-<script src="ep128.js?v=202611191419-c023eec"></script>
-<script src="ui.js?v=202611191419-c023eec"></script>
+<script src="i18n-strings.js?v=202611191454-a99a79b"></script>
+<script src="i18n.js?v=202611191454-a99a79b"></script>
+<script src="ep128emu.js?v=202611191454-a99a79b"></script>
+<script src="screenfx.js?v=202611191454-a99a79b"></script>
+<script src="ep-configs.js?v=202611191454-a99a79b"></script>
+<script src="ep128.js?v=202611191454-a99a79b"></script>
+<script src="ui.js?v=202611191454-a99a79b"></script>
 </body>
 </html>
