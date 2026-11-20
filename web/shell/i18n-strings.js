@@ -3,6 +3,14 @@
 // rows are whole HTML blocks (data-i18n-html="name" in index.html).
 // A text missing here stays Hungarian.
 window.EP_I18N_STRINGS = [
+  ["50 Hz-es képszinkron","50 Hz frame sync","50-Hz-Bildsynchronisation","Синхронізація кадрів 50 Гц"],
+  ["Az emuláció egész, 20 ms-os képkockákban lép, a monitor frissítéséhez igazítva: 50 vagy 100 Hz-es monitoron minden képkocka pontosan egyszer látszik, a görgetés sima. 60 Hz-en ez sem segít: ott a monitort érdemes 50 Hz-re állítani (ha tudja).","The emulation steps in whole 20 ms frames, aligned to the monitor's refresh: on a 50 or 100 Hz monitor every frame is shown exactly once and scrolling is smooth. At 60 Hz this does not help either: set the monitor to 50 Hz there (if it can).","Die Emulation läuft in ganzen 20-ms-Bildern, abgestimmt auf die Bildwiederholung des Monitors: bei 50 oder 100 Hz wird jedes Bild genau einmal gezeigt, Scrollen ist flüssig. Bei 60 Hz hilft das nicht: dort den Monitor auf 50 Hz stellen (falls möglich).","Емуляція йде цілими кадрами по 20 мс, узгодженими з оновленням монітора: на моніторі 50 або 100 Гц кожен кадр показується рівно один раз, прокручування плавне. На 60 Гц це не допомагає: там варто перемкнути монітор на 50 Гц (якщо він уміє)."],
+  ["50 Hz-es képszinkron kikapcsolva","50 Hz frame sync off","50-Hz-Bildsynchronisation aus","Синхронізацію кадрів 50 Гц вимкнено"],
+  ["50 Hz-es képszinkron bekapcsolva; a monitor kb. {0} Hz-es","50 Hz frame sync on; the monitor is about {0} Hz","50-Hz-Bildsynchronisation an; der Monitor hat etwa {0} Hz","Синхронізацію кадрів 50 Гц увімкнено; монітор приблизно {0} Гц"],
+  [" – a sima képhez 50 vagy 100 Hz-es monitor kell"," – a smooth picture needs a 50 or 100 Hz monitor"," – für ein flüssiges Bild braucht es einen 50- oder 100-Hz-Monitor"," – для плавного зображення потрібен монітор 50 або 100 Гц"],
+  ["Videófelvétel: minden képkocka pontosan, 50 fps; a hang az emulált hang, teljes hangerővel","Video recording: every frame exactly, 50 fps; the sound is the emulated sound at full volume","Videoaufnahme: jedes Bild genau, 50 fps; der Ton ist der emulierte Ton in voller Lautstärke","Запис відео: кожен кадр точно, 50 кадр/с; звук — емульований, на повній гучності"],
+  ["Videó: {0} képkocka, 50 fps","Video: {0} frames, 50 fps","Video: {0} Bilder, 50 fps","Відео: {0} кадрів, 50 кадр/с"],
+  ["A videófelvétel nem sikerült: ","The video recording failed: ","Die Videoaufnahme ist fehlgeschlagen: ","Запис відео не вдався: "],
   ["angol (UK)","English (UK)","Englisch (UK)","англійська (UK)"],
   ["magyar","Hungarian","Ungarisch","угорська"],
   ["spanyol","Spanish","Spanisch","іспанська"],

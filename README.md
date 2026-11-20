@@ -46,6 +46,18 @@ letöltését külön kell betölteni.
   **Eszközök** (debugger, megosztható link, egér, telepítés), **Súgó**. Mellette a
   gyorsgombok: szünet, turbó, 📂 betöltés, hangerő; felvétel közben piros jelzés az
   idővel, rákattintva leáll. Telefonon a menük a ☰ gomb alatt vannak.
+- **50 Hz-es képszinkron** (Nézet menü): az emuláció egész, 20 ms-os
+  képkockákban lép, a monitor frissítéséhez igazítva. 50 vagy 100 Hz-es
+  monitoron így minden képkocka pontosan egyszer látszik (sima görgetés);
+  60 Hz-en a 6 frissítésből egyre nem jut új kép, ott a monitort érdemes
+  50 Hz-re állítani. Bekapcsoláskor az oldal kiírja a mért frissítést.
+- **Videófelvétel**: ahol a böngésző tudja (WebCodecs: Chrome, Edge, újabb
+  Safari / Firefox), a gép minden képkockája pontosan egyszer, az emulált
+  idejével kerül a fájlba: egyenletes 50 fps a monitortól, a turbótól és a
+  gép gyorsaságától függetlenül, a hang az emulált hang (teljes hangerővel).
+  MP4: H.264 + AAC (vagy Opus), WebM: VP9 + Opus; a fájlt az
+  `mp4-muxer` / `webm-muxer` (MIT, `web/shell/vendor/`) írja. Máshol a
+  korábbi felvétel marad (MediaRecorder, a monitor ütemében).
 - **Panel** fülekkel: Lemezek (A:, B: három-három hellyel, FILE:, USB
   pendrive) · Bővítők (TVC bővítőportok, cartridge, 2dfx) · Joystick · Katalógus
   (csak TVC-n) · Magnó · Beállítások. A panel alapból a képernyő alatt van, a Nézet →
