@@ -185,7 +185,12 @@ A „🔗 Link” gomb a vágólapra másol egy linket, amely megnyitva ugyanazt
 legutóbb betöltött programot: katalógusprogramnál a nevét teszi a linkbe, kisebb
 saját fájlnál (tömörítve kb. 45 KB-ig) magát a fájlt. Kézzel is írható link:
 `#m=tvc64-12&url=https://…/jatek.cas` – a megadott címről tölti le a programot
-(ha a szerver engedi a letöltést más oldalról).
+(ha a szerver engedi a letöltést más oldalról: `Access-Control-Allow-Origin`
+fejléc, CORS; a GitHub és a legtöbb CDN ilyen, a Google Drive / OneDrive
+megosztó linkje nem). Ha nem sikerül, egy ablak megmondja, miért (a szerver
+nem engedi, `http://` cím a https-es oldalon, HTTP-hiba, nem elérhető
+szerver), és mi a teendő; letiltott letöltésnél egy gombbal új lapon
+megnyitja a címet, hogy a fájlt kézzel le lehessen tölteni és a képre húzni.
 Katalógusprogram: `#p=jatek.zip&t=Játék neve (64k+)` – a tvc.homeserver.hu
 programjai közül tölti be; a cím jelölői ((64k+), (DOS), (UPM), (256k++),
 (2dfx)) választják ki a gépet és a kártyákat, gép nélkül megadva pedig TVC-n
