@@ -7878,7 +7878,11 @@ registerProcessor('ep-output', EPOutput);
     try {
       r = await fetch(url);
     } catch (e) {
-      throw new Error('cannot fetch ' + src + ' (' + e.message + ')' + (url.startsWith('/') || local ? hint : ''));
+      let cors = '';
+      if (/^https?:/i.test(url) && new URL(url).origin !== location.origin) {
+        try { await fetch(url, { mode: 'no-cors' }); cors = ': the server is reachable but does not allow other sites to download it (no Access-Control-Allow-Origin header, CORS); pass the contents instead: ep.load([{name, bytes}])'; } catch (e2) { }
+      }
+      throw new Error('cannot fetch ' + src + ' (' + e.message + ')' + cors + (url.startsWith('/') || local ? hint : ''));
     }
     if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + src + (r.status === 404 && /^\//.test(String(src)) ? ' (a local path?' + hint + ')' : ''));
     return r;
@@ -9443,8 +9447,14 @@ ep.log('CTRL+ESC megnyomva');`)
       } else if (q.get('url')) {
         const url = q.get('url');
         setMessage(T('Program letöltése…'));
-        const r = await fetch(url);
-        if (!r.ok) throw new Error('HTTP ' + r.status);
+        let r;
+        try {
+          r = await fetchRemote(url);
+        } catch (e) {
+          if (!e.remote) throw e;
+          remoteFail(url, e);
+          return;
+        }
         const name = q.get('n') || decodeURIComponent(new URL(url, location.href).pathname.split('/').pop()) || 'program';
         await loadFiles([new File([await r.blob()], name)]);
         shareSrc = { url, name };
@@ -9453,6 +9463,55 @@ ep.log('CTRL+ESC megnyomva');`)
       setMessage(T('A link programja nem tölthető be: ') + T(T(String(e.message || e))), true);
     }
   }
+  // downloads a file of another site; when it fails, why: the server does
+  // not allow other sites to download it (CORS: the browser blocks the
+  // response), an http:// address on the https page, an HTTP error, or the
+  // server cannot be reached (a no-cors request tells the last from CORS)
+  async function fetchRemote(url) {
+    const fail = (kind, status) => {
+      const e = new Error(kind + (status ? ' ' + status : ''));
+      e.remote = kind;
+      e.status = status;
+      return e;
+    };
+    let abs;
+    try { abs = new URL(url, location.href); } catch (e) { throw fail('address'); }
+    if (location.protocol === 'https:' && abs.protocol === 'http:') throw fail('http-on-https');
+    let r;
+    try {
+      r = await fetch(abs.href);
+    } catch (e) {
+      let reachable = false;
+      try { await fetch(abs.href, { mode: 'no-cors' }); reachable = true; } catch (e2) { }
+      throw fail(reachable ? 'cors' : 'unreachable');
+    }
+    if (!r.ok) throw fail('http', r.status);
+    return r;
+  }
+  // the message of fetchRemote()'s error, in a window (with a button that
+  // opens the address, to download the file by hand)
+  function remoteFail(url, e) {
+    let host = url;
+    try { host = new URL(url, location.href).host || url; } catch (x) { }
+    let text;
+    if (e.remote === 'cors') {
+      text = F('A(z) {0} szerver nem engedi, hogy más weboldal (így az emulátor) letöltse a fájljait: a válaszából hiányzik az Access-Control-Allow-Origin fejléc (CORS), ezért a böngésző letiltja. Megoldás: töltsd le a fájlt a lenti gombbal, majd húzd rá az emulátor képére. Ha a szerver a tiéd, engedélyezd a fejlécet (Apache: Header set Access-Control-Allow-Origin "*"). A GitHub (raw.githubusercontent.com) és a legtöbb CDN engedi; a Google Drive és a OneDrive megosztó linkje nem.', host);
+    } else if (e.remote === 'http-on-https') {
+      text = T('A cím http://-vel kezdődik: a https-es oldal nem tölthet le titkosítatlan címről (a böngésző tiltja). Próbáld https://-sel, vagy töltsd le a fájlt a lenti gombbal, és húzd rá az emulátor képére.');
+    } else if (e.remote === 'http') {
+      text = F('A(z) {0} szerver hibát adott (HTTP {1}): a cím rossz, vagy a fájl már nincs ott.', host, e.status);
+    } else if (e.remote === 'address') {
+      text = T('Ez nem érvényes cím.');
+    } else {
+      text = F('A(z) {0} szerver nem érhető el: rossz a cím, nincs internetkapcsolat, vagy a szerver nem működik.', host);
+    }
+    const title = T('A fájl nem tölthető le');
+    setMessage(title + ': ' + text, true);
+    const open = e.remote === 'cors' || e.remote === 'http-on-https';
+    showAlert(title, text, open ? T('Letöltés kézzel (új lapon)') : null,
+              () => window.open(url, '_blank', 'noopener'));
+  }
+
   async function shareLink() {
     const q = new URLSearchParams();
     q.set('m', machine.id);
