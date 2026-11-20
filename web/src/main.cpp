@@ -11,6 +11,7 @@
 // the Free Software Foundation; either version 2 of the License, or
 // (at your option) any later version.
 
+#include <algorithm>
 #include "ep128emu.hpp"
 #include "display.hpp"
 #include "soundio.hpp"
@@ -144,7 +145,20 @@ namespace {
       frontBuffer = backBuffer;
       frontIndex = backIndex;
       frameCount++;
+      if (captureOn)
+        captureFrame();
     }
+    void captureFrame();
+   public:
+    // video recording: every finished frame is kept (with the audio sample
+    // position of its end) until JavaScript takes it, at most 8 of them
+    struct CapturedFrame {
+      std::vector< uint32_t > pixels;
+      double  audioPos;
+    };
+    bool    captureOn = false;
+    std::vector< CapturedFrame >  captured;
+    uint32_t  captureLost = 0U;
    public:
     WebDisplay()
       : VideoDisplay(),
@@ -260,8 +274,12 @@ namespace {
     virtual ~WebAudioOutput()
     {
     }
+    // all the sample frames made so far (also those JavaScript cleared or
+    // that did not fit): the emulated time of the video recording
+    double  totalFrames = 0.0;
     virtual void sendAudioData(const int16_t *inBuf, size_t nFrames_)
     {
+      totalFrames += double(nFrames_);
       for (size_t i = 0; i < nFrames_; i++) {
         if (nFrames >= (buf.size() >> 1))
           return;               // JavaScript is not reading the buffer
@@ -288,6 +306,18 @@ namespace {
 
   WebDisplay      *display = (WebDisplay *) 0;
   WebAudioOutput  *audioOutput = (WebAudioOutput *) 0;
+
+  void WebDisplay::captureFrame()
+  {
+    if (captured.size() >= 8) {
+      captured.erase(captured.begin());
+      captureLost++;
+    }
+    CapturedFrame f;
+    f.pixels = frontBuffer;
+    f.audioPos = (audioOutput ? audioOutput->totalFrames : 0.0);
+    captured.push_back(std::move(f));
+  }
   Ep128Emu::VirtualMachine  *vm = (Ep128Emu::VirtualMachine *) 0;
   int             machineType = -1;
   std::string     lastError;
@@ -546,6 +576,51 @@ EMSCRIPTEN_KEEPALIVE const uint32_t *ep_frame_buffer()
 EMSCRIPTEN_KEEPALIVE uint32_t ep_frame_count()
 {
   return display->getFrameCount();
+}
+
+// video recording: every frame of the machine with its time (ep_vcap_pos:
+// the audio sample position of its end, see ep_audio_pos). on: starts it
+// (empty), 0: stops it
+EMSCRIPTEN_KEEPALIVE void ep_vcap(int on)
+{
+  display->captured.clear();
+  display->captured.shrink_to_fit();
+  display->captureLost = 0U;
+  display->captureOn = (on != 0);
+}
+
+EMSCRIPTEN_KEEPALIVE int ep_vcap_count()
+{
+  return int(display->captured.size());
+}
+
+EMSCRIPTEN_KEEPALIVE const uint32_t *ep_vcap_frame(int n)
+{
+  return &(display->captured[size_t(n)].pixels.front());
+}
+
+EMSCRIPTEN_KEEPALIVE double ep_vcap_pos(int n)
+{
+  return display->captured[size_t(n)].audioPos;
+}
+
+// the frames taken: removed from the queue
+EMSCRIPTEN_KEEPALIVE void ep_vcap_drop(int n)
+{
+  size_t  k = std::min(size_t(n < 0 ? 0 : n), display->captured.size());
+  display->captured.erase(display->captured.begin(), display->captured.begin() + k);
+}
+
+// frames that did not fit into the queue
+EMSCRIPTEN_KEEPALIVE uint32_t ep_vcap_lost()
+{
+  return display->captureLost;
+}
+
+// the audio sample frames made so far
+EMSCRIPTEN_KEEPALIVE double ep_audio_pos()
+{
+  return audioOutput->totalFrames;
 }
 
 EMSCRIPTEN_KEEPALIVE int ep_frame_width()

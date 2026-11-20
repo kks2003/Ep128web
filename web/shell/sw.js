@@ -8,7 +8,7 @@ const CORE = [
   'epfileio.rom', 'tvcfileio.rom', 'catalog.json', 'catalog/programs.json', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-192.png', 'icons/icon-maskable-512.png',
   'icons/icon-180.png', 'icons/icon.svg',
-  'i18n.js', 'i18n-strings.js', 'diskmgr/types.js', 'diskmgr/cas_parser.js', 'diskmgr/fat_disk.js', 'diskmgr/upm_disk.js', 'diskmgr/zip_writer.js', 'tapewav.js', 'screenfx.js', 'ui.js', 'llms.txt'
+  'i18n.js', 'i18n-strings.js', 'diskmgr/types.js', 'diskmgr/cas_parser.js', 'diskmgr/fat_disk.js', 'diskmgr/upm_disk.js', 'diskmgr/zip_writer.js', 'tapewav.js', 'screenfx.js', 'ui.js', 'llms.txt', 'vendor/mp4-muxer.js', 'vendor/webm-muxer.js'
 ];
 
 function cacheKey(url) {

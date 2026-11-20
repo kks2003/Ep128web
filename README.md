@@ -46,6 +46,18 @@ letöltését külön kell betölteni.
   **Eszközök** (debugger, megosztható link, egér, telepítés), **Súgó**. Mellette a
   gyorsgombok: szünet, turbó, 📂 betöltés, hangerő; felvétel közben piros jelzés az
   idővel, rákattintva leáll. Telefonon a menük a ☰ gomb alatt vannak.
+- **50 Hz-es képszinkron** (Nézet menü): az emuláció egész, 20 ms-os
+  képkockákban lép, a monitor frissítéséhez igazítva. 50 vagy 100 Hz-es
+  monitoron így minden képkocka pontosan egyszer látszik (sima görgetés);
+  60 Hz-en a 6 frissítésből egyre nem jut új kép, ott a monitort érdemes
+  50 Hz-re állítani. Bekapcsoláskor az oldal kiírja a mért frissítést.
+- **Videófelvétel**: ahol a böngésző tudja (WebCodecs: Chrome, Edge, újabb
+  Safari / Firefox), a gép minden képkockája pontosan egyszer, az emulált
+  idejével kerül a fájlba: egyenletes 50 fps a monitortól, a turbótól és a
+  gép gyorsaságától függetlenül, a hang az emulált hang (teljes hangerővel).
+  MP4: H.264 + AAC (vagy Opus), WebM: VP9 + Opus; a fájlt az
+  `mp4-muxer` / `webm-muxer` (MIT, `web/shell/vendor/`) írja. Máshol a
+  korábbi felvétel marad (MediaRecorder, a monitor ütemében).
 - **Panel** fülekkel: Lemezek (A:, B: három-három hellyel, FILE:, USB
   pendrive) · Bővítők (TVC bővítőportok, cartridge, 2dfx) · Joystick · Katalógus
   (csak TVC-n) · Magnó · Beállítások. A panel alapból a képernyő alatt van, a Nézet →
@@ -173,7 +185,12 @@ A „🔗 Link” gomb a vágólapra másol egy linket, amely megnyitva ugyanazt
 legutóbb betöltött programot: katalógusprogramnál a nevét teszi a linkbe, kisebb
 saját fájlnál (tömörítve kb. 45 KB-ig) magát a fájlt. Kézzel is írható link:
 `#m=tvc64-12&url=https://…/jatek.cas` – a megadott címről tölti le a programot
-(ha a szerver engedi a letöltést más oldalról).
+(ha a szerver engedi a letöltést más oldalról: `Access-Control-Allow-Origin`
+fejléc, CORS; a GitHub és a legtöbb CDN ilyen, a Google Drive / OneDrive
+megosztó linkje nem). Ha nem sikerül, egy ablak megmondja, miért (a szerver
+nem engedi, `http://` cím a https-es oldalon, HTTP-hiba, nem elérhető
+szerver), és mi a teendő; letiltott letöltésnél egy gombbal új lapon
+megnyitja a címet, hogy a fájlt kézzel le lehessen tölteni és a képre húzni.
 Katalógusprogram: `#p=jatek.zip&t=Játék neve (64k+)` – a tvc.homeserver.hu
 programjai közül tölti be; a cím jelölői ((64k+), (DOS), (UPM), (256k++),
 (2dfx)) választják ki a gépet és a kártyákat, gép nélkül megadva pedig TVC-n
