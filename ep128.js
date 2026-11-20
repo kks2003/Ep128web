@@ -3531,6 +3531,148 @@ registerProcessor('ep-output', EPOutput);
           'video/mp4;codecs=avc1.42E01F,opus', 'video/mp4;codecs=avc1,opus'],
     webm: ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
   };
+  // --- video recording with WebCodecs: every frame of the machine exactly
+  // once, stamped with its emulated time (the audio sample position of its
+  // end), so the file is a steady 50 fps whatever the monitor (and turbo or
+  // a slow computer only changes how long the recording takes); the sound
+  // is the emulated sound as it is (like the sound recording). MP4: H.264 +
+  // AAC (or Opus), WebM: VP9 / VP8 + Opus, written by the muxers in vendor/
+  // (MIT). Without WebCodecs the MediaRecorder below records the canvas.
+  let vrec = null;
+  let vrecStarting = false;
+  const loadedScripts = {};
+  function loadScriptOnce(src) {
+    if (!loadedScripts[src]) {
+      loadedScripts[src] = new Promise((resolve, reject) => {
+        const el = document.createElement('script');
+        el.src = src;
+        el.onload = resolve;
+        el.onerror = () => { delete loadedScripts[src]; reject(new Error(src)); };
+        document.head.appendChild(el);
+      });
+    }
+    return loadedScripts[src];
+  }
+  async function vrecCodecs(fmt, w, h, sr) {
+    const supported = async (E, cfg) => { try { return (await E.isConfigSupported(cfg)).supported; } catch (e) { return false; } };
+    const vids = fmt === 'mp4'
+      ? [['avc', 'avc1.4d401f'], ['avc', 'avc1.42e01f'], ['avc', 'avc1.640028']]
+      : [['V_VP9', 'vp09.00.31.08'], ['V_VP8', 'vp8']];
+    let v = null;
+    for (const [mux, codec] of vids) {
+      const cfg = { codec, width: w, height: h, bitrate: 8000000, framerate: 50 };
+      if (mux === 'avc') cfg.avc = { format: 'avc' };
+      if (await supported(VideoEncoder, cfg)) { v = { mux, cfg }; break; }
+    }
+    if (!v) return null;
+    const auds = fmt === 'mp4' ? [['aac', 'mp4a.40.2'], ['opus', 'opus']] : [['A_OPUS', 'opus']];
+    let a = null;
+    for (const [mux, codec] of auds) {
+      const cfg = { codec, sampleRate: sr, numberOfChannels: 2, bitrate: 192000 };
+      if (await supported(AudioEncoder, cfg)) { a = { mux, cfg }; break; }
+    }
+    return { v, a };
+  }
+  // starts it; false: WebCodecs cannot record this format here
+  async function vrecStart(fmt) {
+    if (!window.VideoEncoder || !window.VideoFrame) return false;
+    drawRecCanvas();
+    const w = recCanvas.width & ~1, h = recCanvas.height & ~1;
+    const sr = sampleRate;
+    const codecs = await vrecCodecs(fmt, w, h, sr);
+    if (!codecs) return false;
+    const audio = codecs.a && window.AudioEncoder && window.AudioData ? codecs.a : null;
+    let lib;
+    try {
+      await loadScriptOnce(fmt === 'mp4' ? 'vendor/mp4-muxer.js' : 'vendor/webm-muxer.js');
+      lib = fmt === 'mp4' ? window.Mp4Muxer : window.WebMMuxer;
+    } catch (e) {
+      return false;
+    }
+    const target = new lib.ArrayBufferTarget();
+    const opts = { target, video: { codec: codecs.v.mux, width: w, height: h, frameRate: 50 },
+                   firstTimestampBehavior: fmt === 'mp4' ? 'cross-track-offset' : 'permissive' };
+    if (fmt === 'mp4') opts.fastStart = 'in-memory';
+    if (audio) opts.audio = { codec: audio.mux, numberOfChannels: 2, sampleRate: sr };
+    const muxer = new lib.Muxer(opts);
+    const r = { fmt, muxer, target, w, h, sr, n: 0, lastTs: -1, error: null, aenc: null,
+                frame: document.createElement('canvas'), start: api.audioPos() };
+    r.frame.width = w;
+    r.frame.height = h;
+    r.frameCtx = r.frame.getContext('2d', { alpha: false });
+    r.venc = new VideoEncoder({ output: (c, m) => muxer.addVideoChunk(c, m), error: (e) => { r.error = e; } });
+    r.venc.configure(codecs.v.cfg);
+    if (audio) {
+      r.aenc = new AudioEncoder({ output: (c, m) => muxer.addAudioChunk(c, m), error: (e) => { r.error = e; } });
+      r.aenc.configure(audio.cfg);
+    }
+    api.audioClear();                   // the sound from here on
+    r.start = api.audioPos();
+    api.vcap(1);
+    vrec = r;
+    return true;
+  }
+  // the frames and the sound made since the last call
+  function vrecPump() {
+    if (!vrec) return;
+    const r = vrec;
+    if (r.error) { vrecStop(); return; }
+    const n = api.vcapCount();
+    for (let i = 0; i < n; i++) {
+      const p = api.vcapFrame(i);
+      // the frame through the page's own picture (crop, screen effect)
+      imageData.data.set(M.HEAPU8.subarray(p, p + imageData.data.length));
+      ctx.putImageData(imageData, -cropX, 0);
+      if (screenFxOn) screenFx.render(canvas);
+      drawRecCanvas();
+      const ts = Math.round((api.vcapPos(i) - r.start) / r.sr * 1e6);
+      if (ts <= r.lastTs) continue;
+      r.lastTs = ts;
+      r.frameCtx.drawImage(recCanvas, 0, 0, r.w, r.h);
+      const vf = new VideoFrame(r.frame, { timestamp: ts });
+      r.venc.encode(vf, { keyFrame: r.n % 100 === 0 });
+      vf.close();
+      r.n++;
+    }
+    if (n) api.vcapDrop(n);
+    const nf = api.audioFrames();
+    if (r.aenc && nf > 0) {
+      const p = api.audioBuffer() >> 2;
+      const ts = Math.round((api.audioPos() - nf - r.start) / r.sr * 1e6);
+      if (ts >= 0) {
+        const ad = new AudioData({ format: 'f32', sampleRate: r.sr, numberOfFrames: nf, numberOfChannels: 2,
+                                   timestamp: ts, data: M.HEAPF32.slice(p, p + nf * 2) });
+        r.aenc.encode(ad);
+        ad.close();
+      }
+    }
+  }
+  async function vrecStop() {
+    const r = vrec;
+    if (!r) return;
+    vrec = null;
+    api.vcap(0);
+    clearInterval(videoRecTimer);
+    const btn = $('btn-video');
+    btn.classList.remove('on');
+    btn.textContent = T('● Videó');
+    $('video-fmt').disabled = false;
+    try {
+      if (!r.error) {
+        await r.venc.flush();
+        if (r.aenc) await r.aenc.flush();
+      }
+      r.venc.close();
+      if (r.aenc) r.aenc.close();
+      if (r.error) throw r.error;
+      r.muxer.finalize();
+      download(new Uint8Array(r.target.buffer), stampName(r.fmt));
+      setMessage(F('Videó: {0} képkocka, 50 fps', r.n));
+    } catch (e) {
+      setMessage(T('A videófelvétel nem sikerült: ') + T(String(e.message || e)), true);
+    }
+  }
+
   function videoFormats() {
     const r = {};
     if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return r;
@@ -3600,13 +3742,36 @@ registerProcessor('ep-output', EPOutput);
 
   let videoRec = null;
   let videoRecTimer = 0;
-  function toggleVideoRec() {
+  async function toggleVideoRec() {
     const btn = $('btn-video');
+    if (vrec) {
+      vrecStop();
+      return;
+    }
     if (videoRec) {
       videoRec.stop();
       return;
     }
-    if (!ready) return;
+    if (!ready || vrecStarting) return;
+    resumeAudio();
+    vrecStarting = true;
+    let ok = false;
+    try {
+      ok = await vrecStart($('video-fmt').value === 'webm' ? 'webm' : 'mp4');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      vrecStarting = false;
+    }
+    if (ok) {
+      $('video-fmt').disabled = true;
+      const t0 = performance.now();
+      btn.classList.add('on');
+      btn.textContent = T('■ Videó 0:00');
+      videoRecTimer = setInterval(() => { btn.textContent = T('■ Videó ') + recTime(t0); }, 500);
+      setMessage(T('Videófelvétel: minden képkocka pontosan, 50 fps; a hang az emulált hang, teljes hangerővel'));
+      return;
+    }
     if (!canvas.captureStream || !window.MediaRecorder) {
       setMessage(T('Ez a böngésző nem tud videót felvenni'), true);
       return;
@@ -4743,6 +4908,20 @@ registerProcessor('ep-output', EPOutput);
   }
 
   function setupUI() {
+    const fsync = $('frame-sync');
+    if (fsync) {
+      fsync.checked = frameSync;
+      fsync.onchange = () => {
+        frameSync = fsync.checked;
+        syncAccUs = 0;
+        try { localStorage.setItem('ep128web.frameSync', frameSync ? '1' : '0'); } catch (e) { }
+        const hz = refreshMs ? Math.round(1000 / refreshMs) : 0;
+        const fits = Math.abs(hz - 50) <= 2 || Math.abs(hz - 100) <= 3;
+        setMessage(!frameSync ? T('50 Hz-es képszinkron kikapcsolva')
+          : F('50 Hz-es képszinkron bekapcsolva; a monitor kb. {0} Hz-es', hz) +
+            (hz && !fits ? T(' – a sima képhez 50 vagy 100 Hz-es monitor kell') : ''));
+      };
+    }
     setupEpSetup();
     const sel = $('machine');
     fillMachineSelect();
@@ -7699,7 +7878,11 @@ registerProcessor('ep-output', EPOutput);
     try {
       r = await fetch(url);
     } catch (e) {
-      throw new Error('cannot fetch ' + src + ' (' + e.message + ')' + (url.startsWith('/') || local ? hint : ''));
+      let cors = '';
+      if (/^https?:/i.test(url) && new URL(url).origin !== location.origin) {
+        try { await fetch(url, { mode: 'no-cors' }); cors = ': the server is reachable but does not allow other sites to download it (no Access-Control-Allow-Origin header, CORS); pass the contents instead: ep.load([{name, bytes}])'; } catch (e2) { }
+      }
+      throw new Error('cannot fetch ' + src + ' (' + e.message + ')' + cors + (url.startsWith('/') || local ? hint : ''));
     }
     if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + src + (r.status === 404 && /^\//.test(String(src)) ? ' (a local path?' + hint + ')' : ''));
     return r;
@@ -8655,12 +8838,36 @@ ep.log('CTRL+ESC megnyomva');`)
   let tapeFast = true;
   let speedAccUs = 0, speedAccMs = 0;
   let audioLevelSmooth = -1;      // seconds of audio buffered, smoothed
+  // 50 Hz frame sync (View menu): the machine runs whole frames, each one
+  // right before a refresh of the monitor (on a 50 / 100 Hz monitor every
+  // frame is shown once); the time not run yet, the length of a frame
+  let frameSync = false;
+  try { frameSync = localStorage.getItem('ep128web.frameSync') === '1'; } catch (e) { }
+  let syncAccUs = 0, syncFrameUs = 20000;
+  let refreshMs = 0;              // the monitor's refresh interval, smoothed
+  // runs n frames of the machine: each until its picture is ready
+  function runSyncFrames(n) {
+    let ran = 0;
+    for (let k = 0; k < n; k++) {
+      const fc = api.frameCount();
+      let t = 0;
+      while (api.frameCount() === fc && t < 40000 && !api.dbgState()) {
+        check(api.run(1000), T('emuláció'));
+        t += 1000;
+      }
+      if (t < 40000) syncFrameUs = syncFrameUs * 0.9 + t * 0.1;
+      ran += t;
+      if (api.dbgState()) break;
+    }
+    return ran;
+  }
 
   function frame(now) {
     requestAnimationFrame(frame);
     let dt = lastTime ? now - lastTime : 16.7;
     lastTime = now;
     if (dt > 100) dt = 100;             // tab was in the background
+    refreshMs = refreshMs ? refreshMs * 0.98 + dt * 0.02 : dt;
     if (!ready || paused) return;
     if (manualMode) {
       // a program drives the machine (ep.manual): it runs only in
@@ -8712,12 +8919,30 @@ ep.log('CTRL+ESC megnyomva');`)
         do {
           const done = autoTask ? runAutoTask(20000) : 0;
           if (done < 20000) check(api.run(20000 - done), T('emuláció'));
+          vrecPump();
           api.audioClear();
           us += 20000;
-        } while (performance.now() - t0 < 14 && !api.dbgState());
+          // the video encoder keeps up with turbo: a smaller step then
+        } while (performance.now() - t0 < 14 && !api.dbgState() && !(vrec && vrec.venc.encodeQueueSize > 12));
       } else {
-        check(api.run(us), T('emuláció'));
-        if (speed !== 1) api.audioClear();
+        if (frameSync && speed === 1) {
+          // whole frames: as many as the time since the last refresh holds
+          // (rounded: on a 50 Hz monitor one per refresh)
+          // (with a wide dead band: a frame is skipped or doubled only when
+          // the difference has grown to almost a whole frame, i.e. rarely)
+          syncAccUs += us;
+          const P = syncFrameUs;
+          if (syncAccUs > 4 * P) syncAccUs = P;      // after a stall
+          const n = syncAccUs < 0.1 * P ? 0 : syncAccUs < 1.9 * P ? 1 : Math.floor(syncAccUs / P + 0.1);
+          us = n > 0 ? runSyncFrames(n) : 0;
+          syncAccUs = Math.max(-P, syncAccUs - us);
+        } else if (us > 0) {
+          check(api.run(us), T('emuláció'));
+        }
+        if (speed !== 1) {
+          vrecPump();
+          api.audioClear();
+        }
       }
     } catch (e) {
       // a WebAssembly error stops the emulator for good: say so
@@ -8749,6 +8974,7 @@ ep.log('CTRL+ESC megnyomva');`)
     speedAccMs += dt;
 
     // audio
+    vrecPump();
     const nFrames = api.audioFrames();
     if (nFrames > 0 && audioRec) {
       // the full emulated sound, whatever the volume, mute or turbo
@@ -8825,6 +9051,7 @@ ep.log('CTRL+ESC megnyomva');`)
       }
       const done = autoTask ? runAutoTask(20000) : 0;
       if (done < 20000) check(api.run(20000 - done), T('emuláció'));
+      vrecPump();
       api.audioClear();
       i++;
       emulatedUs += 20000;
@@ -8910,6 +9137,13 @@ ep.log('CTRL+ESC megnyomva');`)
       audioBuffer: c('ep_audio_buffer', 'number', []),
       audioFrames: c('ep_audio_frames', 'number', []),
       audioClear: c('ep_audio_clear', null, []),
+      audioPos: c('ep_audio_pos', 'number', []),
+      vcap: c('ep_vcap', null, ['number']),
+      vcapCount: c('ep_vcap_count', 'number', []),
+      vcapFrame: c('ep_vcap_frame', 'number', ['number']),
+      vcapPos: c('ep_vcap_pos', 'number', ['number']),
+      vcapDrop: c('ep_vcap_drop', null, ['number']),
+      vcapLost: c('ep_vcap_lost', 'number', []),
       setVolume: c('ep_set_volume', null, ['number']),
       loadSnapshot: newState(withTvcRoms(c('ep_load_snapshot', 'number', ['string']))),
       saveCardState: c('ep_save_card_state', 'number', ['string']),
@@ -9213,8 +9447,14 @@ ep.log('CTRL+ESC megnyomva');`)
       } else if (q.get('url')) {
         const url = q.get('url');
         setMessage(T('Program letöltése…'));
-        const r = await fetch(url);
-        if (!r.ok) throw new Error('HTTP ' + r.status);
+        let r;
+        try {
+          r = await fetchRemote(url);
+        } catch (e) {
+          if (!e.remote) throw e;
+          remoteFail(url, e);
+          return;
+        }
         const name = q.get('n') || decodeURIComponent(new URL(url, location.href).pathname.split('/').pop()) || 'program';
         await loadFiles([new File([await r.blob()], name)]);
         shareSrc = { url, name };
@@ -9223,6 +9463,55 @@ ep.log('CTRL+ESC megnyomva');`)
       setMessage(T('A link programja nem tölthető be: ') + T(T(String(e.message || e))), true);
     }
   }
+  // downloads a file of another site; when it fails, why: the server does
+  // not allow other sites to download it (CORS: the browser blocks the
+  // response), an http:// address on the https page, an HTTP error, or the
+  // server cannot be reached (a no-cors request tells the last from CORS)
+  async function fetchRemote(url) {
+    const fail = (kind, status) => {
+      const e = new Error(kind + (status ? ' ' + status : ''));
+      e.remote = kind;
+      e.status = status;
+      return e;
+    };
+    let abs;
+    try { abs = new URL(url, location.href); } catch (e) { throw fail('address'); }
+    if (location.protocol === 'https:' && abs.protocol === 'http:') throw fail('http-on-https');
+    let r;
+    try {
+      r = await fetch(abs.href);
+    } catch (e) {
+      let reachable = false;
+      try { await fetch(abs.href, { mode: 'no-cors' }); reachable = true; } catch (e2) { }
+      throw fail(reachable ? 'cors' : 'unreachable');
+    }
+    if (!r.ok) throw fail('http', r.status);
+    return r;
+  }
+  // the message of fetchRemote()'s error, in a window (with a button that
+  // opens the address, to download the file by hand)
+  function remoteFail(url, e) {
+    let host = url;
+    try { host = new URL(url, location.href).host || url; } catch (x) { }
+    let text;
+    if (e.remote === 'cors') {
+      text = F('A(z) {0} szerver nem engedi, hogy más weboldal (így az emulátor) letöltse a fájljait: a válaszából hiányzik az Access-Control-Allow-Origin fejléc (CORS), ezért a böngésző letiltja. Megoldás: töltsd le a fájlt a lenti gombbal, majd húzd rá az emulátor képére. Ha a szerver a tiéd, engedélyezd a fejlécet (Apache: Header set Access-Control-Allow-Origin "*"). A GitHub (raw.githubusercontent.com) és a legtöbb CDN engedi; a Google Drive és a OneDrive megosztó linkje nem.', host);
+    } else if (e.remote === 'http-on-https') {
+      text = T('A cím http://-vel kezdődik: a https-es oldal nem tölthet le titkosítatlan címről (a böngésző tiltja). Próbáld https://-sel, vagy töltsd le a fájlt a lenti gombbal, és húzd rá az emulátor képére.');
+    } else if (e.remote === 'http') {
+      text = F('A(z) {0} szerver hibát adott (HTTP {1}): a cím rossz, vagy a fájl már nincs ott.', host, e.status);
+    } else if (e.remote === 'address') {
+      text = T('Ez nem érvényes cím.');
+    } else {
+      text = F('A(z) {0} szerver nem érhető el: rossz a cím, nincs internetkapcsolat, vagy a szerver nem működik.', host);
+    }
+    const title = T('A fájl nem tölthető le');
+    setMessage(title + ': ' + text, true);
+    const open = e.remote === 'cors' || e.remote === 'http-on-https';
+    showAlert(title, text, open ? T('Letöltés kézzel (új lapon)') : null,
+              () => window.open(url, '_blank', 'noopener'));
+  }
+
   async function shareLink() {
     const q = new URLSearchParams();
     q.set('m', machine.id);
