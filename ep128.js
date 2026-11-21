@@ -3591,12 +3591,15 @@ registerProcessor('ep-output', EPOutput);
     }
     const target = new lib.ArrayBufferTarget();
     const opts = { target, video: { codec: codecs.v.mux, width: w, height: h, frameRate: 50 },
-                   firstTimestampBehavior: fmt === 'mp4' ? 'cross-track-offset' : 'permissive' };
+                   firstTimestampBehavior: fmt === 'mp4' ? 'offset' : 'permissive' };
     if (fmt === 'mp4') opts.fastStart = 'in-memory';
     if (audio) opts.audio = { codec: audio.mux, numberOfChannels: 2, sampleRate: sr };
     const muxer = new lib.Muxer(opts);
-    const r = { fmt, muxer, target, w, h, sr, n: 0, lastTs: -1, error: null, aenc: null,
-                frame: document.createElement('canvas'), start: api.audioPos() };
+    const r = { fmt, muxer, target, w, h, sr, n: 0, error: null, aenc: null,
+                frame: document.createElement('canvas'),
+                prevPos: -1, spf: 0,
+                audBuf: new Float32Array(0), audStart: 0, audEnd: 0, lastAudioPos: 0,
+                audReadPos: 0, audOut: 0 };
     r.frame.width = w;
     r.frame.height = h;
     r.frameCtx = r.frame.getContext('2d', { alpha: false });
@@ -3619,50 +3622,125 @@ registerProcessor('ep-output', EPOutput);
       r.aenc.configure(audio.cfg);
     }
     api.audioClear();                   // the sound from here on
-    r.start = api.audioPos();
+    const pos0 = api.audioPos();
+    r.audStart = pos0;
+    r.audEnd = pos0;
+    r.lastAudioPos = pos0;
+    r.audReadPos = pos0;
     api.vcap(1);
     vrec = r;
     return true;
+  }
+  function vrecAppendAudio(r) {
+    if (!r.aenc) return;
+    const nf = api.audioFrames();
+    const curPos = api.audioPos();
+    const fresh = Math.min(nf, Math.round(curPos - r.lastAudioPos));
+    if (fresh <= 0) return;
+    const p = (api.audioBuffer() >> 2) + (nf - fresh) * 2;
+    const expectedStart = Math.round(curPos - fresh);
+    if (expectedStart > r.audEnd) {
+      if (r.audBuf.length < fresh * 2) r.audBuf = new Float32Array(Math.max(fresh * 2, 16384));
+      r.audBuf.set(M.HEAPF32.subarray(p, p + fresh * 2), 0);
+      r.audStart = expectedStart;
+      r.audEnd = expectedStart + fresh;
+      if (r.audReadPos < r.audStart) r.audReadPos = r.audStart;
+      r.lastAudioPos = curPos;
+      return;
+    }
+    const curLen = r.audEnd - r.audStart;
+    const need = (curLen + fresh) * 2;
+    if (need > r.audBuf.length) {
+      const nb = new Float32Array(Math.max(need, r.audBuf.length * 2 || 16384));
+      if (curLen > 0) nb.set(r.audBuf.subarray(0, curLen * 2), 0);
+      r.audBuf = nb;
+    }
+    r.audBuf.set(M.HEAPF32.subarray(p, p + fresh * 2), curLen * 2);
+    r.audEnd += fresh;
+    r.lastAudioPos = curPos;
+  }
+  function vrecEmitAudio(r, targetOutTotal, consume) {
+    if (!r.aenc) return;
+    const outLen = targetOutTotal - r.audOut;
+    if (outLen <= 0) return;
+    const out = new Float32Array(outLen * 2);
+    const maxAvail = r.audEnd - 1 - r.audReadPos;
+    if (maxAvail > 0 && r.audEnd - r.audStart >= 2) {
+      const use = Math.min(consume, maxAvail);
+      const step = use / outLen;
+      const lastIdx = r.audEnd - 2;
+      for (let j = 0; j < outLen; j++) {
+        const s = r.audReadPos + j * step;
+        const idx = Math.max(r.audStart, Math.min(Math.floor(s), lastIdx));
+        const frac = Math.max(0, Math.min(1, s - idx));
+        const o0 = (idx - r.audStart) * 2;
+        const o1 = o0 + 2;
+        out[j * 2] = r.audBuf[o0] + (r.audBuf[o1] - r.audBuf[o0]) * frac;
+        out[j * 2 + 1] = r.audBuf[o0 + 1] + (r.audBuf[o1 + 1] - r.audBuf[o0 + 1]) * frac;
+      }
+      r.audReadPos += use;
+      const drop = Math.floor(r.audReadPos) - r.audStart - 2;
+      if (drop > 4096) {
+        r.audBuf.copyWithin(0, drop * 2, (r.audEnd - r.audStart) * 2);
+        r.audStart += drop;
+      }
+    }
+    const ad = new AudioData({ format: 'f32', sampleRate: r.sr, numberOfFrames: outLen, numberOfChannels: 2,
+                               timestamp: Math.round(r.audOut / r.sr * 1e6), data: out });
+    r.aenc.encode(ad);
+    ad.close();
+    r.audOut += outLen;
   }
   // the frames and the sound made since the last call
   function vrecPump() {
     if (!vrec) return;
     const r = vrec;
     if (r.error) { vrecStop(); return; }
+    vrecAppendAudio(r);
     const n = api.vcapCount();
     for (let i = 0; i < n; i++) {
+      const pos = api.vcapPos(i);
+      if (r.n === 0) {
+        r.prevPos = pos;
+        r.audReadPos = Math.max(r.audStart, pos - 16);
+      } else {
+        const instSpf = pos - r.prevPos;
+        if (instSpf <= 0) continue;
+        if (instSpf < r.sr * 0.1) {
+          const alpha = r.n < 20 ? 1 / r.n : 0.01;
+          r.spf = r.spf ? r.spf * (1 - alpha) + instSpf * alpha : instSpf;
+        }
+        const spf = r.spf || (r.sr / 50);
+        const targetEnd = pos - 16;
+        const phaseErr = (targetEnd - r.audReadPos) - spf;
+        const corr = Math.max(-0.0015 * spf, Math.min(0.0015 * spf, phaseErr * 0.05));
+        vrecEmitAudio(r, Math.round(r.n * r.sr / 50), Math.max(1, spf + corr));
+        r.prevPos = pos;
+      }
       const p = api.vcapFrame(i);
       // the frame through the page's own picture (crop, screen effect)
       imageData.data.set(M.HEAPU8.subarray(p, p + imageData.data.length));
       ctx.putImageData(imageData, -cropX, 0);
       if (screenFxOn) screenFx.render(canvas);
       drawRecCanvas();
-      const ts = Math.round((api.vcapPos(i) - r.start) / r.sr * 1e6);
-      if (ts <= r.lastTs) continue;
-      r.lastTs = ts;
-      r.frameCtx.drawImage(recCanvas, 0, 0, r.w, r.h);
-      const vf = new VideoFrame(r.frame, { timestamp: ts, duration: 20000 });
+      let src = recCanvas;
+      if (recCanvas.width !== r.w || recCanvas.height !== r.h) {
+        r.frameCtx.drawImage(recCanvas, 0, 0, r.w, r.h);
+        src = r.frame;
+      }
+      const vf = new VideoFrame(src, { timestamp: r.n * 20000, duration: 20000 });
       r.venc.encode(vf, { keyFrame: r.n % 100 === 0 });
       vf.close();
       r.n++;
     }
     if (n) api.vcapDrop(n);
-    const nf = api.audioFrames();
-    if (r.aenc && nf > 0) {
-      const p = api.audioBuffer() >> 2;
-      const ts = Math.round((api.audioPos() - nf - r.start) / r.sr * 1e6);
-      if (ts >= 0) {
-        const ad = new AudioData({ format: 'f32', sampleRate: r.sr, numberOfFrames: nf, numberOfChannels: 2,
-                                   timestamp: ts, data: M.HEAPF32.slice(p, p + nf * 2) });
-        r.aenc.encode(ad);
-        ad.close();
-      }
-    }
   }
   async function vrecStop() {
     const r = vrec;
     if (!r) return;
     vrec = null;
+    vrecAppendAudio(r);
+    if (!r.error && r.n > 0) vrecEmitAudio(r, Math.round(r.n * r.sr / 50), r.spf || (r.sr / 50));
     api.vcap(0);
     clearInterval(videoRecTimer);
     const btn = $('btn-video');
