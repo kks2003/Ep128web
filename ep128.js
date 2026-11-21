@@ -3600,10 +3600,22 @@ registerProcessor('ep-output', EPOutput);
     r.frame.width = w;
     r.frame.height = h;
     r.frameCtx = r.frame.getContext('2d', { alpha: false });
-    r.venc = new VideoEncoder({ output: (c, m) => muxer.addVideoChunk(c, m), error: (e) => { r.error = e; } });
+    const addChunk = (fn, rawFn, fallbackDur) => (c, m) => {
+      if (r.error) return;
+      try {
+        if (fmt === 'mp4' && !(Number.isFinite(c.duration) && c.duration > 0)) {
+          const d = new Uint8Array(c.byteLength);
+          c.copyTo(d);
+          rawFn.call(muxer, d, c.type, c.timestamp, fallbackDur, m);
+        } else {
+          fn.call(muxer, c, m);
+        }
+      } catch (e) { r.error = e; }
+    };
+    r.venc = new VideoEncoder({ output: addChunk(muxer.addVideoChunk, muxer.addVideoChunkRaw, 20000), error: (e) => { r.error = e; } });
     r.venc.configure(codecs.v.cfg);
     if (audio) {
-      r.aenc = new AudioEncoder({ output: (c, m) => muxer.addAudioChunk(c, m), error: (e) => { r.error = e; } });
+      r.aenc = new AudioEncoder({ output: addChunk(muxer.addAudioChunk, muxer.addAudioChunkRaw, 20000), error: (e) => { r.error = e; } });
       r.aenc.configure(audio.cfg);
     }
     api.audioClear();                   // the sound from here on
@@ -3629,7 +3641,7 @@ registerProcessor('ep-output', EPOutput);
       if (ts <= r.lastTs) continue;
       r.lastTs = ts;
       r.frameCtx.drawImage(recCanvas, 0, 0, r.w, r.h);
-      const vf = new VideoFrame(r.frame, { timestamp: ts });
+      const vf = new VideoFrame(r.frame, { timestamp: ts, duration: 20000 });
       r.venc.encode(vf, { keyFrame: r.n % 100 === 0 });
       vf.close();
       r.n++;
@@ -3662,9 +3674,13 @@ registerProcessor('ep-output', EPOutput);
         await r.venc.flush();
         if (r.aenc) await r.aenc.flush();
       }
-      r.venc.close();
-      if (r.aenc) r.aenc.close();
+      if (r.venc.state !== 'closed') r.venc.close();
+      if (r.aenc && r.aenc.state !== 'closed') r.aenc.close();
       if (r.error) throw r.error;
+      if (!r.n) {
+        setMessage(F('Videó: {0} képkocka, 50 fps', 0));
+        return;
+      }
       r.muxer.finalize();
       download(new Uint8Array(r.target.buffer), stampName(r.fmt));
       setMessage(F('Videó: {0} képkocka, 50 fps', r.n));
