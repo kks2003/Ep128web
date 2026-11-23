@@ -2061,9 +2061,18 @@ EMSCRIPTEN_KEEPALIVE const char *ep_dbg_2dfx()
   }
   if (!nSpr)
     out += "  nincs\n";
+  // the slots of both tables up to the last one that is not RET, with the
+  // RET after it (every slot holds RET after a reset; a RET in between
+  // still counts: SKIP_NEXT may jump over it)
   for (unsigned fg = 0; fg < 2; fg++) {
     out += (fg ? "Előtér 2DPT:\n" : "Háttér 2DPT:\n");
-    for (unsigned slot = 0; slot < 256; slot++) {
+    unsigned  last = 0;
+    for (unsigned slot = 0; slot < TWODFX_EMU_2DPT_SLOTS; slot++) {
+      twodfx_2dpt_entry e;
+      if (twodfx_emu_get_2dpt(d, fg, slot, 1, &e) && (e.opcode & 0x1F) != 0x1F)
+        last = slot + 1;
+    }
+    for (unsigned slot = 0; slot <= last && slot < TWODFX_EMU_2DPT_SLOTS; slot++) {
       twodfx_2dpt_entry e;
       if (!twodfx_emu_get_2dpt(d, fg, slot, 1, &e))
         break;
@@ -2075,8 +2084,6 @@ EMSCRIPTEN_KEEPALIVE const char *ep_dbg_2dfx()
         out += tmp;
       }
       out += '\n';
-      if (op == 0x1F || slot >= 63)
-        break;
     }
   }
   return out.c_str();
