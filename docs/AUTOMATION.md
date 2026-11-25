@@ -69,6 +69,9 @@ machine: `(64k+)`, `(DOS)`, `(UPM)`, `(256k++)`, `(2dfx)`).
 | `ep.atPrompt()` | `true` if BASIC waits for a command (the last line with text is `ok`) |
 | **async** `ep.waitText(textOrRegExp, {timeout})` | Waits until the screen text contains / matches it (default 30 s real time); returns the text, or throws with the screen's text |
 | `ep.screenshot()` | The picture as a PNG data URL |
+| `await ep.videoStart({format})` | Starts a video recording (WebCodecs): every frame the machine runs from then on exactly once, at 50 fps, with the emulated sound – in manual mode too (`ep.runFrames`, `ep.press`…), whatever real time they take. `format`: `'mp4'` (default; H.264 + AAC or Opus) or `'webm'` (VP9 + Opus) |
+| `await ep.videoStop()` | Stops it: `{format, mime, frames, seconds, size, bytes}` (`bytes`: the file, a `Uint8Array`) |
+| `ep.videoStatus()` | `{recording, format, frames, seconds}` |
 | `ep.frameSize()` | `{width, height}` of the picture (TVC 672×288, Enterprise 768×288) |
 | `ep.pixel(x, y)` | A pixel of the last finished frame, in the screenshot's coordinates: `{x, y, index, r, g, b, hex}`. `index`: what the video chip produced (TVC: its colour value, e.g. 80 = `50h` green; Enterprise: the colour byte) |
 | `ep.pixels(x, y, w, h)` | A rectangle of them, row by row: `{x, y, w, h, index: [...], rgb: [[r, g, b]…], hex: ['#rrggbb'…]}` |

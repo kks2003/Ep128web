@@ -246,6 +246,33 @@ server.registerTool('screenshot', {
   return { content: [{ type: 'image', data: url.replace(/^data:image\/png;base64,/, ''), mimeType: 'image/png' }] };
 });
 
+server.registerTool('record_video', {
+  title: 'Record a video',
+  description: 'start: records every frame the machine runs from now on exactly once, at 50 fps, with the emulated sound (also in manual mode: run_frames, press..., whatever real time they take). stop: writes the file (MP4 or WebM) to `path` (default: a new file in the temporary directory) and returns its length. status: whether it records.',
+  inputSchema: {
+    action: z.enum(['start', 'stop', 'status']),
+    format: z.enum(['mp4', 'webm']).optional().describe('start: mp4 (default; H.264 + AAC or Opus) or webm (VP9 + Opus)'),
+    path: z.string().optional().describe('stop: the file to write')
+  }
+}, async ({ action, format, path: file }) => {
+  if (action === 'start') return text(await inPage((f) => ep.videoStart({ format: f }), format || 'mp4'));
+  if (action === 'status') return text(await inPage(() => ep.videoStatus()));
+  const r = await inPage(async () => {
+    const v = await ep.videoStop();
+    let b64 = null;
+    if (v.bytes) {
+      let t = '';
+      for (let i = 0; i < v.bytes.length; i += 8192) t += String.fromCharCode.apply(null, v.bytes.subarray(i, i + 8192));
+      b64 = btoa(t);
+    }
+    return Object.assign({}, v, { bytes: b64 });
+  });
+  if (!r.bytes) return text('no frames were recorded (run the machine between start and stop)');
+  const out = file || path.join(os.tmpdir(), 'ep128web-' + new Date().toISOString().replace(/[:.]/g, '-') + '.' + r.format);
+  await fs.writeFile(out, Buffer.from(r.bytes, 'base64'));
+  return text({ file: out, format: r.format, frames: r.frames, seconds: r.seconds, bytes: r.size });
+});
+
 const keyNames = z.array(z.string()).describe('key names: KeyboardEvent.code (KeyA, Digit1, Space, Enter, ArrowUp, ShiftLeft, End = STOP…) or joysticks: Joy1Up, Joy1Down, Joy1Left, Joy1Right, Joy1Fire (Joy2…; TVC: Joy3, Joy4 = GameCard)');
 
 server.registerTool('run_frames', {
