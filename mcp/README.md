@@ -72,6 +72,7 @@ Other clients: run `node server.js` as a stdio MCP server.
 | `type_text`, `press_key` | Typing (`\n` = Enter) and holding a key; returns the screen text |
 | `key_down`, `key_up` | Hold / release keys and joystick directions (`Joy1Fire`…) across calls |
 | `screen_text`, `wait_text`, `screenshot` | The screen as text (and whether BASIC waits), waiting for text, PNG |
+| `record_video` | `start` (format mp4 / webm) … `stop` (writes the file to `path`): every frame run in between exactly once, 50 fps, with the sound; `status` |
 | `run_frames` | n frames of 20 ms at once (repeatable timing), optionally with `keys` held |
 | `manual_mode` | Manual mode on / off |
 | `state` | Machine, running / stopped, time, CPU cycles, beam position, registers, I/O registers (CRTC, paging…), held keys, stop reason |

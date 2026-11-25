@@ -3735,7 +3735,9 @@ registerProcessor('ep-output', EPOutput);
     }
     if (n) api.vcapDrop(n);
   }
-  async function vrecStop() {
+  // stops it: downloads the file, or (forAi) returns it: {format, mime,
+  // frames, seconds, size, bytes}
+  async function vrecStop(forAi) {
     const r = vrec;
     if (!r) return;
     vrec = null;
@@ -3755,16 +3757,30 @@ registerProcessor('ep-output', EPOutput);
       if (r.venc.state !== 'closed') r.venc.close();
       if (r.aenc && r.aenc.state !== 'closed') r.aenc.close();
       if (r.error) throw r.error;
+      const mime = r.fmt === 'mp4' ? 'video/mp4' : 'video/webm';
       if (!r.n) {
         setMessage(F('Videó: {0} képkocka, 50 fps', 0));
-        return;
+        return forAi ? { format: r.fmt, mime, frames: 0, seconds: 0, size: 0, bytes: null } : undefined;
       }
       r.muxer.finalize();
-      download(new Uint8Array(r.target.buffer), stampName(r.fmt));
+      const bytes = new Uint8Array(r.target.buffer);
+      if (!forAi) download(bytes, stampName(r.fmt));
       setMessage(F('Videó: {0} képkocka, 50 fps', r.n));
+      return { format: r.fmt, mime, frames: r.n, seconds: r.n / 50, size: bytes.length, bytes };
     } catch (e) {
       setMessage(T('A videófelvétel nem sikerült: ') + T(String(e.message || e)), true);
+      if (forAi) throw e;
     }
+  }
+  // the record button while the WebCodecs recording runs
+  function vrecButtonOn() {
+    const btn = $('btn-video');
+    $('video-fmt').disabled = true;
+    const t0 = performance.now();
+    btn.classList.add('on');
+    btn.textContent = T('■ Videó 0:00');
+    clearInterval(videoRecTimer);
+    videoRecTimer = setInterval(() => { btn.textContent = T('■ Videó ') + recTime(t0); }, 500);
   }
 
   function videoFormats() {
@@ -3858,11 +3874,7 @@ registerProcessor('ep-output', EPOutput);
       vrecStarting = false;
     }
     if (ok) {
-      $('video-fmt').disabled = true;
-      const t0 = performance.now();
-      btn.classList.add('on');
-      btn.textContent = T('■ Videó 0:00');
-      videoRecTimer = setInterval(() => { btn.textContent = T('■ Videó ') + recTime(t0); }, 500);
+      vrecButtonOn();
       setMessage(T('Videófelvétel: minden képkocka pontosan, 50 fps; a hang az emulált hang, teljes hangerővel'));
       return;
     }
@@ -8499,6 +8511,34 @@ registerProcessor('ep-output', EPOutput);
     }),
     // the picture as a PNG data URL
     screenshot: () => canvas.toDataURL('image/png'),
+    // video recording (WebCodecs): every frame the machine runs from now on
+    // exactly once, at 50 fps, with the emulated sound; in manual mode
+    // too (ep.runFrames, ep.press...), whatever the real time it takes.
+    // opts.format: 'mp4' (default; H.264 + AAC / Opus) or 'webm' (VP9 + Opus)
+    videoStart: async (opts) => {
+      opts = opts || {};
+      await pageStarted();
+      while (!ready) await sleepMs(50);
+      if (vrec || videoRec || vrecStarting) throw new Error('a video recording is already running (ep.videoStop)');
+      const fmt = opts.format === 'webm' ? 'webm' : 'mp4';
+      vrecStarting = true;
+      let ok = false;
+      try {
+        ok = await vrecStart(fmt);
+      } finally {
+        vrecStarting = false;
+      }
+      if (!ok) throw new Error('this browser cannot record ' + fmt + ' video (no WebCodecs encoder for it); try the other format');
+      vrecButtonOn();
+      return { format: fmt };
+    },
+    // stops it: {format, mime, frames, seconds, size, bytes (Uint8Array)}
+    videoStop: async () => {
+      if (!vrec) throw new Error('no video recording is running (ep.videoStart)');
+      return vrecStop(true);
+    },
+    videoStatus: () => (vrec ? { recording: true, format: vrec.fmt, frames: vrec.n, seconds: vrec.n / 50 }
+                             : { recording: !!videoRec, format: null, frames: 0, seconds: 0 }),
     // runs n frames (20 ms each) at once, as fast as possible; returns the
     // number run (fewer if the debugger stopped the machine)
     // opts.perFrame(i): the keys held in frame i

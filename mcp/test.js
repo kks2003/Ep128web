@@ -126,6 +126,15 @@ try {
   check(/SDTEST\.CAS/.test(await call('screen_text')), 'NanoSD: DIR in its command line');
   await call('type_text', { text: 'x\n', settle_frames: 30 });
   await call('set_machine', { id: 'tvc64-12', slots: ['file', 'vtdos', 'gamecard', 'empty'] });
+  // a video of 2 s run in manual mode: every frame of the machine exactly
+  // once (a TVC frame is 20.1 ms: 99 or 100 of them in 100 x 20 ms)
+  await call('record_video', { action: 'start', format: 'mp4' });
+  await call('run_frames', { frames: 100 });
+  const vfile = path.join(profile, 'test.mp4');
+  const vid = JSON.parse(await call('record_video', { action: 'stop', path: vfile }));
+  check(vid.frames >= 99 && vid.frames <= 100 && vid.seconds === vid.frames / 50 &&
+        fs.statSync(vfile).size === vid.bytes && vid.bytes > 1000,
+        'record_video: ' + vid.frames + ' frames, ' + vid.seconds + ' s, ' + vid.bytes + ' bytes');
   // a local path in eval_js (ep.loadSym / ep.load fetch it through the server)
   check(await call('eval_js', { code: 'return await ep.loadSym(' + JSON.stringify(symFile) + ', { prefix: "L_" });' }) === '3', 'loadSym with a local path');
 } finally {
