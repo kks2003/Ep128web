@@ -1,0 +1,90 @@
+--- a/src/crtc6845.cpp	2026-11-27 10:21:32.337438342 +0000
++++ b/src/crtc6845.cpp	2026-11-27 10:21:32.339129687 +0000
+@@ -38,6 +38,7 @@
+     vSyncStateChangeCallback = &defaultSyncStateChangeCallback;
+     vSyncChangeCallbackUserData = (void *) 0;
+     setLightPenPosition(0x3FFF);
++    cursorLatchMode = false;
+     this->reset();
+   }
+ 
+@@ -63,6 +64,8 @@
+     writeRegister(8, registers[8]);
+     writeRegister(14, registers[14]);
+     cursorFlashCnt = 0;
++    cursorStartLatch = registers[10];
++    cursorEndLatch = registers[11];
+     endOfFrameFlag = 0x00;
+     verticalTotalAdjustLatched = registers[5];
+     skewShiftRegister = 0x00;
+@@ -124,7 +127,9 @@
+     displayEnableFlags = (displayEnableFlags | 0x40)
+                          | ((displayEnableFlags & 0x80) >> 6);
+     characterAddress = characterAddressLatch;
+-    if (((rowAddress ^ registers[11]) & rowAddressMask) == 0) {
++    uint8_t r10 = (cursorLatchMode ? cursorStartLatch : registers[10]);
++    uint8_t r11 = (cursorLatchMode ? cursorEndLatch : registers[11]);
++    if (((rowAddress ^ r11) & rowAddressMask) == 0) {
+       // cursor end line
+       cursorAddress = cursorAddress | 0x4000;
+     }
+@@ -151,7 +156,7 @@
+         }
+       }
+     }
+-    if (((rowAddress ^ registers[10]) & rowAddressMask) == 0) {
++    if (((rowAddress ^ r10) & rowAddressMask) == 0) {
+       // cursor start line
+       cursorAddress = cursorAddress & 0xBFFF;
+     }
+--- a/src/crtc6845.hpp	2026-11-27 10:21:32.337467444 +0000
++++ b/src/crtc6845.hpp	2026-11-27 10:21:32.339156624 +0000
+@@ -89,6 +89,12 @@
+     uint8_t     displayEnableMask;
+     // 1, 4, 16, or 0 depending on bits 6 and 7 of register 8
+     uint8_t     cursorEnableMask;
++    // cursor start / end lines (R10, R11) as used at the end of the line:
++    // with cursorLatchMode, they are sampled at the horizontal display end
++    // (TVC: writes after that point only take effect from the next line)
++    uint8_t     cursorStartLatch;
++    uint8_t     cursorEndLatch;
++    bool        cursorLatchMode;
+     EP128EMU_REGPARM2 void (*hSyncStateChangeCallback)(void *userData,
+                                                        bool newState);
+     void        *hSyncChangeCallbackUserData;
+@@ -104,6 +110,11 @@
+     CRTC6845();
+     virtual ~CRTC6845();
+     void reset();
++    // R10/R11 sampled at the horizontal display end (real TVC behaviour)
++    inline void setCursorLatchMode(bool isEnabled)
++    {
++      cursorLatchMode = isEnabled;
++    }
+     EP128EMU_INLINE void runOneCycle()
+     {
+       if (EP128EMU_UNLIKELY(horizontalPos == this->registers[0])) {
+@@ -124,6 +135,10 @@
+         displayEnableFlags = displayEnableFlags & 0x80;
+         if (((rowAddress ^ this->registers[9]) & rowAddressMask) == 0)
+           characterAddressLatch = characterAddress;
++        if (cursorLatchMode) {
++          cursorStartLatch = this->registers[10];
++          cursorEndLatch = this->registers[11];
++        }
+       }
+       if (EP128EMU_UNLIKELY(horizontalPos == this->registers[2])) {
+         // horizontal sync start
+--- a/src/tvc64vm.cpp	2026-11-27 10:21:32.337484053 +0000
++++ b/src/tvc64vm.cpp	2026-11-27 10:21:32.339182687 +0000
+@@ -1498,6 +1498,10 @@
+         0x00F8, 0x00F9, &twoDfxPortWriteCallback, (void *) this, 0x0000);
+     crtc.setHSyncStateChangeCallback(&hSyncStateChangeCallback, (void *) this);
+     crtc.setVSyncStateChangeCallback(&vSyncStateChangeCallback, (void *) this);
++    // the TVC samples the cursor start / end lines at the horizontal display
++    // end (measured on a real TVC 64k+: R10/R11 written later in the line do
++    // not produce a cursor IRQ on the next line)
++    crtc.setCursorLatchMode(true);
+     wd177x.setIsWD1773(true);
+     // hack to get some programs using interrupt mode 2 working
+     z80.setVectorBase(0xFF);
