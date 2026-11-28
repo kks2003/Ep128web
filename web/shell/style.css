@@ -406,6 +406,30 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 }
 
 
+/* the tape recorder panel: the tape, the transport row, then groups */
+.group.tape { display: block; }
+.group.tape h3 { margin-bottom: 8px; }
+.tape-deck {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 8px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--panel);
+}
+.tape-deck .tape-ico { font-size: 18px; line-height: 1; }
+.tape-deck .tape-title { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tape-deck .tape-pos { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tape-transport { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+.group.tape .tape-transport button {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 4px 2px; min-height: 44px; min-width: 0;
+}
+.tape-transport b { display: block; height: 18px; line-height: 0; }
+.tape-transport svg { width: 18px; height: 18px; fill: currentColor; }
+.tape-transport small { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.tape-transport .tape-recbtn b { color: #d32f2f; }
+@media (max-width: 480px) { .tape-transport { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.tape-sec { margin: 10px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.tape-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.group.tape .tape-opt { display: block; margin-top: 10px; }
+
 /* USB pendrive file manager */
 #usb-browser, #sd-browser { flex-basis: 100%; border: 1px solid var(--border, #ccc); border-radius: 6px; padding: 6px 8px; }
 #usb-browser.drag, #sd-browser.drag { outline: 2px dashed var(--accent); }

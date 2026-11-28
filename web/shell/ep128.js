@@ -5125,6 +5125,36 @@ registerProcessor('ep-output', EPOutput);
       }
       canvas.focus({ preventScroll: true });
     };
+    // a tape into the recorder, nothing else: the machine runs on (no reset,
+    // no machine switch, nothing typed); a TVC .cas becomes a tape sound
+    $('tape-open').onchange = async (e) => {
+      const f = e.target.files[0];
+      e.target.value = '';
+      if (!f || !ready) return;
+      try {
+        let file = { name: f.name.split(/[\\/]/).pop(), bytes: new Uint8Array(await f.arrayBuffer()) };
+        const isTape = (n) => ['tap', 'wav', 'tzx', 'cdt', 'cas'].includes(extOf(n));
+        if (['zip', 'zi'].includes(extOf(file.name))) {
+          const inZip = (await unzip(file.bytes)).filter((x) => isTape(x.name));
+          if (!inZip.length) throw new Error(T('nincs benne kazettafájl'));
+          file = { name: inZip[0].name.split(/[\\/]/).pop(), bytes: inZip[0].bytes };
+        }
+        if (!isTape(file.name)) throw new Error(T('ez nem kazettafájl'));
+        if (extOf(file.name) === 'cas')
+          file = { name: file.name.replace(/\.[^.]*$/, '') + '.wav', bytes: (await tapeLib()).casToWav(file.bytes, file.name) };
+        ensureDir('/tape');
+        if (tapeName) api.setTape('');
+        tapeName = sanitizeName(file.name);
+        M.FS.writeFile('/tape/' + tapeName, file.bytes);
+        check(api.setTape('/tape/' + tapeName), T('kazetta'));
+        $('tape-name').textContent = file.name;
+        setMessage(F('Kazetta behelyezve: {0} – a gép fut tovább; LOAD-dal vagy a ▶ gombbal indítható', file.name));
+        updateStatus();
+      } catch (err) {
+        setMessage(T('A kazetta nem tehető be: ') + T(T(String(err.message || err))), true);
+      }
+      canvas.focus({ preventScroll: true });
+    };
     $('tape-new').onclick = () => {
       tapeName = 'tape-' + Date.now().toString(36) + '.tap';
       check(api.setTape('/tape/' + tapeName), T('kazetta'));
@@ -9212,8 +9242,10 @@ ep.log('CTRL+ESC megnyomva');`)
       const pos = api.tapePosition(), len = api.tapeLength();
       const fmt = (t) => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
       $('st-tape').textContent = T('Magnó: ') + fmt(pos) + ' / ' + fmt(len);
+      if ($('tape-pos')) $('tape-pos').textContent = fmt(pos) + ' / ' + fmt(len);
     } else {
       $('st-tape').textContent = '';
+      if ($('tape-pos')) $('tape-pos').textContent = '';
     }
   }
 
