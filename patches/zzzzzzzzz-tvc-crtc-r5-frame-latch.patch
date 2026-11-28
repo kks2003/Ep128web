@@ -1,0 +1,111 @@
+--- a/src/crtc6845.cpp
++++ b/src/crtc6845.cpp
+@@ -39,6 +39,8 @@
+     vSyncChangeCallbackUserData = (void *) 0;
+     setLightPenPosition(0x3FFF);
+     cursorLatchMode = false;
++    r5FrameLatchMode = false;
++    r5FrameLatch = 0;
+     this->reset();
+   }
+ 
+@@ -67,6 +69,7 @@
+     cursorStartLatch = registers[10];
+     cursorEndLatch = registers[11];
+     endOfFrameFlag = 0x00;
++    r5FrameLatch = registers[5];
+     verticalTotalAdjustLatched = registers[5];
+     skewShiftRegister = 0x00;
+   }
+@@ -78,26 +81,27 @@
+       rowAddress = (~rowAddressMask) & uint8_t(oddField);
+       verticalPos = (verticalPos + 1) & 0x7F;
+       if (verticalTotalAdjustLatched & rowAddressMask) {
+-        verticalTotalAdjustLatched = registers[5];
++        verticalTotalAdjustLatched = r5Value();
+         return;                         // have vertical total adjust
+       }
+     }
+     else {
+       rowAddress = (rowAddress - rowAddressMask) & 0x1F;
+       if ((rowAddress ^ verticalTotalAdjustLatched) & rowAddressMask) {
+-        verticalTotalAdjustLatched = registers[5];
++        verticalTotalAdjustLatched = r5Value();
+         return;                         // still in vertical total adjust
+       }
+     }
+     // end of frame
+     endOfFrameFlag = 0x00;
++    r5FrameLatch = registers[5];        // (r5FrameLatchMode: for this frame)
+     displayEnableFlags = 0xC2;
+     oddField = !oddField;
+     rowAddress = (~rowAddressMask) & uint8_t(oddField);
+     verticalPos = 0;
+     if (!(registers[4] | (registers[9] & rowAddressMask))) {
+       endOfFrameFlag = 0x80;
+-      verticalTotalAdjustLatched = registers[5];
++      verticalTotalAdjustLatched = r5Value();
+     }
+     characterAddress =
+         uint16_t(registers[13]) | (uint16_t(registers[12] & 0x3F) << 8);
+@@ -152,7 +156,7 @@
+       if (verticalPos == registers[4]) {
+         if (!((rowAddress ^ registers[9]) & rowAddressMask)) {
+           endOfFrameFlag = 0x80;
+-          verticalTotalAdjustLatched = registers[5];
++          verticalTotalAdjustLatched = r5Value();
+         }
+       }
+     }
+@@ -411,6 +415,7 @@
+         endOfFrameFlag = buf.readByte() & 0x81;
+         verticalTotalAdjustLatched = buf.readByte() & 0x1F;
+       }
++      r5FrameLatch = registers[5];
+       if (version < 0x01000001U)
+         skewShiftRegister = 0x00;
+       else
+--- a/src/crtc6845.hpp
++++ b/src/crtc6845.hpp
+@@ -95,6 +95,15 @@
+     uint8_t     cursorStartLatch;
+     uint8_t     cursorEndLatch;
+     bool        cursorLatchMode;
++    // vertical total adjust (R5): with r5FrameLatchMode, the value used at the
++    // end of a frame is the one sampled at the start of that frame (TVC: an R5
++    // written during frame N only changes the end of frame N+1)
++    uint8_t     r5FrameLatch;
++    bool        r5FrameLatchMode;
++    inline uint8_t r5Value() const
++    {
++      return (r5FrameLatchMode ? r5FrameLatch : registers[5]);
++    }
+     EP128EMU_REGPARM2 void (*hSyncStateChangeCallback)(void *userData,
+                                                        bool newState);
+     void        *hSyncChangeCallbackUserData;
+@@ -115,6 +124,12 @@
+     {
+       cursorLatchMode = isEnabled;
+     }
++    // R5 sampled at the start of the frame (real TVC behaviour)
++    inline void setR5FrameLatchMode(bool isEnabled)
++    {
++      r5FrameLatchMode = isEnabled;
++      r5FrameLatch = registers[5];
++    }
+     EP128EMU_INLINE void runOneCycle()
+     {
+       if (EP128EMU_UNLIKELY(horizontalPos == this->registers[0])) {
+--- a/src/tvc64vm.cpp
++++ b/src/tvc64vm.cpp
+@@ -1502,6 +1502,10 @@
+     // end (measured on a real TVC 64k+: R10/R11 written later in the line do
+     // not produce a cursor IRQ on the next line)
+     crtc.setCursorLatchMode(true);
++    // the TVC uses the R5 (vertical total adjust) sampled at the start of the
++    // frame (measured on a real TVC 64k with a pixel scroll: an R5 written in
++    // the middle of a frame takes effect one frame later than R12/R13)
++    crtc.setR5FrameLatchMode(true);
+     wd177x.setIsWD1773(true);
+     // hack to get some programs using interrupt mode 2 working
+     z80.setVectorBase(0xFF);
