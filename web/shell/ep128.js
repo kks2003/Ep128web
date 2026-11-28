@@ -5103,11 +5103,14 @@ registerProcessor('ep-output', EPOutput);
       if (tapeName) {
         if (machine.type === 1) writeMemory(2821, 5);
         api.tapeCommand(1);
+      } else {
+        setMessage(T('Nincs kazetta a magnóban'), true);
       }
+      updateStatus();
       canvas.focus({ preventScroll: true });
     };
-    $('tape-stop').onclick = () => { if (tapeName) api.tapeCommand(0); canvas.focus({ preventScroll: true }); };
-    $('tape-rew').onclick = () => { if (tapeName) api.tapeCommand(2); canvas.focus({ preventScroll: true }); };
+    $('tape-stop').onclick = () => { if (tapeName) api.tapeCommand(0); updateStatus(); canvas.focus({ preventScroll: true }); };
+    $('tape-rew').onclick = () => { if (tapeName) api.tapeCommand(2); updateStatus(); canvas.focus({ preventScroll: true }); };
     // markers (cue points of ep128emu .tap files); without one the seek is 10 s
     const cue = (n) => () => {
       if (tapeName) { check(api.tapeCue(n), T('kazetta')); updateStatus(); }
@@ -5122,7 +5125,10 @@ registerProcessor('ep-output', EPOutput);
         // TVC: SAVE goes to the tape too
         if (machine.type === 1) { writeMemory(2821, 5); writeMemory(2829, 5); }
         api.tapeCommand(3);
+      } else {
+        setMessage(T('Nincs kazetta a magnóban: előbb „Üres kazetta” vagy „Kazetta behelyezése”'), true);
       }
+      updateStatus();
       canvas.focus({ preventScroll: true });
     };
     // a tape into the recorder, nothing else: the machine runs on (no reset,
@@ -5148,7 +5154,7 @@ registerProcessor('ep-output', EPOutput);
         M.FS.writeFile('/tape/' + tapeName, file.bytes);
         check(api.setTape('/tape/' + tapeName), T('kazetta'));
         $('tape-name').textContent = file.name;
-        setMessage(F('Kazetta behelyezve: {0} – a gép fut tovább; LOAD-dal vagy a ▶ gombbal indítható', file.name));
+        setMessage(F('Kazetta behelyezve: {0} – a gép fut tovább; betöltés: ▶ gomb, majd a gépen LOAD', file.name));
         updateStatus();
       } catch (err) {
         setMessage(T('A kazetta nem tehető be: ') + T(T(String(err.message || err))), true);
@@ -9247,6 +9253,31 @@ ep.log('CTRL+ESC megnyomva');`)
       $('st-tape').textContent = '';
       if ($('tape-pos')) $('tape-pos').textContent = '';
     }
+    showTapeState();
+  }
+  // the recorder's state on the tape panel: which button is pressed, and
+  // whether the motor runs (the machine switches it: LOAD / SAVE)
+  function showTapeState() {
+    const el = $('tape-state');
+    if (!el || !api || !api.tapeState) return;
+    const st = tapeName && ready ? api.tapeState() : 0;
+    const play = (st & 1) !== 0, rec = (st & 2) !== 0, motor = (st & 4) !== 0;
+    let text = '', cls = '';
+    if (tapeName) {
+      if (rec) {
+        text = motor ? T('● Felvétel – forog a szalag') : T('● Felvétel – vár: a motort a gép indítja (SAVE)');
+        cls = motor ? 'rec' : '';
+      } else if (play) {
+        text = motor ? T('▶ Lejátszás – forog a szalag') : T('▶ Lejátszás – vár: a motort a gép indítja (LOAD)');
+        cls = motor ? 'run' : '';
+      } else {
+        text = T('■ Áll');
+      }
+    }
+    if (el.textContent !== text) el.textContent = text;
+    el.className = 'tape-state' + (cls ? ' ' + cls : '');
+    $('tape-play').classList.toggle('on', play && !rec);
+    $('tape-rec').classList.toggle('on', rec);
   }
 
   // --------------------------------------------------------------------------
@@ -9320,6 +9351,7 @@ ep.log('CTRL+ESC megnyomva');`)
       setTape: c('ep_set_tape', 'number', ['string']),
       tapeCommand: c('ep_tape_command', 'number', ['number']),
       tapePosition: c('ep_tape_position', 'number', []),
+      tapeState: c('ep_tape_state', 'number', []),
       tapeLength: c('ep_tape_length', 'number', []),
       ledState: c('ep_led_state', 'number', []),
       readMemory: c('ep_read_memory', 'number', ['number']),

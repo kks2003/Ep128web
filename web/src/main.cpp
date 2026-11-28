@@ -948,6 +948,13 @@ EMSCRIPTEN_KEEPALIVE int ep_tape_command(int cmd)
   }
 }
 
+// the tape recorder: bit 0 PLAY, bit 1 RECORD, bit 2 the motor runs, bit 3 a
+// tape is in
+EMSCRIPTEN_KEEPALIVE int ep_tape_state()
+{
+  return vm->getTapeState();
+}
+
 EMSCRIPTEN_KEEPALIVE double ep_tape_position()
 {
   return vm->getTapePosition();

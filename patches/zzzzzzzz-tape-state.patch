@@ -1,0 +1,21 @@
+diff --git a/src/vm.hpp b/src/vm.hpp
+index 8f62109..9e044c2 100644
+--- a/src/vm.hpp
++++ b/src/vm.hpp
+@@ -232,6 +232,16 @@ namespace Ep128Emu {
+      * individual status values).
+      */
+     virtual void getVMStatus(VMStatus& vmStatus_);
++    /*!
++     * Ep128web: the tape recorder's state: bit 0: PLAY pressed, bit 1:
++     * RECORD pressed (with PLAY), bit 2: the motor runs (the machine's remote
++     * control, or forced on), bit 3: a tape is in.
++     */
++    inline int getTapeState() const
++    {
++      return getTapeButtonState() | (this->tapeMotorOn ? 4 : 0) |
++             (this->tape != (Tape *) 0 ? 8 : 0);
++    }
+     /*!
+      * Create video capture object with the specified frame rate (24 to 60)
+      * and format (768x576 RLE8 or 384x288 YV12) if it does not exist yet,
