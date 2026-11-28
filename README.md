@@ -131,6 +131,14 @@ is megnyithatók (Chrome/Edge asztali változatban).
 
 ### Magnó: felvétel, .wav
 
+- **Kazetta behelyezése** (Magnó panel, 📂): csak beteszi a kazettát a
+  magnóba – a gép fut tovább, nem indul újra, nem vált gépet és semmit sem
+  gépel be (a képre húzott kazetta ezzel szemben magától betöltődik). A
+  betöltést a ▶ gombbal, majd a gépen `LOAD`-dal kell elindítani. .tap, .wav,
+  .tzx, .cdt; a TVC .cas fájlt kazettahanggá alakítja; .zip-ből is.
+- **Állapot**: a panel mutatja, melyik gomb van lenyomva és hogy forog-e a
+  szalag. A motort a gép kapcsolja (`LOAD` / `SAVE`): a ▶ után „vár”, amíg
+  a gép el nem indítja.
 - **Felvétel**: „Üres kazetta”, „● Felvétel”, majd a gépen `SAVE` (TVC-n a
   felvétel gomb a magnóra állítja a mentést is). A „Letöltés (.tap)” az
   ep128emu saját formátumában, a „Letöltés (.wav)” hangfájlként tölti le a

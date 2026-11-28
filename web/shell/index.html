@@ -252,25 +252,44 @@
       <button data-tab="cfg">Beállítások</button>
     </div>
     <div class="tab" id="tab-tape">
-      <div class="group">
+      <div class="group tape">
         <h3>Magnó</h3>
-        <span id="tape-name" class="name">nincs kazetta</span>
-        <button id="tape-play">▶ Lejátszás</button>
-        <button id="tape-stop">■ Stop</button>
-        <button id="tape-rew">⏮ Elejére</button>
-        <button id="tape-rec">● Felvétel</button>
-        <button id="tape-prev" title="Vissza az előző jelölőhöz (ha nincs, 10 másodpercet)">⏪</button>
-        <button id="tape-next" title="Előre a következő jelölőhöz (ha nincs, 10 másodpercet)">⏩</button>
-        <button id="tape-mark" title="Jelölő a mostani helyre (a .tap letöltésébe bekerül)">＋ Jelölő</button>
-        <button id="tape-unmark" title="A legközelebbi jelölő törlése">− Jelölő</button>
-        <button id="tape-new">Üres kazetta</button>
-        <button id="tape-save" title="A kazetta letöltése ep128emu formátumban">Letöltés (.tap)</button>
-        <button id="tape-wav" title="A kazetta letöltése hangfájlként: valódi gépbe vagy más emulátorba tölthető">Letöltés (.wav)</button>
-        <label class="file" title="TVC .cas programok átalakítása kazettás hangfájllá (.wav); .zip is lehet">CAS → WAV…
-          <input type="file" id="cas-wav" accept=".cas,.zip,.zi" multiple>
-        </label>
-        <label class="name"><input type="checkbox" id="tape-fast" checked> Gyors betöltés (turbó, amíg forog a szalag)</label>
+        <div class="tape-deck">
+          <span class="tape-ico" aria-hidden="true">📼</span>
+          <span class="tape-info"><span id="tape-name" class="tape-title">nincs kazetta</span><span id="tape-state" class="tape-state"></span></span>
+          <span id="tape-pos" class="tape-pos"></span>
+        </div>
+        <div class="tape-transport">
+          <button id="tape-rew" title="A szalag elejére"><b><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="2" height="10"/><path d="M14 3v10L9 8zM9 3v10L4 8z"/></svg></b><small>Elejére</small></button>
+          <button id="tape-prev" title="Vissza az előző jelölőhöz (ha nincs, 10 másodpercet)"><b><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10L2 8zM14 3v10L8 8z"/></svg></b><small>Vissza</small></button>
+          <button id="tape-play" title="Lejátszás"><b><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11L13.5 8z"/></svg></b><small>Lejátszás</small></button>
+          <button id="tape-stop" title="Stop"><b><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg></b><small>Stop</small></button>
+          <button id="tape-next" title="Előre a következő jelölőhöz (ha nincs, 10 másodpercet)"><b><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3v10l6-5zM8 3v10l6-5z"/></svg></b><small>Előre</small></button>
+          <button id="tape-rec" class="tape-recbtn" title="Felvétel (SAVE a kazettára)"><b><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5"/></svg></b><small>Felvétel</small></button>
+        </div>
+        <div class="tape-sec">Kazetta</div>
+        <div class="tape-row">
+          <label class="file" title="Kazetta behelyezése a magnóba – a gép fut tovább, nem indul újra, és semmi sem töltődik be magától (betöltés: ▶ gomb, majd a gépen LOAD). .tap, .wav, .tzx, .cdt; TVC .cas is (kazettahanggá alakítva); .zip-ből is">📂 Kazetta behelyezése…
+            <input type="file" id="tape-open" accept=".tap,.wav,.tzx,.cdt,.cas,.zip,.zi">
+          </label>
+          <button id="tape-new" title="Üres kazetta a felvételhez">Üres kazetta</button>
+        </div>
+        <div class="tape-sec">Jelölők</div>
+        <div class="tape-row">
+          <button id="tape-mark" title="Jelölő a mostani helyre (a .tap letöltésébe bekerül)">＋ Jelölő</button>
+          <button id="tape-unmark" title="A legközelebbi jelölő törlése">− Jelölő</button>
+        </div>
+        <div class="tape-sec">Letöltés, átalakítás</div>
+        <div class="tape-row">
+          <button id="tape-save" title="A kazetta letöltése ep128emu formátumban">Letöltés (.tap)</button>
+          <button id="tape-wav" title="A kazetta letöltése hangfájlként: valódi gépbe vagy más emulátorba tölthető">Letöltés (.wav)</button>
+          <label class="file" title="TVC .cas programok átalakítása kazettás hangfájllá (.wav); .zip is lehet">CAS → WAV…
+            <input type="file" id="cas-wav" accept=".cas,.zip,.zi" multiple>
+          </label>
+        </div>
+        <label class="name tape-opt"><input type="checkbox" id="tape-fast" checked> Gyors betöltés (turbó, amíg forog a szalag)</label>
       </div>
+    </div>
     </div>
     <div class="tab" id="tab-disk">
       <div class="group drive">
